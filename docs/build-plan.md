@@ -6,7 +6,7 @@ Ordering logic: walking skeleton with all risk spikes first; local-only bank nex
 
 | # | Stage | Delivers | Status |
 |---|---|---|---|
-| 0 | [Walking skeleton & risk spikes](stages/stage-00-skeleton.md) | packaged app proving sqlite-vec, streamed LLM, mic+whisper, embeddings | ☐ |
+| 0 | [Walking skeleton & risk spikes](stages/stage-00-skeleton.md) | packaged app proving sqlite-vec, streamed LLM, mic+whisper, embeddings | ◐ |
 | 1 | [Experience bank (local-only core)](stages/stage-01-bank.md) | STAR form, drafts, browse/filter, keyword search — no key needed | ☐ |
 | 2 | [AI spine: brain dump & NL find](stages/stage-02-ai-spine.md) | propose-then-confirm capture; hybrid retrieval + NL search | ☐ |
 | 3 | [Mode B: on-demand stories — **MVP**](stages/stage-03-stories-mvp.md) | JD/genre → grounded, provenance-linked STAR story; tag `v0.1` | ☐ |
