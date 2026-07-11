@@ -45,9 +45,12 @@ function App(): React.JSX.Element {
   }, [])
 
   async function saveKey(): Promise<void> {
-    await window.api.ai.setKey(apiKey)
-    setHasKey(true)
-    setApiKey('')
+    try {
+      await window.api.ai.setKey(apiKey)
+      setHasKey(true)
+    } finally {
+      setApiKey('')
+    }
   }
 
   async function runStream(): Promise<void> {

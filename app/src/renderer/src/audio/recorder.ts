@@ -24,22 +24,30 @@ export async function startRecording(): Promise<Recording> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
   })
-  const ctx = new AudioContext({ sampleRate: 16000 })
-  await ctx.audioWorklet.addModule(new URL('./pcm-processor.js', import.meta.url))
+  let ctx: AudioContext | undefined
+  try {
+    ctx = new AudioContext({ sampleRate: 16000 })
+    await ctx.audioWorklet.addModule(new URL('./pcm-processor.js', import.meta.url))
 
-  const source = ctx.createMediaStreamSource(stream)
-  const node = new AudioWorkletNode(ctx, 'pcm-processor')
-  const chunks: Float32Array[] = []
-  node.port.onmessage = (e: MessageEvent<Float32Array>) => chunks.push(e.data)
-  source.connect(node)
+    const source = ctx.createMediaStreamSource(stream)
+    const node = new AudioWorkletNode(ctx, 'pcm-processor')
+    const chunks: Float32Array[] = []
+    node.port.onmessage = (e: MessageEvent<Float32Array>) => chunks.push(e.data)
+    source.connect(node)
+    const audioCtx = ctx
 
-  return {
-    async stop(): Promise<Int16Array> {
-      source.disconnect()
-      node.disconnect()
-      stream.getTracks().forEach((t) => t.stop())
-      await ctx.close()
-      return floatChunksToInt16(chunks)
+    return {
+      async stop(): Promise<Int16Array> {
+        source.disconnect()
+        node.disconnect()
+        stream.getTracks().forEach((t) => t.stop())
+        await audioCtx.close()
+        return floatChunksToInt16(chunks)
+      }
     }
+  } catch (err) {
+    stream.getTracks().forEach((t) => t.stop())
+    await ctx?.close()
+    throw err
   }
 }
