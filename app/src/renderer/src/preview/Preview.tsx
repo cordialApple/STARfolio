@@ -79,7 +79,7 @@ function Gallery(): React.JSX.Element {
         {swatches.map((s) => (
           <div key={s.name} className="flex flex-col items-center gap-1">
             <span className={`size-10 rounded-lg ${s.className}`} />
-            <span className="text-[10px] text-faint">{s.name}</span>
+            <span className="text-xs text-faint">{s.name}</span>
           </div>
         ))}
       </Row>

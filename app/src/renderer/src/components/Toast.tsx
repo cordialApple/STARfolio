@@ -25,9 +25,9 @@ const icons: Record<ToastTone, typeof Info> = {
 }
 
 const accents: Record<ToastTone, string> = {
-  success: 'text-success',
-  danger: 'text-danger',
-  info: 'text-info',
+  success: 'text-fg-success',
+  danger: 'text-fg-danger',
+  info: 'text-fg-info',
   neutral: 'text-muted'
 }
 
@@ -57,7 +57,7 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
           return (
             <div
               key={t.id}
-              role="status"
+              role={t.tone === 'danger' ? 'alert' : 'status'}
               className="pointer-events-auto flex items-start gap-2.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-sm text-ink shadow-pop"
             >
               <Icon className={cn('mt-0.5 size-4 shrink-0', accents[t.tone])} />

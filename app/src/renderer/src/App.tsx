@@ -119,7 +119,7 @@ function App(): React.JSX.Element {
           action={<Badge tone="neutral">safeStorage</Badge>}
         >
           {hasKey ? (
-            <p className="text-sm font-semibold text-success">Key stored in OS credential store</p>
+            <p className="text-sm font-semibold text-fg-success">Key stored in OS credential store</p>
           ) : (
             <div className="flex gap-2">
               <Input
@@ -140,14 +140,14 @@ function App(): React.JSX.Element {
           <Button variant="secondary" onClick={runDbTest}>
             <Database className="size-4" /> Run DB self-test
           </Button>
-          {dbResult && <p className="mt-3 font-mono text-sm text-success">{dbResult}</p>}
+          {dbResult && <p className="mt-3 font-mono text-sm text-fg-success">{dbResult}</p>}
         </Card>
 
         <Card title="Embeddings">
           <Button variant="secondary" onClick={runEmbedTest}>
             <Sparkles className="size-4" /> Embed + KNN round-trip
           </Button>
-          {embedResult && <p className="mt-3 font-mono text-sm text-info">{embedResult}</p>}
+          {embedResult && <p className="mt-3 font-mono text-sm text-fg-info">{embedResult}</p>}
         </Card>
 
         <Card title="Voice">
@@ -156,6 +156,19 @@ function App(): React.JSX.Element {
             onMouseDown={startRec}
             onMouseUp={stopRec}
             onMouseLeave={() => recording && stopRec()}
+            onBlur={() => recording && stopRec()}
+            onKeyDown={(e) => {
+              if ((e.key === ' ' || e.key === 'Enter') && !e.repeat && !recording) {
+                e.preventDefault()
+                startRec()
+              }
+            }}
+            onKeyUp={(e) => {
+              if ((e.key === ' ' || e.key === 'Enter') && recording) {
+                e.preventDefault()
+                stopRec()
+              }
+            }}
           >
             <Mic className="size-4" />
             {recording ? 'Recording — release to transcribe' : 'Hold to record'}

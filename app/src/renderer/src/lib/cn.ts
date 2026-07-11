@@ -29,7 +29,14 @@ const twMerge = extendTailwindMerge({
         'success',
         'warning',
         'danger',
-        'info'
+        'danger-strong',
+        'info',
+        'fg-brand',
+        'fg-violet',
+        'fg-success',
+        'fg-warning',
+        'fg-danger',
+        'fg-info'
       ],
       radius: ['pill'],
       shadow: ['card', 'pop'],

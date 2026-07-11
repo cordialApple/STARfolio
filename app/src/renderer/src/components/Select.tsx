@@ -19,7 +19,10 @@ export function Select({ invalid, className, children, ...props }: SelectProps):
       >
         {children}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-3 size-4 text-faint" />
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute right-3 size-4 text-faint"
+      />
     </div>
   )
 }

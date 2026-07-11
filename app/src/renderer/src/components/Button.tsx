@@ -9,10 +9,10 @@ const base =
   'inline-flex select-none items-center justify-center gap-2 rounded-lg font-semibold transition-[background-color,box-shadow,transform,filter] duration-150 ease-soft active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50'
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-brand text-on-brand shadow-card hover:bg-brand-strong',
+  primary: 'bg-brand-strong text-on-brand shadow-card hover:brightness-95',
   secondary: 'border border-line bg-surface text-ink hover:bg-raised',
   ghost: 'bg-transparent text-ink hover:bg-raised',
-  danger: 'bg-danger text-white hover:brightness-95'
+  danger: 'bg-danger-strong text-on-brand hover:brightness-95'
 }
 
 const sizes: Record<ButtonSize, string> = {

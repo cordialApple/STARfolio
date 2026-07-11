@@ -23,8 +23,8 @@ export function ErrorState({
         className
       )}
     >
-      <span className="flex size-12 items-center justify-center rounded-pill bg-danger/15 text-danger">
-        <AlertTriangle className="size-6" />
+      <span className="flex size-12 items-center justify-center rounded-pill bg-danger/15 text-fg-danger">
+        <AlertTriangle aria-hidden className="size-6" />
       </span>
       <div className="space-y-1">
         <h3 className="text-base font-bold text-ink">{title}</h3>

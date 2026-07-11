@@ -41,7 +41,7 @@ export function StarRail({
         className={cn('inline-grid grid-cols-2 gap-0.5', className)}
       >
         {STAR_BEATS.map((b) => (
-          <span key={b} className={cn('size-2.5 rounded-[3px]', beatFill[b])} />
+          <span key={b} className={cn('size-2.5 rounded-sm', beatFill[b])} />
         ))}
       </span>
     )

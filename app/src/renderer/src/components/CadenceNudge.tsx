@@ -20,7 +20,7 @@ export function CadenceNudge({
         className
       )}
     >
-      <Sparkles className="size-3.5 text-pop-strong" />
+      <Sparkles aria-hidden className="size-3.5 text-fg-success" />
       Logged {count} {noun} {period}
     </span>
   )
