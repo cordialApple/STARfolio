@@ -1,1 +1,117 @@
 @import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic surfaces/text/lines flip by the .dark class the theme provider sets.
+   Fixed brand + STAR-beat accents live in @theme below and do not flip. */
+:root {
+  --canvas: #fbfbfe;
+  --surface: #ffffff;
+  --raised: #f4f4fb;
+  --ink: #191a2e;
+  --muted: #55566d;
+  --faint: #8a8ba0;
+  --line: #e7e7f1;
+  --line-strong: #d3d3e2;
+  --focus: #7c5cfc;
+  --overlay: rgb(25 26 46 / 0.45);
+  --shadow-card: 0 1px 2px rgb(25 26 46 / 0.06), 0 6px 20px rgb(25 26 46 / 0.08);
+  --shadow-pop: 0 8px 30px rgb(25 26 46 / 0.16);
+}
+
+.dark {
+  --canvas: #191a2e;
+  --surface: #21223a;
+  --raised: #2a2b47;
+  --ink: #ececf6;
+  --muted: #aaabc5;
+  --faint: #7b7c99;
+  --line: #33344f;
+  --line-strong: #434465;
+  --focus: #9d86ff;
+  --overlay: rgb(8 8 18 / 0.6);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 20px rgb(0 0 0 / 0.35);
+  --shadow-pop: 0 8px 30px rgb(0 0 0 / 0.5);
+}
+
+@theme {
+  --font-sans:
+    'Nunito Variable', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --font-mono:
+    'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', monospace;
+
+  --color-brand: #7c5cfc;
+  --color-brand-strong: #6a45f0;
+  --color-brand-soft: #efeaff;
+  --color-on-brand: #ffffff;
+
+  --color-pop: #a3e635;
+  --color-pop-strong: #84cc16;
+  --color-on-pop: #1a2e05;
+
+  --color-star-s: #38bdf8;
+  --color-star-t: #a78bfa;
+  --color-star-a: #fbbf24;
+  --color-star-r: #34d399;
+
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #fb7185;
+  --color-info: #38bdf8;
+
+  --radius-pill: 9999px;
+
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Semantic tokens as inline theme vars so utilities emit the raw var()
+   reference and track the .dark flip at runtime. */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-focus: var(--focus);
+  --color-overlay: var(--overlay);
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    margin: 0;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+/* a11y floor: OS reduced-motion collapses every animation/transition to instant. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

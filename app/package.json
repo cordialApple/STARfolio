@@ -26,10 +26,15 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
     "@electron-toolkit/utils": "^4.0.0",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@fontsource-variable/nunito": "^5.2.7",
     "@huggingface/transformers": "^4.2.0",
     "better-sqlite3": "^12.11.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.24.0",
     "smart-whisper": "^0.8.1",
     "sqlite-vec": "^0.1.9",
+    "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
