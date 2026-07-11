@@ -35,6 +35,15 @@ const api: IpcApi = {
       ipcRenderer.on('ai:error', handler)
       return () => ipcRenderer.removeListener('ai:error', handler)
     }
+  },
+  bank: {
+    create: (input) => ipcRenderer.invoke('bank:create', input),
+    update: (id, input) => ipcRenderer.invoke('bank:update', { id, input }),
+    remove: (id) => ipcRenderer.invoke('bank:delete', { id }),
+    get: (id) => ipcRenderer.invoke('bank:get', { id }),
+    list: (filter) => ipcRenderer.invoke('bank:list', filter),
+    skills: () => ipcRenderer.invoke('bank:skills'),
+    tags: () => ipcRenderer.invoke('bank:tags')
   }
 }
 
