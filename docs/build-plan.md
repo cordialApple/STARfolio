@@ -7,7 +7,7 @@ Ordering logic: walking skeleton with all risk spikes first; then a lean design 
 | # | Stage | Delivers | Status |
 |---|---|---|---|
 | 0 | [Walking skeleton & risk spikes](stages/stage-00-skeleton.md) | packaged app proving sqlite-vec, streamed LLM, mic+whisper, embeddings | ☑ |
-| 1 | [Design system & signature UI](stages/stage-01-design-system.md) | tokens, ~10 primitives, STAR 4-beat rail motif, motion + a11y floor, preview route | ☐ |
+| 1 | [Design system & signature UI](stages/stage-01-design-system.md) | tokens, ~10 primitives, STAR 4-beat rail motif, motion + a11y floor, preview route | ☑ |
 | 2 | [Experience bank (local-only core)](stages/stage-02-bank.md) | STAR form, drafts, browse/filter, keyword search — no key needed | ☐ |
 | 3 | [AI spine: brain dump & NL find](stages/stage-03-ai-spine.md) | propose-then-confirm capture; hybrid retrieval + NL search | ☐ |
 | 4 | [Mode B: on-demand stories — **MVP**](stages/stage-04-stories-mvp.md) | JD/genre → grounded, provenance-linked STAR story; tag `v0.1` | ☐ |
