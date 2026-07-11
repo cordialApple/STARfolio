@@ -1,0 +1,37 @@
+# deps
+node_modules/
+
+# build output
+app/out/
+app/dist/
+dist/
+out/
+
+# electron-builder / native rebuild artifacts
+app/release/
+*.node
+
+# local models & runtime data (downloaded to userData at runtime; never committed)
+app/models/
+models/
+
+# logs & temp
+*.log
+.DS_Store
+Thumbs.db
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# test artifacts
+app/test-results/
+app/playwright-report/
+app/blob-report/
+app/.playwright/
