@@ -52,18 +52,25 @@ export function ExperienceDetail({
   const [busy, setBusy] = useState(false)
   const toast = useToast()
 
-  const load = useCallback(async (): Promise<void> => {
-    setError(null)
-    try {
-      setExp(await window.api.bank.get(id))
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }, [id])
+  const [reloadNonce, setReloadNonce] = useState(0)
+  const reload = useCallback((): void => setReloadNonce((n) => n + 1), [])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    let cancelled = false
+    setExp(undefined)
+    setError(null)
+    void (async () => {
+      try {
+        const got = await window.api.bank.get(id)
+        if (!cancelled) setExp(got)
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id, reloadNonce])
 
   async function confirmDraft(): Promise<void> {
     if (!exp) return
@@ -110,7 +117,7 @@ export function ExperienceDetail({
     return (
       <div className="mx-auto max-w-2xl">
         <BackLink onBack={onBack} />
-        <ErrorState description={error} action={<Button onClick={() => void load()}>Retry</Button>} />
+        <ErrorState description={error} action={<Button onClick={reload}>Retry</Button>} />
       </div>
     )
 

@@ -288,11 +288,11 @@ export function listExperiences(raw: unknown): ExperienceSummary[] {
     params.tag = filter.tag
   }
   if (filter.dateStart) {
-    where.push("COALESCE(e.happened_end, e.happened_start, '9999-99-99') >= @dateStart")
+    where.push('COALESCE(e.happened_end, e.happened_start) >= @dateStart')
     params.dateStart = filter.dateStart
   }
   if (filter.dateEnd) {
-    where.push("COALESCE(e.happened_start, e.happened_end, '0000-00-00') <= @dateEnd")
+    where.push('COALESCE(e.happened_start, e.happened_end) <= @dateEnd')
     params.dateEnd = filter.dateEnd
   }
 

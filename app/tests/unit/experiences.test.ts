@@ -106,6 +106,15 @@ describe('listExperiences filters', () => {
     expect(listExperiences({ dateEnd: '2023-01-01' }).map((r) => r.title)).toEqual(['Class draft'])
   })
 
+  it('excludes undated rows from date filters but shows them unfiltered', () => {
+    createExperience(make({ title: 'No dates', happened_start: null, happened_end: null }))
+    expect(listExperiences({}).map((r) => r.title)).toContain('No dates')
+    expect(listExperiences({ dateStart: '2000-01-01' }).map((r) => r.title)).not.toContain(
+      'No dates'
+    )
+    expect(listExperiences({ dateEnd: '2100-01-01' }).map((r) => r.title)).not.toContain('No dates')
+  })
+
   it('summaries carry filled-beat flags and chip names', () => {
     const [row] = listExperiences({ context: 'work' })
     expect(row.filled).toEqual({ situation: true, task: true, action: true, result: true })
