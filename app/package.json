@@ -78,6 +78,7 @@
       "resources/**",
       "node_modules/better-sqlite3/**",
       "node_modules/sqlite-vec/**",
+      "node_modules/sqlite-vec-*/**",
       "node_modules/onnxruntime-node/**",
       "node_modules/@huggingface/transformers/**",
       "node_modules/sharp/**",
