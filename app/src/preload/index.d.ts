@@ -2,6 +2,10 @@ export interface DbApi {
   selfTest: () => Promise<{ ok: boolean; fts: number; knn: number }>
 }
 
+export interface EmbedApi {
+  selfTest: () => Promise<{ ok: boolean; dims: number; knn: number }>
+}
+
 export interface AiApi {
   setKey: (key: string) => Promise<void>
   hasKey: () => Promise<boolean>
@@ -16,6 +20,7 @@ export interface AiApi {
 export interface IpcApi {
   ping: () => Promise<string>
   db: DbApi
+  embed: EmbedApi
   ai: AiApi
 }
 

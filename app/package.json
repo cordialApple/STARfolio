@@ -26,6 +26,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
     "@electron-toolkit/utils": "^4.0.0",
+    "@huggingface/transformers": "^4.2.0",
     "better-sqlite3": "^12.11.1",
     "sqlite-vec": "^0.1.9",
     "zod": "^4.4.3"
@@ -75,7 +76,11 @@
     "asarUnpack": [
       "resources/**",
       "node_modules/better-sqlite3/**",
-      "node_modules/sqlite-vec/**"
+      "node_modules/sqlite-vec/**",
+      "node_modules/onnxruntime-node/**",
+      "node_modules/@huggingface/transformers/**",
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
     ],
     "win": {
       "executableName": "STARfolio",

@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
 import { initDb } from './db/client'
+import { stopEmbedWorker } from './embed'
 
 function configureMicPermissions(): void {
   const ses = session.defaultSession
@@ -55,6 +56,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('will-quit', () => {
+  stopEmbedWorker()
 })
 
 app.on('window-all-closed', () => {

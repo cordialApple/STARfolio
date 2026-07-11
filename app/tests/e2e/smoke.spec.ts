@@ -47,6 +47,15 @@ test('sqlite-vec + FTS5 work inside the packaged app', async () => {
   expect(result.knn).toBeGreaterThan(0)
 })
 
+test('embeddings: bge-small in a worker + sqlite-vec KNN roundtrip', async () => {
+  test.setTimeout(180000) // first run downloads the ~34 MB model to userData
+  const win = await app.firstWindow()
+  const result = await win.evaluate(async () => window.api.embed.selfTest())
+  expect(result.dims).toBe(384)
+  expect(result.knn).toBeGreaterThan(0)
+  expect(result.ok).toBe(true)
+})
+
 test('AI stream plumbing delivers tokens then done (stub transport)', async () => {
   const win = await app.firstWindow()
   const streamed = await win.evaluate(

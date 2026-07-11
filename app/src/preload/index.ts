@@ -6,6 +6,9 @@ const api: IpcApi = {
   db: {
     selfTest: () => ipcRenderer.invoke('db:selfTest')
   },
+  embed: {
+    selfTest: () => ipcRenderer.invoke('embed:selfTest')
+  },
   ai: {
     setKey: (key) => ipcRenderer.invoke('ai:setKey', key),
     hasKey: () => ipcRenderer.invoke('ai:hasKey'),
