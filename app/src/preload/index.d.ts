@@ -6,6 +6,10 @@ export interface EmbedApi {
   selfTest: () => Promise<{ ok: boolean; dims: number; knn: number }>
 }
 
+export interface VoiceApi {
+  transcribe: (pcm: number[], model?: string) => Promise<string>
+}
+
 export interface AiApi {
   setKey: (key: string) => Promise<void>
   hasKey: () => Promise<boolean>
@@ -21,6 +25,7 @@ export interface IpcApi {
   ping: () => Promise<string>
   db: DbApi
   embed: EmbedApi
+  voice: VoiceApi
   ai: AiApi
 }
 

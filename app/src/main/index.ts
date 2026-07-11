@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
 import { initDb } from './db/client'
 import { stopEmbedWorker } from './embed'
+import { stopWhisperWorker } from './voice'
 
 function configureMicPermissions(): void {
   const ses = session.defaultSession
@@ -60,6 +61,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   stopEmbedWorker()
+  stopWhisperWorker()
 })
 
 app.on('window-all-closed', () => {

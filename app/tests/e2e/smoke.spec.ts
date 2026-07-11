@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
 import { resolve, join } from 'path'
-import { mkdtempSync, existsSync } from 'fs'
+import { mkdtempSync, existsSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 
 // Prefer the true packaged binary (proves asar-unpack native loading — the 0.2 checkpoint).
@@ -14,7 +14,7 @@ let app: ElectronApplication
 
 test.beforeAll(async () => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'starfolio-e2e-'))
-  const env = { ...process.env, STARFOLIO_AI_STUB: '1' }
+  const env = { ...process.env, STARFOLIO_AI_STUB: '1', STARFOLIO_WHISPER_MODEL: 'tiny.en' }
   if (existsSync(PACKAGED_EXE)) {
     app = await electron.launch({
       executablePath: PACKAGED_EXE,
@@ -54,6 +54,18 @@ test('embeddings: bge-small in a worker + sqlite-vec KNN roundtrip', async () =>
   expect(result.dims).toBe(384)
   expect(result.knn).toBeGreaterThan(0)
   expect(result.ok).toBe(true)
+})
+
+test('voice: transcribe a WAV fixture via the smart-whisper worker', async () => {
+  test.setTimeout(300000) // first run downloads the whisper model
+  const wav = readFileSync(resolve('./tests/fixtures/sample-16k.wav'))
+  const pcm: number[] = []
+  for (let i = 44; i + 1 < wav.length; i += 2) pcm.push(wav.readInt16LE(i))
+  const win = await app.firstWindow()
+  const text = await win.evaluate((data) => window.api.voice.transcribe(data), pcm)
+  // A synthetic tone yields no words; the point is that model load + native binding + the
+  // worker round-trip complete and return a string without throwing (no audio hardware needed).
+  expect(typeof text).toBe('string')
 })
 
 test('AI stream plumbing delivers tokens then done (stub transport)', async () => {

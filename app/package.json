@@ -28,6 +28,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@huggingface/transformers": "^4.2.0",
     "better-sqlite3": "^12.11.1",
+    "smart-whisper": "^0.8.1",
     "sqlite-vec": "^0.1.9",
     "zod": "^4.4.3"
   },
@@ -80,7 +81,8 @@
       "node_modules/onnxruntime-node/**",
       "node_modules/@huggingface/transformers/**",
       "node_modules/sharp/**",
-      "node_modules/@img/**"
+      "node_modules/@img/**",
+      "node_modules/smart-whisper/**"
     ],
     "win": {
       "executableName": "STARfolio",

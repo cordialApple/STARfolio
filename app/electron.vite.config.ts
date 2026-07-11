@@ -9,7 +9,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
-          'embed.worker': resolve('src/main/embed/worker.ts')
+          'embed.worker': resolve('src/main/embed/worker.ts'),
+          'voice.worker': resolve('src/main/voice/worker.ts')
         }
       }
     }

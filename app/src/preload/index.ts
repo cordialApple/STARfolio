@@ -9,6 +9,9 @@ const api: IpcApi = {
   embed: {
     selfTest: () => ipcRenderer.invoke('embed:selfTest')
   },
+  voice: {
+    transcribe: (pcm, model) => ipcRenderer.invoke('voice:transcribe', { pcm, model })
+  },
   ai: {
     setKey: (key) => ipcRenderer.invoke('ai:setKey', key),
     hasKey: () => ipcRenderer.invoke('ai:hasKey'),
