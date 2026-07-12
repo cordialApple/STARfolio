@@ -58,5 +58,6 @@ export type {
   TechnicalRubricDimension,
   TechnicalConfig,
   TechnicalStartResult,
-  TechnicalAnswerResult
+  TechnicalAnswerResult,
+  ResumeBullet
 } from '../../../preload/index.d'

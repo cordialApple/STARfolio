@@ -66,6 +66,12 @@ const api: IpcApi = {
   resume: {
     extract: (text) => ipcRenderer.invoke('resume:extract', { text })
   },
+  materials: {
+    bullets: (jdText, experienceIds) =>
+      ipcRenderer.invoke('bullets:generate', { jdText, experienceIds }),
+    export: (markdown, format, filename) =>
+      ipcRenderer.invoke('resume:export', { markdown, format, filename })
+  },
   evidence: {
     extract: (text, kind) => ipcRenderer.invoke('evidence:extract', { text, kind })
   },
