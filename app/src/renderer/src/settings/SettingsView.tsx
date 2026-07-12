@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload } from 'lucide-react'
-import { Badge, Button, Card, Input, Skeleton, useToast } from '../components'
+import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell } from 'lucide-react'
+import type { Prefs } from '../../../preload/index.d'
+import { Badge, Button, Card, Input, Skeleton, Toggle, useToast } from '../components'
 
 export function SettingsView(): React.JSX.Element {
   const toast = useToast()
@@ -12,6 +13,18 @@ export function SettingsView(): React.JSX.Element {
   const [patBusy, setPatBusy] = useState(false)
   const [graphBusy, setGraphBusy] = useState(false)
   const [dataBusy, setDataBusy] = useState(false)
+  const [prefs, setPrefsState] = useState<Prefs | null>(null)
+
+  async function savePrefs(patch: Partial<Prefs>): Promise<void> {
+    setPrefsState((prev) => (prev ? { ...prev, ...patch } : prev))
+    try {
+      const next = await window.api.prefs.set(patch)
+      setPrefsState(next)
+    } catch (err) {
+      toast(`Could not save setting: ${(err as Error).message}`, 'danger')
+      setPrefsState(await window.api.prefs.get())
+    }
+  }
 
   async function runData(errPrefix: string, fn: () => Promise<void>): Promise<void> {
     setDataBusy(true)
@@ -67,6 +80,7 @@ export function SettingsView(): React.JSX.Element {
   async function refresh(): Promise<void> {
     setHasKey(await window.api.ai.hasKey())
     setHasPat(await window.api.github.hasPat())
+    setPrefsState(await window.api.prefs.get())
   }
   useEffect(() => {
     void refresh()
@@ -328,6 +342,52 @@ export function SettingsView(): React.JSX.Element {
             </Button>
           </div>
         </div>
+      </Card>
+
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <Bell className="size-4" />
+            Reminders &amp; startup
+          </span>
+        }
+      >
+        {prefs === null ? (
+          <Skeleton className="h-24 w-full" />
+        ) : (
+          <div className="space-y-4">
+            <Toggle
+              label="Remind me to bank a fresh story"
+              checked={prefs.reminderEnabled}
+              onCheckedChange={(v) => void savePrefs({ reminderEnabled: v })}
+            />
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-sm text-ink">Remind after this many days idle</span>
+              <Input
+                type="number"
+                min={1}
+                max={365}
+                className="w-24"
+                value={String(prefs.reminderIntervalDays)}
+                disabled={!prefs.reminderEnabled}
+                onChange={(e) => {
+                  const n = Number(e.target.value)
+                  if (Number.isFinite(n) && n >= 1 && n <= 365) void savePrefs({ reminderIntervalDays: n })
+                }}
+              />
+            </label>
+            <Toggle
+              label="Launch STARfolio at login"
+              checked={prefs.launchAtLogin}
+              onCheckedChange={(v) => void savePrefs({ launchAtLogin: v })}
+            />
+            <Toggle
+              label="Keep running in the tray when closed"
+              checked={prefs.trayResident}
+              onCheckedChange={(v) => void savePrefs({ trayResident: v })}
+            />
+          </div>
+        )}
       </Card>
     </div>
   )

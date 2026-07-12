@@ -437,6 +437,29 @@ export interface BackupApi {
   create: () => Promise<{ saved: boolean; path?: string }>
 }
 
+export interface Prefs {
+  reminderEnabled: boolean
+  reminderIntervalDays: number
+  launchAtLogin: boolean
+  trayResident: boolean
+  onboardingDone: boolean
+  reminderSnoozedAt: string | null
+}
+
+export interface Staleness {
+  count: number
+  daysSinceLast: number | null
+}
+
+export interface PrefsApi {
+  get: () => Promise<Prefs>
+  set: (patch: Partial<Prefs>) => Promise<Prefs>
+}
+
+export interface NudgeApi {
+  staleness: () => Promise<Staleness>
+}
+
 export interface IpcApi {
   ping: () => Promise<string>
   db: DbApi
@@ -458,6 +481,8 @@ export interface IpcApi {
   corpus: CorpusApi
   bank: BankApi
   backup: BackupApi
+  prefs: PrefsApi
+  nudge: NudgeApi
 }
 
 declare global {

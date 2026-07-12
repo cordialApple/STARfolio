@@ -131,6 +131,13 @@ const api: IpcApi = {
     exportJson: () => ipcRenderer.invoke('bank:exportJson'),
     importJson: () => ipcRenderer.invoke('bank:importJson'),
     create: () => ipcRenderer.invoke('backup:create')
+  },
+  prefs: {
+    get: () => ipcRenderer.invoke('prefs:get'),
+    set: (patch) => ipcRenderer.invoke('prefs:set', patch)
+  },
+  nudge: {
+    staleness: () => ipcRenderer.invoke('nudge:staleness')
   }
 }
 

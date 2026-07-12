@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { StarRail, ThemeToggle } from './components'
+import { StarRail, StalenessBanner, ThemeToggle } from './components'
 import type { Experience, Skill, Tag } from './lib/bank-types'
 import { BankView } from './bank/BankView'
 import { ExperienceDetail } from './bank/ExperienceDetail'
@@ -111,13 +111,16 @@ function App(): React.JSX.Element {
 
       <main className="px-6 py-8">
         {route.name === 'list' && (
-          <BankView
-            reloadToken={reloadToken}
-            onOpen={(id) => setRoute({ name: 'detail', id })}
-            onNew={() => setRoute({ name: 'new' })}
-            onBrainDump={() => setRoute({ name: 'brain' })}
-            onImport={() => setRoute({ name: 'import' })}
-          />
+          <>
+            <StalenessBanner reloadToken={reloadToken} onNew={() => setRoute({ name: 'new' })} />
+            <BankView
+              reloadToken={reloadToken}
+              onOpen={(id) => setRoute({ name: 'detail', id })}
+              onNew={() => setRoute({ name: 'new' })}
+              onBrainDump={() => setRoute({ name: 'brain' })}
+              onImport={() => setRoute({ name: 'import' })}
+            />
+          </>
         )}
 
         {route.name === 'generate' && <StoryView />}

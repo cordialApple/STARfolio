@@ -20,6 +20,7 @@ import { generateBullets } from './ai/bullets'
 import { markdownToDocx } from './export/docx'
 import { writeFileSync, readFileSync } from 'fs'
 import { exportBank, importBank, backupTo } from './db/backup'
+import { getPrefs, setPrefs, staleness, prefsPatch, type Prefs } from './settings/prefs'
 import { getSession, listSessions, endSession } from './db/repositories/practice'
 import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
@@ -67,7 +68,11 @@ function handle<S extends z.ZodTypeAny, R>(
   ipcMain.handle(channel, (event, raw) => fn(event, schema.parse(raw)))
 }
 
-export function registerIpcHandlers(ipcMain: IpcMain): void {
+export interface IpcHooks {
+  onPrefsChange?: (prefs: Prefs) => void
+}
+
+export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): void {
   async function saveDialog(opts: Electron.SaveDialogOptions): Promise<string | null> {
     const win = BrowserWindow.getFocusedWindow()
     const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
@@ -80,6 +85,13 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   }
 
   ipcMain.handle('ping', () => 'pong')
+  ipcMain.handle('prefs:get', () => getPrefs())
+  handle(ipcMain, 'prefs:set', prefsPatch, (_e, patch) => {
+    const next = setPrefs(patch)
+    hooks.onPrefsChange?.(next)
+    return next
+  })
+  ipcMain.handle('nudge:staleness', () => staleness())
   ipcMain.handle('db:selfTest', () => dbSelfTest())
   ipcMain.handle('embed:selfTest', () => embedSelfTest())
   ipcMain.handle('embed:modelStatus', () => getModelStatus())
