@@ -1,6 +1,9 @@
 # deps
 node_modules/
 
+# claude code local settings (personal, per-machine)
+.claude/settings.local.json
+
 # build output
 app/out/
 app/dist/
