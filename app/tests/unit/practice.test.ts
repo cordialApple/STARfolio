@@ -67,4 +67,14 @@ describe('practice orchestrator (stub)', () => {
     expect(list[0].id).toBe(sessionId)
     expect(list[0].answered).toBe(1)
   })
+
+  it('refuses to answer once the session has ended (terminal state)', async () => {
+    const { sessionId } = await startPractice({ kind: 'genre', promptText: 'Leadership' })
+    await answerPractice({ sessionId, answer: STRONG })
+    await answerPractice({ sessionId, answer: STRONG })
+    await answerPractice({ sessionId, answer: STRONG })
+    const list = listSessions()
+    expect(list[0].ended_at).not.toBeNull()
+    await expect(answerPractice({ sessionId, answer: STRONG })).rejects.toThrow(/ended/)
+  })
 })

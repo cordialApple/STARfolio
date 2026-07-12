@@ -85,26 +85,45 @@ export function addInterviewerTurn(sessionId: string, content: string): void {
     .run(randomUUID(), sessionId, content)
 }
 
-export function addCandidateTurn(
-  sessionId: string,
-  content: string,
-  feedback: InterviewFeedback,
-  flags: TurnFlags,
+export function isSessionOpen(sessionId: string): boolean {
+  const row = getDb()
+    .prepare('SELECT ended_at FROM practice_sessions WHERE id = ?')
+    .get(sessionId) as { ended_at: string | null } | undefined
+  return row != null && row.ended_at === null
+}
+
+export type NextMove = { kind: 'ask'; text: string } | { kind: 'done' }
+
+// The candidate's answer (with feedback, flags, provenance links) AND the state transition it
+// causes — either the next interviewer turn or ending the session — commit as one transaction,
+// so a crash can never strand a session in an "answered but no next question, not ended" state.
+export function commitAnswer(params: {
+  sessionId: string
+  answer: string
+  feedback: InterviewFeedback
+  flags: TurnFlags
   experienceIds: string[]
-): void {
+  next: NextMove
+}): void {
   const db = getDb()
-  const id = randomUUID()
+  const turnId = randomUUID()
   db.transaction(() => {
     db.prepare(
       `INSERT INTO practice_turns (id, session_id, role, content, feedback_json, flags_json)
        VALUES (?, ?, 'candidate', ?, ?, ?)`
-    ).run(id, sessionId, content, JSON.stringify(feedback), JSON.stringify(flags))
+    ).run(turnId, params.sessionId, params.answer, JSON.stringify(params.feedback), JSON.stringify(params.flags))
     const link = db.prepare(
       'INSERT OR IGNORE INTO practice_turn_experiences (turn_id, experience_id) VALUES (?, ?)'
     )
-    for (const expId of experienceIds) {
-      const exists = db.prepare('SELECT 1 FROM experiences WHERE id = ?').get(expId)
-      if (exists) link.run(id, expId)
+    for (const expId of params.experienceIds) {
+      if (db.prepare('SELECT 1 FROM experiences WHERE id = ?').get(expId)) link.run(turnId, expId)
+    }
+    if (params.next.kind === 'ask') {
+      db.prepare(`INSERT INTO practice_turns (id, session_id, role, content) VALUES (?, ?, 'interviewer', ?)`)
+        .run(randomUUID(), params.sessionId, params.next.text)
+    } else {
+      db.prepare(`UPDATE practice_sessions SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL`)
+        .run(params.sessionId)
     }
   })()
 }

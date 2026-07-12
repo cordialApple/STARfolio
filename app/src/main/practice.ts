@@ -10,11 +10,11 @@ import { listExperiences } from './db/repositories/experiences'
 import {
   createSession,
   addInterviewerTurn,
-  addCandidateTurn,
+  commitAnswer,
+  isSessionOpen,
   sessionConfig,
   askedQuestions,
-  currentQuestion,
-  endSession
+  currentQuestion
 } from './db/repositories/practice'
 
 const MAX_CANDIDATES = 40
@@ -51,6 +51,7 @@ export interface AnswerResult extends InterviewTurn {
 export async function answerPractice(arg: z.infer<typeof answerArg>): Promise<AnswerResult> {
   const config = sessionConfig(arg.sessionId)
   if (!config) throw new Error('practice session not found')
+  if (!isSessionOpen(arg.sessionId)) throw new Error('this practice session has ended')
   const question = currentQuestion(arg.sessionId)
   if (!question) throw new Error('no question to answer yet')
 
@@ -63,15 +64,17 @@ export async function answerPractice(arg: z.infer<typeof answerArg>): Promise<An
     answer: arg.answer
   })
 
-  addCandidateTurn(
-    arg.sessionId,
-    arg.answer,
-    turn.feedback,
-    { unbanked: turn.unbanked },
-    turn.used_experience_ids
-  )
-  if (turn.next_kind === 'done') endSession(arg.sessionId)
-  else if (turn.next_text) addInterviewerTurn(arg.sessionId, turn.next_text)
+  // A missing next_text on a non-done move would strand the session with no live question,
+  // so treat "done" and "no follow-up text" alike as the terminal move.
+  const nextText = turn.next_text.trim()
+  commitAnswer({
+    sessionId: arg.sessionId,
+    answer: arg.answer,
+    feedback: turn.feedback,
+    flags: { unbanked: turn.unbanked },
+    experienceIds: turn.used_experience_ids,
+    next: turn.next_kind !== 'done' && nextText ? { kind: 'ask', text: nextText } : { kind: 'done' }
+  })
 
   const byId = new Map(candidates.map((c) => [c.id, c.title]))
   return {
