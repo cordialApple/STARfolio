@@ -170,6 +170,7 @@ function App(): React.JSX.Element {
               setRoute({ name: 'list' })
             }}
             onChanged={bump}
+            onOpen={(id) => setRoute({ name: 'detail', id })}
           />
         )}
       </main>

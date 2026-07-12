@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type Database from 'better-sqlite3'
 import { getDb } from '../client'
 import { sourceInput, insertSource, linkSource, type Source } from './sources'
+import { deleteExperienceEdges } from './graph'
 
 export const CONTEXTS = ['work', 'project', 'class', 'other'] as const
 export const STATUSES = ['draft', 'confirmed'] as const
@@ -228,6 +229,7 @@ export function deleteExperience(id: string): { deleted: boolean } {
   let changes = 0
   db.transaction(() => {
     db.prepare('DELETE FROM vec_experiences WHERE experience_id = ?').run(id)
+    deleteExperienceEdges(db, id)
     changes = db.prepare('DELETE FROM experiences WHERE id = ?').run(id).changes
   })()
   return { deleted: changes > 0 }

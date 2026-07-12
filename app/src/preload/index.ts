@@ -55,13 +55,32 @@ const api: IpcApi = {
   },
   ingest: {
     pickFiles: () => ipcRenderer.invoke('ingest:pickFiles'),
+    pickFolder: () => ipcRenderer.invoke('ingest:pickFolder'),
     files: (paths) => ipcRenderer.invoke('ingest:files', { paths }),
     url: (url) => ipcRenderer.invoke('ingest:url', { url }),
+    codeFolder: (path) => ipcRenderer.invoke('ingest:codeFolder', { path }),
+    repo: (url) => ipcRenderer.invoke('ingest:repo', { url }),
     openSource: (id) => ipcRenderer.invoke('ingest:openSource', { id }),
     pathForFile: (file) => webUtils.getPathForFile(file)
   },
   resume: {
     extract: (text) => ipcRenderer.invoke('resume:extract', { text })
+  },
+  evidence: {
+    extract: (text, kind) => ipcRenderer.invoke('evidence:extract', { text, kind })
+  },
+  entity: {
+    extract: (text) => ipcRenderer.invoke('entity:extract', { text })
+  },
+  graph: {
+    link: (experienceId, entities) => ipcRenderer.invoke('graph:link', { experienceId, entities }),
+    neighbors: (id) => ipcRenderer.invoke('graph:neighbors', { id }),
+    backfill: () => ipcRenderer.invoke('graph:backfill')
+  },
+  github: {
+    setPat: (pat) => ipcRenderer.invoke('github:setPat', pat),
+    hasPat: () => ipcRenderer.invoke('github:hasPat'),
+    deletePat: () => ipcRenderer.invoke('github:deletePat')
   },
   story: {
     generate: (config) => ipcRenderer.invoke('story:generate', config),

@@ -64,9 +64,9 @@ test('import: the wizard offers a drop zone and a url field', async () => {
   await win.waitForLoadState('domcontentloaded')
   await win.getByRole('button', { name: 'Import', exact: true }).click()
 
-  await expect(win.getByRole('heading', { name: 'Import documents' })).toBeVisible()
+  await expect(win.getByRole('heading', { name: 'Import', exact: true })).toBeVisible()
   await expect(win.getByRole('button', { name: 'Choose files' })).toBeVisible()
-  await expect(win.getByPlaceholder(/example\.com/)).toBeVisible()
+  await expect(win.getByPlaceholder(/a-write-up/)).toBeVisible()
 })
 
 test('import: re-importing the same file is flagged as a duplicate', async () => {

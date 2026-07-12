@@ -44,5 +44,11 @@ export type {
   WhisperModelInfo,
   WhisperModelName,
   StoryMatch,
-  IngestResult
+  IngestResult,
+  EvidenceKind,
+  EntityKind,
+  EntityInput,
+  EntityNode,
+  Connection,
+  Neighbors
 } from '../../../preload/index.d'

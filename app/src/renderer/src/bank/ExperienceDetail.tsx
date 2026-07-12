@@ -13,6 +13,7 @@ import {
   type StarBeat
 } from '../components'
 import type { Experience } from '../lib/bank-types'
+import { ConnectedPanel } from './ConnectedPanel'
 import {
   BEAT_ACCENT,
   CONTEXT_LABELS,
@@ -46,6 +47,7 @@ export interface ExperienceDetailProps {
   onEdit: (exp: Experience) => void
   onDeleted: () => void
   onChanged: (exp: Experience) => void
+  onOpen: (id: string) => void
 }
 
 export function ExperienceDetail({
@@ -53,7 +55,8 @@ export function ExperienceDetail({
   onBack,
   onEdit,
   onDeleted,
-  onChanged
+  onChanged,
+  onOpen
 }: ExperienceDetailProps): React.JSX.Element {
   const [exp, setExp] = useState<Experience | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
@@ -292,6 +295,8 @@ export function ExperienceDetail({
           </ul>
         </section>
       )}
+
+      <ConnectedPanel experienceId={id} onOpen={onOpen} />
 
       <Dialog
         open={confirmOpen}
