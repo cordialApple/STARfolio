@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { IpcApi, ModelStatus, WhisperModelInfo } from './index.d'
+import type { IpcApi, ModelStatus, WhisperModelInfo, UpdateStatus } from './index.d'
 
 const api: IpcApi = {
   ping: () => ipcRenderer.invoke('ping'),
@@ -138,6 +138,18 @@ const api: IpcApi = {
   },
   nudge: {
     staleness: () => ipcRenderer.invoke('nudge:staleness')
+  },
+  update: {
+    version: () => ipcRenderer.invoke('update:version'),
+    status: () => ipcRenderer.invoke('update:status'),
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onStatus: (cb) => {
+      const handler = (_: Electron.IpcRendererEvent, status: UpdateStatus): void => cb(status)
+      ipcRenderer.on('update:status', handler)
+      return () => ipcRenderer.removeListener('update:status', handler)
+    }
   }
 }
 

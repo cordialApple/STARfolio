@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { clipboard, dialog, shell, BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, clipboard, dialog, shell, BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import { setSecret, hasSecret, deleteSecret, getSecret } from './settings/secrets'
 import { startChat, cancelStream } from './ai/client'
 import { extractStar, extractResumeStar, extractEvidenceStar, extractEntities } from './ai/extract'
@@ -21,6 +21,7 @@ import { markdownToDocx } from './export/docx'
 import { writeFileSync, readFileSync } from 'fs'
 import { exportBank, importBank, backupTo } from './db/backup'
 import { getPrefs, setPrefs, staleness, prefsPatch, type Prefs } from './settings/prefs'
+import { checkForUpdate, downloadUpdate, quitAndInstall, updateStatus } from './updater'
 import { getSession, listSessions, endSession } from './db/repositories/practice'
 import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
@@ -276,6 +277,12 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
     if (ids.length) kickEmbedDrain()
     return { imported, canceled: false }
   })
+  ipcMain.handle('update:status', () => updateStatus())
+  ipcMain.handle('update:check', () => checkForUpdate())
+  ipcMain.handle('update:download', () => downloadUpdate())
+  ipcMain.handle('update:install', () => quitAndInstall())
+  ipcMain.handle('update:version', () => app.getVersion())
+
   ipcMain.handle('backup:create', async () => {
     const stamp = new Date().toISOString().slice(0, 10)
     const path = await saveDialog({

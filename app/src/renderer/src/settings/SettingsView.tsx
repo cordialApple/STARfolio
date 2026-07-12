@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell } from 'lucide-react'
-import type { Prefs } from '../../../preload/index.d'
+import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw } from 'lucide-react'
+import type { Prefs, UpdateStatus } from '../../../preload/index.d'
 import { Badge, Button, Card, Input, Skeleton, Toggle, useToast } from '../components'
 
 export function SettingsView(): React.JSX.Element {
@@ -14,6 +14,8 @@ export function SettingsView(): React.JSX.Element {
   const [graphBusy, setGraphBusy] = useState(false)
   const [dataBusy, setDataBusy] = useState(false)
   const [prefs, setPrefsState] = useState<Prefs | null>(null)
+  const [appVersion, setAppVersion] = useState('')
+  const [update, setUpdate] = useState<UpdateStatus>({ state: 'idle' })
 
   async function savePrefs(patch: Partial<Prefs>): Promise<void> {
     setPrefsState((prev) => (prev ? { ...prev, ...patch } : prev))
@@ -85,6 +87,22 @@ export function SettingsView(): React.JSX.Element {
   useEffect(() => {
     void refresh()
   }, [])
+
+  useEffect(() => {
+    void window.api.update.version().then(setAppVersion)
+    void window.api.update.status().then(setUpdate)
+    return window.api.update.onStatus(setUpdate)
+  }, [])
+
+  function checkUpdate(): void {
+    void window.api.update.check()
+  }
+  function downloadUpdate(): void {
+    void window.api.update.download()
+  }
+  function installUpdate(): void {
+    void window.api.update.install()
+  }
 
   async function savePat(): Promise<void> {
     const value = pat.trim()
@@ -388,6 +406,54 @@ export function SettingsView(): React.JSX.Element {
             />
           </div>
         )}
+      </Card>
+
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <RefreshCw className="size-4" />
+            Updates
+          </span>
+        }
+        action={appVersion ? <Badge tone="neutral">v{appVersion}</Badge> : null}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            STARfolio updates itself from GitHub Releases. It isn&apos;t code-signed, so the first
+            install shows a SmartScreen warning — updates after that are trusted automatically.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              loading={update.state === 'checking'}
+              disabled={update.state === 'checking' || update.state === 'downloading'}
+              onClick={checkUpdate}
+            >
+              <RefreshCw className="size-4" />
+              Check for updates
+            </Button>
+            {update.state === 'available' && (
+              <Button onClick={downloadUpdate}>
+                <Download className="size-4" />
+                Download v{update.version}
+              </Button>
+            )}
+            {update.state === 'downloaded' && (
+              <Button onClick={installUpdate}>
+                Restart to install v{update.version}
+              </Button>
+            )}
+          </div>
+          {update.state === 'not-available' && (
+            <p className="text-sm text-fg-success">You&apos;re on the latest version.</p>
+          )}
+          {update.state === 'downloading' && (
+            <p className="text-sm text-muted">Downloading… {update.percent}%</p>
+          )}
+          {update.state === 'error' && (
+            <p className="text-sm text-fg-danger">{update.message}</p>
+          )}
+        </div>
       </Card>
     </div>
   )

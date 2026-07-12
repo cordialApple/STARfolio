@@ -460,6 +460,24 @@ export interface NudgeApi {
   staleness: () => Promise<Staleness>
 }
 
+export type UpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'available'; version: string }
+  | { state: 'not-available' }
+  | { state: 'downloading'; percent: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string }
+
+export interface UpdateApi {
+  version: () => Promise<string>
+  status: () => Promise<UpdateStatus>
+  check: () => Promise<UpdateStatus>
+  download: () => Promise<UpdateStatus>
+  install: () => Promise<void>
+  onStatus: (cb: (status: UpdateStatus) => void) => () => void
+}
+
 export interface IpcApi {
   ping: () => Promise<string>
   db: DbApi
@@ -483,6 +501,7 @@ export interface IpcApi {
   backup: BackupApi
   prefs: PrefsApi
   nudge: NudgeApi
+  update: UpdateApi
 }
 
 declare global {

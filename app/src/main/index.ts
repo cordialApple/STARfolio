@@ -11,6 +11,7 @@ import { stopIngestWorker } from './ingest'
 import { getPrefs, type Prefs } from './settings/prefs'
 import { startReminderScheduler, stopReminderScheduler } from './nudges/reminder'
 import { syncTray, destroyTray, applyLoginItem } from './nudges/tray'
+import { initUpdater } from './updater'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -97,6 +98,7 @@ if (!app.requestSingleInstanceLock()) {
 
     configureMicPermissions()
     initDb()
+    initUpdater(() => mainWindow?.webContents ?? null)
     registerIpcHandlers(ipcMain, { onPrefsChange: applyPrefs })
     createWindow()
     applyPrefs(getPrefs())
