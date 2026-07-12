@@ -14,6 +14,11 @@ app/release/
 # local models & runtime data (downloaded to userData at runtime; never committed)
 app/models/
 models/
+app/.cache/
+
+# recorded AI fixtures (may contain pasted user content; keep out of the repo)
+**/ai-fixtures/
+app/tests/fixtures/ai/
 
 # logs & temp
 *.log

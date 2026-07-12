@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Check, FileText } from 'lucide-react'
+import { Check, FileText, HelpCircle } from 'lucide-react'
 import {
+  Badge,
   Button,
   Input,
   Textarea,
@@ -8,15 +9,19 @@ import {
   StarRail,
   useToast,
   STAR_LABELS,
+  type BadgeTone,
   type StarBeat
 } from '../components'
 import type {
+  Confidence,
   Experience,
   ExperienceContext,
   ExperienceInput,
+  GapField,
   MetricInput,
   Skill,
   SkillInput,
+  SourceInput,
   Tag
 } from '../lib/bank-types'
 import { BEAT_ACCENT, CONTEXTS, CONTEXT_LABELS } from '../lib/format'
@@ -34,6 +39,33 @@ const BEATS: { key: BeatKey; beat: StarBeat; hint: string }[] = [
   { key: 'result_text', beat: 'r', hint: 'The outcome, ideally something you can measure.' }
 ]
 
+const CONFIDENCE_TONE: Record<Confidence, BadgeTone> = {
+  high: 'success',
+  medium: 'neutral',
+  low: 'warning'
+}
+const CONFIDENCE_LABEL: Record<Confidence, string> = {
+  high: 'from your notes',
+  medium: 'inferred',
+  low: 'guessed'
+}
+
+export interface Gap {
+  field: GapField
+  question: string
+}
+interface DraftState {
+  gaps?: Gap[]
+  confidence?: Partial<Record<BeatKey, Confidence>>
+}
+
+export interface StarSeed {
+  values: Partial<FormState>
+  source?: SourceInput
+  gaps?: Gap[]
+  confidence?: Partial<Record<BeatKey, Confidence>>
+}
+
 interface FormState {
   title: string
   situation: string
@@ -48,19 +80,44 @@ interface FormState {
   metrics: MetricInput[]
 }
 
-function toState(exp?: Experience): FormState {
-  return {
-    title: exp?.title ?? '',
-    situation: exp?.situation ?? '',
-    task: exp?.task ?? '',
-    action: exp?.action ?? '',
-    result_text: exp?.result_text ?? '',
-    context: exp?.context ?? 'work',
-    happened_start: exp?.happened_start?.slice(0, 7) ?? '',
-    happened_end: exp?.happened_end?.slice(0, 7) ?? '',
-    skills: exp?.skills.map((s) => ({ name: s.name, kind: s.kind })) ?? [],
-    tags: exp?.tags.map((t) => t.name) ?? [],
-    metrics: exp?.metrics.map((m) => ({ label: m.label, value: m.value, unit: m.unit })) ?? []
+const EMPTY: FormState = {
+  title: '',
+  situation: '',
+  task: '',
+  action: '',
+  result_text: '',
+  context: 'work',
+  happened_start: '',
+  happened_end: '',
+  skills: [],
+  tags: [],
+  metrics: []
+}
+
+function toState(initial?: Experience, seed?: StarSeed): FormState {
+  if (initial)
+    return {
+      title: initial.title,
+      situation: initial.situation,
+      task: initial.task,
+      action: initial.action,
+      result_text: initial.result_text,
+      context: initial.context,
+      happened_start: initial.happened_start?.slice(0, 7) ?? '',
+      happened_end: initial.happened_end?.slice(0, 7) ?? '',
+      skills: initial.skills.map((s) => ({ name: s.name, kind: s.kind })),
+      tags: initial.tags.map((t) => t.name),
+      metrics: initial.metrics.map((m) => ({ label: m.label, value: m.value, unit: m.unit }))
+    }
+  return { ...EMPTY, ...seed?.values }
+}
+
+function parseDraftState(json: string | null | undefined): DraftState {
+  if (!json) return {}
+  try {
+    return JSON.parse(json) as DraftState
+  } catch {
+    return {}
   }
 }
 
@@ -68,6 +125,7 @@ const monthToDate = (v: string): string | null => (v ? `${v}-01` : null)
 
 export interface StarFormProps {
   initial?: Experience
+  seed?: StarSeed
   skills: Skill[]
   tags: Tag[]
   onSaved: (exp: Experience) => void
@@ -76,15 +134,23 @@ export interface StarFormProps {
 
 export function StarForm({
   initial,
+  seed,
   skills,
   tags,
   onSaved,
   onCancel
 }: StarFormProps): React.JSX.Element {
-  const [form, setForm] = useState<FormState>(() => toState(initial))
+  const [form, setForm] = useState<FormState>(() => toState(initial, seed))
   const [saving, setSaving] = useState<false | 'draft' | 'confirmed'>(false)
   const [showErrors, setShowErrors] = useState(false)
   const toast = useToast()
+
+  const draftState = useMemo(
+    () => (seed ? { gaps: seed.gaps, confidence: seed.confidence } : parseDraftState(initial?.draft_state_json)),
+    [seed, initial]
+  )
+  const gaps = draftState.gaps ?? []
+  const confidence = draftState.confidence ?? {}
 
   const set = <K extends keyof FormState>(key: K, val: FormState[K]): void =>
     setForm((f) => ({ ...f, [key]: val }))
@@ -104,7 +170,7 @@ export function StarForm({
     !!form.happened_start && !!form.happened_end && form.happened_end < form.happened_start
 
   function build(status: 'draft' | 'confirmed'): ExperienceInput {
-    return {
+    const input: ExperienceInput = {
       title: form.title.trim(),
       situation: form.situation,
       task: form.task,
@@ -116,8 +182,12 @@ export function StarForm({
       status,
       skills: form.skills,
       tags: form.tags,
-      metrics: form.metrics.filter((m) => m.label.trim())
+      metrics: form.metrics.filter((m) => m.label.trim()),
+      // A confirmed record is complete, so its draft-conversation state is cleared.
+      draft_state_json: status === 'draft' && gaps.length > 0 ? JSON.stringify(draftState) : null
     }
+    if (!initial && seed?.source) input.source = seed.source
+    return input
   }
 
   async function save(status: 'draft' | 'confirmed'): Promise<void> {
@@ -156,6 +226,20 @@ export function StarForm({
         <span className="text-xs font-semibold text-muted">{filled.length}/4 beats</span>
       </div>
 
+      {gaps.length > 0 && (
+        <div className="rounded-lg border border-warning/40 bg-warning/10 p-4">
+          <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-fg-warning">
+            <HelpCircle className="size-4" />
+            A few things to fill in
+          </p>
+          <ul className="space-y-1 text-sm text-ink">
+            {gaps.map((g, i) => (
+              <li key={i}>{g.question}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div>
         <label htmlFor="exp-title" className="mb-1.5 block text-sm font-semibold text-ink">
           Title
@@ -173,23 +257,29 @@ export function StarForm({
       </div>
 
       <div className="space-y-4">
-        {BEATS.map(({ key, beat, hint }) => (
-          <div key={key} className={cn('border-l-2 pl-3', BEAT_ACCENT[beat])}>
-            <label
-              htmlFor={`exp-${key}`}
-              className="mb-1.5 flex items-baseline justify-between text-sm font-semibold text-ink"
-            >
-              {STAR_LABELS[beat]}
-              <span className="text-xs font-normal text-faint">{hint}</span>
-            </label>
-            <Textarea
-              id={`exp-${key}`}
-              rows={key === 'action' ? 4 : 3}
-              value={form[key]}
-              onChange={(e) => set(key, e.target.value)}
-            />
-          </div>
-        ))}
+        {BEATS.map(({ key, beat, hint }) => {
+          const conf = confidence[key]
+          return (
+            <div key={key} className={cn('border-l-2 pl-3', BEAT_ACCENT[beat])}>
+              <label
+                htmlFor={`exp-${key}`}
+                className="mb-1.5 flex items-baseline justify-between gap-2 text-sm font-semibold text-ink"
+              >
+                <span className="flex items-center gap-2">
+                  {STAR_LABELS[beat]}
+                  {conf && <Badge tone={CONFIDENCE_TONE[conf]}>{CONFIDENCE_LABEL[conf]}</Badge>}
+                </span>
+                <span className="text-xs font-normal text-faint">{hint}</span>
+              </label>
+              <Textarea
+                id={`exp-${key}`}
+                rows={key === 'action' ? 4 : 3}
+                value={form[key]}
+                onChange={(e) => set(key, e.target.value)}
+              />
+            </div>
+          )
+        })}
         {showErrors && beatsMissing && (
           <p className="text-xs text-fg-warning">
             All four beats make the strongest story. You can still save it as a draft.

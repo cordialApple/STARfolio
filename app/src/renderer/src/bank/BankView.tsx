@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Plus, Inbox, FileText } from 'lucide-react'
+import { Plus, Inbox, FileText, Sparkles, Loader2 } from 'lucide-react'
 import { Button, EmptyState, ErrorState, Skeleton } from '../components'
-import type { ExperienceSummary, ListFilter, Skill, Tag } from '../lib/bank-types'
+import type { ExperienceSummary, ListFilter, ModelStatus, Skill, Tag } from '../lib/bank-types'
 import { FilterBar } from './FilterBar'
 import { ExperienceCard } from './ExperienceCard'
 
@@ -9,21 +9,28 @@ export interface BankViewProps {
   reloadToken: number
   onOpen: (id: string) => void
   onNew: () => void
+  onBrainDump: () => void
 }
 
-export function BankView({ reloadToken, onOpen, onNew }: BankViewProps): React.JSX.Element {
+export function BankView({
+  reloadToken,
+  onOpen,
+  onNew,
+  onBrainDump
+}: BankViewProps): React.JSX.Element {
   const [filter, setFilter] = useState<ListFilter>({})
   const [items, setItems] = useState<ExperienceSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [skills, setSkills] = useState<Skill[]>([])
   const [tags, setTags] = useState<Tag[]>([])
+  const [model, setModel] = useState<ModelStatus | null>(null)
 
   useEffect(() => {
     let cancelled = false
     const t = setTimeout(async () => {
       setError(null)
       try {
-        const list = await window.api.bank.list(filter)
+        const list = await window.api.bank.search(filter)
         if (!cancelled) setItems(list)
       } catch (err) {
         if (!cancelled) setError((err as Error).message)
@@ -34,6 +41,11 @@ export function BankView({ reloadToken, onOpen, onNew }: BankViewProps): React.J
       clearTimeout(t)
     }
   }, [filter, reloadToken])
+
+  useEffect(() => {
+    void window.api.embed.modelStatus().then(setModel)
+    return window.api.embed.onStatus(setModel)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -59,13 +71,26 @@ export function BankView({ reloadToken, onOpen, onNew }: BankViewProps): React.J
           <h1 className="text-2xl font-bold text-ink">Your bank</h1>
           <p className="text-sm text-muted">Every accomplishment, in STAR form.</p>
         </div>
-        <Button onClick={onNew}>
-          <Plus className="size-4" />
-          New experience
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={onBrainDump}>
+            <Sparkles className="size-4" />
+            Brain dump
+          </Button>
+          <Button onClick={onNew}>
+            <Plus className="size-4" />
+            New experience
+          </Button>
+        </div>
       </div>
 
       <FilterBar filter={filter} onChange={setFilter} skills={skills} tags={tags} />
+
+      {model?.phase === 'downloading' && (
+        <p className="flex items-center gap-1.5 text-xs text-muted">
+          <Loader2 className="size-3.5 animate-spin" />
+          Preparing smart search ({model.progress}%) — keyword results shown until it&apos;s ready.
+        </p>
+      )}
 
       {draftCount > 0 && filter.status !== 'draft' && (
         <button

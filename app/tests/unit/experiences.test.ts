@@ -180,6 +180,39 @@ describe('updateExperience', () => {
   })
 })
 
+describe('brain-dump persistence', () => {
+  it('attaches a paste source and stores draft_state_json on create', () => {
+    const created = createExperience(
+      make({
+        title: 'From a dump',
+        status: 'draft',
+        source: { kind: 'paste', raw_text: 'the messy original paragraph' },
+        draft_state_json: JSON.stringify({ gaps: [{ field: 'result', question: 'what happened?' }] })
+      })
+    )
+    const got = getExperience(created.id)!
+    expect(got.sources).toHaveLength(1)
+    expect(got.sources[0]).toMatchObject({ kind: 'paste', raw_text: 'the messy original paragraph' })
+    expect(got.draft_state_json).toContain('what happened?')
+  })
+
+  it('clears draft_state_json when a draft is confirmed', () => {
+    const created = createExperience(
+      make({ status: 'draft', draft_state_json: JSON.stringify({ gaps: [] }) })
+    )
+    const confirmed = updateExperience(created.id, make({ status: 'confirmed' }) as unknown)
+    expect(confirmed.draft_state_json).toBeNull()
+  })
+
+  it('does not duplicate the source when the experience is later updated', () => {
+    const created = createExperience(
+      make({ source: { kind: 'paste', raw_text: 'once' } })
+    )
+    updateExperience(created.id, make({ title: 'edited' }) as unknown)
+    expect(getExperience(created.id)!.sources).toHaveLength(1)
+  })
+})
+
 describe('deleteExperience', () => {
   it('cascades child rows and drops the row from FTS', () => {
     const exp = createExperience(make({ title: 'unique pipeline marker' }))

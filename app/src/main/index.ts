@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
 import { initDb } from './db/client'
 import { stopEmbedWorker } from './embed'
+import { backfillEmbeddings, kickEmbedDrain } from './embed/queue'
 import { stopWhisperWorker } from './voice'
 
 function configureMicPermissions(): void {
@@ -53,6 +54,14 @@ app.whenReady().then(() => {
   initDb()
   registerIpcHandlers(ipcMain)
   createWindow()
+
+  // Resume any embeds left pending by a prior run, and embed rows that predate embedding.
+  try {
+    backfillEmbeddings()
+    kickEmbedDrain()
+  } catch {
+    // A missing model or worker must never block startup; the queue retries on its own.
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

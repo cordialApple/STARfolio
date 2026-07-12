@@ -2,8 +2,11 @@ import { z } from 'zod'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { setSecret, hasSecret, deleteSecret } from './settings/secrets'
 import { startStream, cancelStream } from './ai/client'
+import { extractStar } from './ai/extract'
+import { searchExperiences } from './search'
+import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
-import { embedSelfTest } from './embed'
+import { embedSelfTest, getModelStatus } from './embed'
 import { transcribe } from './voice'
 import {
   experienceInput,
@@ -33,6 +36,7 @@ const transcribeArg = z.object({
 
 const idArg = z.object({ id: nonEmpty.max(64) })
 const updateArg = z.object({ id: nonEmpty.max(64), input: experienceInput })
+const extractArg = z.object({ text: z.string().min(1).max(200_000) })
 
 function handle<S extends z.ZodTypeAny, R>(
   ipcMain: IpcMain,
@@ -47,6 +51,7 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('ping', () => 'pong')
   ipcMain.handle('db:selfTest', () => dbSelfTest())
   ipcMain.handle('embed:selfTest', () => embedSelfTest())
+  ipcMain.handle('embed:modelStatus', () => getModelStatus())
   handle(ipcMain, 'voice:transcribe', transcribeArg, (_e, { pcm, model }) => transcribe(pcm, model))
 
   ipcMain.handle('ai:hasKey', () => hasSecret('anthropic_api_key'))
@@ -57,11 +62,24 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   )
   handle(ipcMain, 'ai:cancel', nonEmpty, (_e, requestId) => cancelStream(requestId))
 
-  handle(ipcMain, 'bank:create', experienceInput, (_e, input) => createExperience(input))
-  handle(ipcMain, 'bank:update', updateArg, (_e, { id, input }) => updateExperience(id, input))
+  handle(ipcMain, 'brain:extract', extractArg, (_e, { text }) => extractStar(text))
+
+  handle(ipcMain, 'bank:create', experienceInput, (_e, input) => {
+    const exp = createExperience(input)
+    enqueueEmbed(exp.id)
+    kickEmbedDrain()
+    return exp
+  })
+  handle(ipcMain, 'bank:update', updateArg, (_e, { id, input }) => {
+    const exp = updateExperience(id, input)
+    enqueueEmbed(exp.id)
+    kickEmbedDrain()
+    return exp
+  })
   handle(ipcMain, 'bank:delete', idArg, (_e, { id }) => deleteExperience(id))
   handle(ipcMain, 'bank:get', idArg, (_e, { id }) => getExperience(id))
   handle(ipcMain, 'bank:list', listFilter, (_e, filter) => listExperiences(filter))
+  handle(ipcMain, 'bank:search', listFilter, (_e, filter) => searchExperiences(filter))
   ipcMain.handle('bank:skills', () => listSkills())
   ipcMain.handle('bank:tags', () => listTags())
 }

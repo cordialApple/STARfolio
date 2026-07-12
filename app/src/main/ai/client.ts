@@ -1,26 +1,16 @@
 import type { WebContents } from 'electron'
-import { randomUUID } from 'crypto'
 import { getSecret } from '../settings/secrets'
-import { getDb } from '../db/client'
-import { anthropicTransport, stubTransport, type AiTransport, type StreamUsage } from './transport'
-
-const HAIKU = 'claude-haiku-4-5'
+import { anthropicTransport, stubTransport, type AiTransport } from './transport'
+import { MODELS } from './models'
+import { logUsage } from './usage'
 
 const active = new Map<string, AbortController>()
 
 function resolveTransport(): AiTransport {
-  if (process.env.STARFOLIO_AI_STUB === '1') return stubTransport(HAIKU)
+  if (process.env.STARFOLIO_AI_STUB === '1') return stubTransport(MODELS.extract)
   const apiKey = getSecret('anthropic_api_key')
   if (!apiKey) throw new Error('No Anthropic API key configured')
-  return anthropicTransport(apiKey, HAIKU)
-}
-
-function logUsage(model: string, usage: StreamUsage): void {
-  getDb()
-    .prepare(
-      'INSERT INTO usage_log (id, model, in_tokens, out_tokens, cache_read_tokens, feature) VALUES (?, ?, ?, ?, ?, ?)'
-    )
-    .run(randomUUID(), model, usage.in, usage.out, usage.cacheRead, 'spike')
+  return anthropicTransport(apiKey, MODELS.extract)
 }
 
 export function startStream(prompt: string, requestId: string, sender: WebContents): void {
@@ -45,11 +35,7 @@ export function startStream(prompt: string, requestId: string, sender: WebConten
     .stream(prompt, ac.signal, {
       onToken: (t) => send('ai:token', t),
       onDone: (usage) => {
-        try {
-          logUsage(transport.model, usage)
-        } catch {
-          // usage logging must never break the stream response
-        }
+        logUsage(transport.model, usage, 'chat')
         active.delete(requestId)
         send('ai:done')
       },

@@ -244,6 +244,30 @@ export function ExperienceDetail({
         </section>
       )}
 
+      {exp.sources.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-muted">Built from</h2>
+          <ul className="space-y-2">
+            {exp.sources.map((s) => (
+              <li key={s.id} className="rounded-lg border border-line bg-raised p-3">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-faint">
+                  {s.kind === 'paste' ? 'Pasted notes' : s.kind}
+                  {s.title ? ` — ${s.title}` : ''}
+                </div>
+                {s.raw_text && (
+                  <details>
+                    <summary className="cursor-pointer text-sm text-muted hover:text-ink">
+                      Show original text
+                    </summary>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{s.raw_text}</p>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <Dialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}

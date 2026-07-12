@@ -6,13 +6,21 @@ interface EmbedRequest {
   text: string
   cacheDir: string
 }
-type EmbedResponse =
+interface ProgressInfo {
+  status: string
+  file?: string
+  progress?: number
+  loaded?: number
+  total?: number
+}
+type WorkerMessage =
   | { id: string; ok: true; vector: number[] }
   | { id: string; ok: false; error: string }
+  | { type: 'progress'; info: ProgressInfo }
 
 interface ParentPort {
   on(event: 'message', listener: (e: { data: EmbedRequest }) => void): void
-  postMessage(message: EmbedResponse): void
+  postMessage(message: WorkerMessage): void
 }
 
 const parentPort = (process as unknown as { parentPort: ParentPort }).parentPort
@@ -24,7 +32,10 @@ function getPipe(cacheDir: string): Promise<FeatureExtractionPipeline> {
   if (!pipePromise) {
     env.cacheDir = cacheDir
     env.allowRemoteModels = true
-    pipePromise = pipeline('feature-extraction', MODEL, { dtype: 'q8' })
+    pipePromise = pipeline('feature-extraction', MODEL, {
+      dtype: 'q8',
+      progress_callback: (info: ProgressInfo) => parentPort.postMessage({ type: 'progress', info })
+    })
   }
   return pipePromise
 }

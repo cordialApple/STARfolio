@@ -54,8 +54,8 @@ describe('runMigrations', () => {
   it('backs up before applying a migration to an existing schema', () => {
     const db = open()
     db.exec(MIGRATIONS[0].sql) // pre-apply v1 (self-records version 1)
-    runMigrations(db, dbPath) // applied={1}, pending=[2] → one backup, then v2
-    expect(versions(db)).toEqual([1, 2])
+    runMigrations(db, dbPath) // applied={1}, pending=[2..] → one backup, then the rest
+    expect(versions(db)).toEqual(MIGRATIONS.map((m) => m.version))
     expect(bakCount()).toBe(1)
     db.close()
   })

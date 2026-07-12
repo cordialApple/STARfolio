@@ -10,5 +10,14 @@ export type {
   Tag,
   Metric,
   MetricInput,
-  ListFilter
+  ListFilter,
+  Source,
+  SourceInput,
+  SourceKind,
+  StarExtraction,
+  ExtractedField,
+  Confidence,
+  GapField,
+  ModelStatus,
+  ModelPhase
 } from '../../../preload/index.d'

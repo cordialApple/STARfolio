@@ -4,10 +4,12 @@ import type { Experience, Skill, Tag } from './lib/bank-types'
 import { BankView } from './bank/BankView'
 import { ExperienceDetail } from './bank/ExperienceDetail'
 import { StarForm } from './capture/StarForm'
+import { BrainDump } from './capture/BrainDump'
 
 type Route =
   | { name: 'list' }
   | { name: 'new' }
+  | { name: 'brain' }
   | { name: 'detail'; id: string }
   | { name: 'edit'; exp: Experience }
 
@@ -54,6 +56,19 @@ function App(): React.JSX.Element {
             reloadToken={reloadToken}
             onOpen={(id) => setRoute({ name: 'detail', id })}
             onNew={() => setRoute({ name: 'new' })}
+            onBrainDump={() => setRoute({ name: 'brain' })}
+          />
+        )}
+
+        {route.name === 'brain' && (
+          <BrainDump
+            skills={taxonomy.skills}
+            tags={taxonomy.tags}
+            onExit={() => setRoute({ name: 'list' })}
+            onSaved={(id) => {
+              bump()
+              setRoute({ name: 'detail', id })
+            }}
           />
         )}
 
