@@ -173,8 +173,14 @@ export function packZipBytes(bytes: Uint8Array): Promise<PackResult> {
               rej(thrown as Error)
             }
           })
-          zip.on('end', res)
-          zip.on('error', rej)
+          zip.on('end', () => {
+            zip.close()
+            res()
+          })
+          zip.on('error', (e) => {
+            zip.close()
+            rej(e)
+          })
           zip.readEntry()
         }
       )
@@ -189,12 +195,20 @@ export interface RepoRef {
   ref?: string
 }
 
-export function parseGitHubUrl(url: string): RepoRef {
-  const m = url.match(
-    /github\.com[/:]([^/]+)\/([^/#?]+?)(?:\.git)?(?:\/tree\/([^/#?]+))?(?:[/#?].*)?$/i
-  )
-  if (!m) throw new Error('That does not look like a GitHub repository URL.')
-  return { owner: m[1], repo: m[2], ref: m[3] }
+export function parseGitHubUrl(raw: string): RepoRef {
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    throw new Error('That does not look like a GitHub repository URL.')
+  }
+  if (u.hostname !== 'github.com' && u.hostname !== 'www.github.com')
+    throw new Error('Only github.com repositories can be imported.')
+  const parts = u.pathname.split('/').filter(Boolean)
+  const owner = parts[0]
+  const repo = parts[1]?.replace(/\.git$/i, '')
+  if (!owner || !repo) throw new Error('That GitHub URL is missing an owner or repository.')
+  return { owner, repo, ref: parts[2] === 'tree' ? parts[3] : undefined }
 }
 
 function ghHeaders(token?: string): Record<string, string> {
@@ -207,18 +221,46 @@ function ghHeaders(token?: string): Record<string, string> {
   return h
 }
 
+// Wrap fetch so a raw network/undici error (which could in principle echo the token
+// header) never reaches the user, and so a hung connection can't run forever.
+async function ghFetch(url: string, token: string | undefined, signal: AbortSignal): Promise<Response> {
+  try {
+    return await fetch(url, { headers: ghHeaders(token), signal })
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw new Error('GitHub timed out.')
+    throw new Error('Could not reach GitHub.')
+  }
+}
+
 export async function packRepo(url: string, token?: string): Promise<PackResult & { title: string }> {
   const { owner, repo, ref } = parseGitHubUrl(url)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 120_000)
+  try {
+    return await fetchAndPackRepo(owner, repo, ref, token, controller.signal)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function fetchAndPackRepo(
+  owner: string,
+  repo: string,
+  ref: string | undefined,
+  token: string | undefined,
+  signal: AbortSignal
+): Promise<PackResult & { title: string }> {
   let resolvedRef = ref
   if (!resolvedRef) {
-    const r = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: ghHeaders(token) })
+    const r = await ghFetch(`https://api.github.com/repos/${owner}/${repo}`, token, signal)
     if (r.status === 404) throw new Error('Repository not found (or private — add a token in Settings).')
     if (!r.ok) throw new Error(`GitHub returned ${r.status} looking up the repository.`)
     resolvedRef = (await r.json()).default_branch as string
   }
-  const res = await fetch(
+  const res = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/tarball/${resolvedRef}`,
-    { headers: ghHeaders(token) }
+    token,
+    signal
   )
   if (res.status === 404) throw new Error('Repository not found (or private — add a token in Settings).')
   if (res.status === 403) throw new Error('GitHub rate limit hit — add a token in Settings and retry.')

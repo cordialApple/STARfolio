@@ -18,6 +18,7 @@ interface ReviewItem {
 }
 
 const EVIDENCE_KINDS = new Set(['spreadsheet', 'code', 'repo'])
+const ekey = (e: EntityInput): string => `${e.kind}:${e.name}`
 
 function seedFrom(ext: StarExtraction, sourceId: string): StarSeed {
   return {
@@ -56,7 +57,7 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
   const toast = useToast()
 
   useEffect(() => {
-    if (review[cursor]) setApproved(new Set(review[cursor].entities.map((e) => e.name)))
+    if (review[cursor]) setApproved(new Set(review[cursor].entities.map(ekey)))
   }, [cursor, review])
 
   async function extractSources(results: IngestResult[]): Promise<void> {
@@ -139,16 +140,16 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
             <p className="mb-2 text-sm font-semibold text-ink">Connections found — approve what to keep</p>
             <div className="flex flex-wrap gap-1.5">
               {item.entities.map((e) => {
-                const on = approved.has(e.name)
+                const on = approved.has(ekey(e))
                 return (
                   <button
-                    key={`${e.kind}:${e.name}`}
+                    key={ekey(e)}
                     type="button"
                     onClick={() =>
                       setApproved((prev) => {
                         const next = new Set(prev)
-                        if (next.has(e.name)) next.delete(e.name)
-                        else next.add(e.name)
+                        if (next.has(ekey(e))) next.delete(ekey(e))
+                        else next.add(ekey(e))
                         return next
                       })
                     }
@@ -170,7 +171,7 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
           tags={tags}
           onCancel={() => (cursor + 1 < review.length ? setCursor((c) => c + 1) : onExit())}
           onSaved={async (exp) => {
-            const keep = item.entities.filter((e) => approved.has(e.name))
+            const keep = item.entities.filter((e) => approved.has(ekey(e)))
             if (keep.length > 0) await window.api.graph.link(exp.id, keep)
             if (cursor + 1 < review.length) setCursor((c) => c + 1)
             else onSaved(exp.id)

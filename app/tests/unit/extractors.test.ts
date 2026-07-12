@@ -61,8 +61,9 @@ describe('extractPdf', () => {
   })
 })
 
+// jsdom + readability cold-start parsing runs ~5s; give these headroom over the 5s default.
 describe('htmlToArticle', () => {
-  it('extracts the article title and markdown, dropping nav/script chrome', async () => {
+  it('extracts the article title and markdown, dropping nav/script chrome', { timeout: 20000 }, async () => {
     const html = read('article.html').toString('utf8')
     const article = await htmlToArticle(html, 'https://example.com/post')
     expect(article).not.toBeNull()
@@ -72,7 +73,7 @@ describe('htmlToArticle', () => {
     expect(article!.markdown).not.toContain('Home')
   })
 
-  it('returns null for a page with no readable content', async () => {
+  it('returns null for a page with no readable content', { timeout: 20000 }, async () => {
     const article = await htmlToArticle('<html><body></body></html>', 'https://example.com')
     expect(article).toBeNull()
   })

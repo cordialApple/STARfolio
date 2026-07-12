@@ -37,6 +37,8 @@ function upsertEntity(db: Database.Database, e: EntityInput): string {
 export function linkExperienceEntities(experienceId: string, entities: EntityInput[]): void {
   if (entities.length === 0) return
   const db = getDb()
+  if (!db.prepare('SELECT 1 FROM experiences WHERE id = ?').get(experienceId))
+    throw new Error(`experience not found: ${experienceId}`)
   db.transaction(() => {
     for (const e of entities) {
       if (!e.name.trim()) continue

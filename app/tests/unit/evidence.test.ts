@@ -125,10 +125,38 @@ describe('packZipBytes', () => {
 })
 
 describe('parseGitHubUrl', () => {
-  it('parses owner/repo and optional ref, rejecting non-github urls', () => {
+  it('parses owner/repo and optional ref via host allow-list', () => {
     expect(parseGitHubUrl('https://github.com/facebook/react')).toEqual({ owner: 'facebook', repo: 'react', ref: undefined })
     expect(parseGitHubUrl('https://github.com/a/b.git')).toMatchObject({ owner: 'a', repo: 'b' })
     expect(parseGitHubUrl('https://github.com/a/b/tree/dev')).toMatchObject({ owner: 'a', repo: 'b', ref: 'dev' })
     expect(() => parseGitHubUrl('https://gitlab.com/a/b')).toThrow()
+    // hostname allow-list, not a substring match
+    expect(() => parseGitHubUrl('https://evil.com/github.com/a/b')).toThrow()
+    expect(() => parseGitHubUrl('not a url')).toThrow()
+  })
+})
+
+describe('tar-stream (repo untar path)', () => {
+  it('loads and round-trips a tar buffer', async () => {
+    const tar = (await import('tar-stream')).default
+    const pack = tar.pack()
+    pack.entry({ name: 'proj/a.txt' }, 'hello')
+    pack.finalize()
+    const chunks: Buffer[] = []
+    for await (const c of pack) chunks.push(c as Buffer)
+
+    const extract = tar.extract()
+    const names: string[] = []
+    await new Promise<void>((res, rej) => {
+      extract.on('entry', (h, s, next) => {
+        names.push(h.name)
+        s.on('end', next)
+        s.resume()
+      })
+      extract.on('finish', () => res())
+      extract.on('error', rej)
+      extract.end(Buffer.concat(chunks))
+    })
+    expect(names).toContain('proj/a.txt')
   })
 })

@@ -11,7 +11,19 @@ interface Row {
   result_text: string
 }
 
+let running = false
+
 export async function backfillEntities(limit = 100): Promise<{ processed: number }> {
+  if (running) return { processed: 0 }
+  running = true
+  try {
+    return await runBackfill(limit)
+  } finally {
+    running = false
+  }
+}
+
+async function runBackfill(limit: number): Promise<{ processed: number }> {
   const rows = getDb()
     .prepare(
       `SELECT id, title, situation, task, action, result_text FROM experiences x
