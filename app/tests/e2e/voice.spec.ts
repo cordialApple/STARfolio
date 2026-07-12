@@ -14,7 +14,8 @@ test.beforeAll(async () => {
     ...process.env,
     STARFOLIO_AI_STUB: '1',
     STARFOLIO_EMBED_STUB: '1',
-    STARFOLIO_WHISPER_STUB: '1'
+    STARFOLIO_WHISPER_STUB: '1',
+    STARFOLIO_E2E: '1'
   }
   // Fake mic so getUserMedia + the AudioWorklet produce a (tone) stream headlessly.
   const fakeMedia = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']
