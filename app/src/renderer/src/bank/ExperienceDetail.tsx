@@ -267,13 +267,7 @@ export function ExperienceDetail({
                   {(s.kind === 'url' || s.attachment_path) && (
                     <button
                       type="button"
-                      onClick={() =>
-                        void window.api.ingest.openSource({
-                          kind: s.kind,
-                          uri_or_path: s.uri_or_path,
-                          attachment_path: s.attachment_path
-                        })
-                      }
+                      onClick={() => void window.api.ingest.openSource(s.id)}
                       className="text-xs font-semibold text-fg-brand hover:underline"
                     >
                       {s.kind === 'url' ? 'Open page' : 'Open file'}

@@ -1,8 +1,10 @@
-import { readFileSync } from 'fs'
+import { readFileSync, statSync } from 'fs'
 import { basename } from 'path'
 import { createSource, findSourceByHash, sha256, type Source } from '../db/repositories/sources'
 import { storeAttachment } from './attachments'
 import { parseDocument, parseUrlDocument } from './index'
+
+const MAX_IMPORT_BYTES = 25_000_000
 
 export interface IngestResult {
   ok: boolean
@@ -16,6 +18,8 @@ export interface IngestResult {
 async function ingestOneFile(path: string): Promise<IngestResult> {
   const name = basename(path)
   try {
+    if (statSync(path).size > MAX_IMPORT_BYTES)
+      return { ok: false, name, error: 'That file is too large to import (25 MB max).' }
     const bytes = readFileSync(path)
     const { hash, attachmentPath } = storeAttachment(bytes, name)
     const existing = findSourceByHash(hash)

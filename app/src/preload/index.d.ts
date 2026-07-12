@@ -156,11 +156,7 @@ export interface IngestApi {
   pickFiles: () => Promise<string[]>
   files: (paths: string[]) => Promise<IngestResult[]>
   url: (url: string) => Promise<IngestResult>
-  openSource: (source: {
-    kind: SourceKind
-    uri_or_path: string | null
-    attachment_path: string | null
-  }) => Promise<void>
+  openSource: (id: string) => Promise<void>
   pathForFile: (file: File) => string
 }
 export interface ResumeApi {

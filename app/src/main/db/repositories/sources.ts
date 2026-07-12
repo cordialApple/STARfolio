@@ -15,7 +15,11 @@ export const sourceInput = z.object({
   uri_or_path: trimmed(4000).nullable().optional(),
   attachment_path: trimmed(4000).nullable().optional(),
   content_hash: trimmed(128).nullable().optional(),
-  meta: z.record(z.string(), z.unknown()).nullable().optional()
+  meta: z
+    .record(z.string(), z.unknown())
+    .nullable()
+    .optional()
+    .refine((m) => !m || JSON.stringify(m).length <= 20_000, 'source meta is too large')
 })
 export type SourceInput = z.infer<typeof sourceInput>
 

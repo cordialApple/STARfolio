@@ -57,7 +57,7 @@ const api: IpcApi = {
     pickFiles: () => ipcRenderer.invoke('ingest:pickFiles'),
     files: (paths) => ipcRenderer.invoke('ingest:files', { paths }),
     url: (url) => ipcRenderer.invoke('ingest:url', { url }),
-    openSource: (source) => ipcRenderer.invoke('ingest:openSource', source),
+    openSource: (id) => ipcRenderer.invoke('ingest:openSource', { id }),
     pathForFile: (file) => webUtils.getPathForFile(file)
   },
   resume: {

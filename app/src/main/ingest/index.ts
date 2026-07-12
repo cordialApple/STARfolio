@@ -17,8 +17,21 @@ type Reply =
   | { id: string; ok: true; doc?: DocResult; url?: UrlResult }
   | { id: string; ok: false; error: string }
 
+const REQUEST_TIMEOUT_MS = 60_000
+
 let child: UtilityProcess | null = null
-const pending = new Map<string, { resolve: (v: DocResult | UrlResult) => void; reject: (e: Error) => void }>()
+const pending = new Map<
+  string,
+  { resolve: (v: DocResult | UrlResult) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+>()
+
+function settle(id: string): { resolve: (v: DocResult | UrlResult) => void; reject: (e: Error) => void } | undefined {
+  const p = pending.get(id)
+  if (!p) return undefined
+  clearTimeout(p.timer)
+  pending.delete(id)
+  return p
+}
 
 function ensureWorker(): UtilityProcess {
   if (child) return child
@@ -26,15 +39,17 @@ function ensureWorker(): UtilityProcess {
     serviceName: 'starfolio-ingest'
   })
   worker.on('message', (msg: Reply) => {
-    const p = pending.get(msg.id)
+    const p = settle(msg.id)
     if (!p) return
-    pending.delete(msg.id)
     if (msg.ok) p.resolve((msg.doc ?? msg.url)!)
     else p.reject(new Error(msg.error))
   })
   worker.on('exit', () => {
     child = null
-    for (const p of pending.values()) p.reject(new Error('ingest worker exited'))
+    for (const p of pending.values()) {
+      clearTimeout(p.timer)
+      p.reject(new Error('ingest worker exited'))
+    }
     pending.clear()
   })
   child = worker
@@ -47,7 +62,11 @@ function request<T extends DocResult | UrlResult>(
   const worker = ensureWorker()
   const id = randomUUID()
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (v: DocResult | UrlResult) => void, reject })
+    const timer = setTimeout(() => {
+      pending.delete(id)
+      reject(new Error('The document took too long to read and was skipped.'))
+    }, REQUEST_TIMEOUT_MS)
+    pending.set(id, { resolve: resolve as (v: DocResult | UrlResult) => void, reject, timer })
     worker.postMessage({ ...message, id })
   })
 }

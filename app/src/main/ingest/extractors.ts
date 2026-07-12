@@ -42,17 +42,19 @@ export async function extractPdf(bytes: Uint8Array, standardFontDataUrl: string)
     useSystemFonts: true
   })
   const doc = await task.promise
-  const pages: string[] = []
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i)
-    const content = await page.getTextContent()
-    const line = content.items.map((it) => ('str' in it ? it.str : '')).join(' ')
-    pages.push(line.replace(/[ \t]+/g, ' ').trim())
-    page.cleanup()
+  try {
+    const pages: string[] = []
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i)
+      const content = await page.getTextContent()
+      const line = content.items.map((it) => ('str' in it ? it.str : '')).join(' ')
+      pages.push(line.replace(/[ \t]+/g, ' ').trim())
+      page.cleanup()
+    }
+    return { text: pages.filter(Boolean).join('\n\n'), numPages: doc.numPages }
+  } finally {
+    await task.destroy()
   }
-  const numPages = doc.numPages
-  await task.destroy()
-  return { text: pages.filter(Boolean).join('\n\n'), numPages }
 }
 
 export function looksScanned(text: string, numPages: number): boolean {
@@ -69,12 +71,16 @@ export async function htmlToArticle(html: string, url: string): Promise<Article 
   const { JSDOM } = await import('jsdom')
   const { Readability } = await import('@mozilla/readability')
   const dom = new JSDOM(html, { url })
-  const parsed = new Readability(dom.window.document).parse()
-  if (!parsed?.content) return null
+  try {
+    const parsed = new Readability(dom.window.document).parse()
+    if (!parsed?.content) return null
 
-  const Turndown = (await import('turndown')).default
-  const td = new Turndown({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
-  td.remove(['script', 'style', 'nav', 'footer', 'aside'])
-  const markdown = td.turndown(parsed.content).trim()
-  return { title: parsed.title?.trim() || null, markdown }
+    const Turndown = (await import('turndown')).default
+    const td = new Turndown({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
+    td.remove(['script', 'style', 'nav', 'footer', 'aside'])
+    const markdown = td.turndown(parsed.content).trim()
+    return { title: parsed.title?.trim() || null, markdown }
+  } finally {
+    dom.window.close()
+  }
 }
