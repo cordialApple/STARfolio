@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { IpcApi } from './index.d'
+import type { IpcApi, ModelStatus } from './index.d'
 
 const api: IpcApi = {
   ping: () => ipcRenderer.invoke('ping'),
@@ -7,7 +7,13 @@ const api: IpcApi = {
     selfTest: () => ipcRenderer.invoke('db:selfTest')
   },
   embed: {
-    selfTest: () => ipcRenderer.invoke('embed:selfTest')
+    selfTest: () => ipcRenderer.invoke('embed:selfTest'),
+    modelStatus: () => ipcRenderer.invoke('embed:modelStatus'),
+    onStatus: (cb) => {
+      const handler = (_: Electron.IpcRendererEvent, status: ModelStatus): void => cb(status)
+      ipcRenderer.on('embed:status', handler)
+      return () => ipcRenderer.removeListener('embed:status', handler)
+    }
   },
   voice: {
     transcribe: (pcm, model) => ipcRenderer.invoke('voice:transcribe', { pcm, model })
@@ -36,12 +42,16 @@ const api: IpcApi = {
       return () => ipcRenderer.removeListener('ai:error', handler)
     }
   },
+  brain: {
+    extract: (text) => ipcRenderer.invoke('brain:extract', { text })
+  },
   bank: {
     create: (input) => ipcRenderer.invoke('bank:create', input),
     update: (id, input) => ipcRenderer.invoke('bank:update', { id, input }),
     remove: (id) => ipcRenderer.invoke('bank:delete', { id }),
     get: (id) => ipcRenderer.invoke('bank:get', { id }),
     list: (filter) => ipcRenderer.invoke('bank:list', filter),
+    search: (filter) => ipcRenderer.invoke('bank:search', filter),
     skills: () => ipcRenderer.invoke('bank:skills'),
     tags: () => ipcRenderer.invoke('bank:tags')
   }

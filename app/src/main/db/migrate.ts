@@ -4,10 +4,12 @@ import { sep } from 'path'
 import { copyFileSync, existsSync } from 'fs'
 import sql001 from './migrations/001_initial.sql?raw'
 import sql002 from './migrations/002_vec_tables.sql?raw'
+import sql003 from './migrations/003_embed_queue.sql?raw'
 
 export const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: sql001 },
-  { version: 2, sql: sql002 }
+  { version: 2, sql: sql002 },
+  { version: 3, sql: sql003 }
 ]
 
 export function loadVecExtension(db: Database.Database): void {

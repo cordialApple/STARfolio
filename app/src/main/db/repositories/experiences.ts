@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import { z } from 'zod'
 import type Database from 'better-sqlite3'
 import { getDb } from '../client'
@@ -6,6 +6,7 @@ import { getDb } from '../client'
 export const CONTEXTS = ['work', 'project', 'class', 'other'] as const
 export const STATUSES = ['draft', 'confirmed'] as const
 export const SKILL_KINDS = ['technical', 'soft', 'domain'] as const
+export const SOURCE_KINDS = ['paste', 'file', 'url', 'repo', 'spreadsheet', 'code'] as const
 
 const trimmed = (max: number): z.ZodString => z.string().trim().max(max)
 const isoDate = z
@@ -25,6 +26,13 @@ export const metricInput = z.object({
   unit: trimmed(40).nullable().optional()
 })
 
+export const sourceInput = z.object({
+  kind: z.enum(SOURCE_KINDS).default('paste'),
+  raw_text: trimmed(200_000).default(''),
+  title: trimmed(200).nullable().optional(),
+  uri_or_path: trimmed(2000).nullable().optional()
+})
+
 export const experienceInput = z.object({
   title: trimmed(200).default(''),
   situation: trimmed(20_000).default(''),
@@ -37,7 +45,9 @@ export const experienceInput = z.object({
   status: z.enum(STATUSES).default('draft'),
   skills: z.array(skillInput).max(50).default([]),
   tags: z.array(z.string().trim().min(1).max(80)).max(50).default([]),
-  metrics: z.array(metricInput).max(50).default([])
+  metrics: z.array(metricInput).max(50).default([]),
+  draft_state_json: trimmed(50_000).nullable().optional(),
+  source: sourceInput.optional()
 })
 
 export const listFilter = z
@@ -70,6 +80,14 @@ export interface Metric {
   value: number | null
   unit: string | null
 }
+export interface Source {
+  id: string
+  kind: (typeof SOURCE_KINDS)[number]
+  title: string | null
+  raw_text: string | null
+  uri_or_path: string | null
+  ingested_at: string
+}
 export interface Experience {
   id: string
   title: string
@@ -81,11 +99,13 @@ export interface Experience {
   happened_start: string | null
   happened_end: string | null
   status: (typeof STATUSES)[number]
+  draft_state_json: string | null
   created_at: string
   updated_at: string
   skills: Skill[]
   tags: Tag[]
   metrics: Metric[]
+  sources: Source[]
 }
 export interface ExperienceSummary {
   id: string
@@ -107,7 +127,7 @@ const splitNames = (v: string | null): string[] => (v ? v.split(SEP) : [])
 // FTS5 treats bare words like AND/OR/NEAR and chars like "*():- as operators; unquoted
 // user input throws "fts5: syntax error". Reduce to alnum tokens, quote each (neutralising
 // keywords), and make the final token a prefix so search-as-you-type matches.
-function toFtsMatchQuery(raw: string): string | null {
+export function toFtsMatchQuery(raw: string): string | null {
   const tokens = raw.match(/[\p{L}\p{N}]+/gu)
   if (!tokens || tokens.length === 0) return null
   return tokens.map((t, i) => (i === tokens.length - 1 ? `"${t}"*` : `"${t}"`)).join(' ')
@@ -155,6 +175,17 @@ function writeChildren(db: Database.Database, id: string, input: ExperienceInput
     insMetric.run(randomUUID(), id, m.label, m.value ?? null, m.unit ?? null)
 }
 
+function attachSource(db: Database.Database, experienceId: string, s: z.infer<typeof sourceInput>): void {
+  const sourceId = randomUUID()
+  const contentHash = createHash('sha256').update(s.raw_text).digest('hex')
+  db.prepare(
+    'INSERT INTO sources (id, kind, uri_or_path, title, raw_text, content_hash) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(sourceId, s.kind, s.uri_or_path ?? null, s.title ?? null, s.raw_text, contentHash)
+  db.prepare(
+    'INSERT OR IGNORE INTO experience_sources (experience_id, source_id) VALUES (?, ?)'
+  ).run(experienceId, sourceId)
+}
+
 export function createExperience(raw: unknown): Experience {
   const input = experienceInput.parse(raw)
   const db = getDb()
@@ -162,8 +193,8 @@ export function createExperience(raw: unknown): Experience {
   db.transaction(() => {
     db.prepare(
       `INSERT INTO experiences
-       (id, title, situation, task, action, result_text, context, happened_start, happened_end, status)
-       VALUES (@id, @title, @situation, @task, @action, @result_text, @context, @happened_start, @happened_end, @status)`
+       (id, title, situation, task, action, result_text, context, happened_start, happened_end, status, draft_state_json)
+       VALUES (@id, @title, @situation, @task, @action, @result_text, @context, @happened_start, @happened_end, @status, @draft_state_json)`
     ).run({
       id,
       title: input.title,
@@ -174,9 +205,11 @@ export function createExperience(raw: unknown): Experience {
       context: input.context,
       happened_start: input.happened_start ?? null,
       happened_end: input.happened_end ?? null,
-      status: input.status
+      status: input.status,
+      draft_state_json: input.draft_state_json ?? null
     })
     writeChildren(db, id, input)
+    if (input.source) attachSource(db, id, input.source)
   })()
   return getExperience(id)!
 }
@@ -191,7 +224,7 @@ export function updateExperience(id: string, raw: unknown): Experience {
       `UPDATE experiences SET
          title=@title, situation=@situation, task=@task, action=@action, result_text=@result_text,
          context=@context, happened_start=@happened_start, happened_end=@happened_end,
-         status=@status, updated_at=datetime('now')
+         status=@status, draft_state_json=@draft_state_json, updated_at=datetime('now')
        WHERE id=@id`
     ).run({
       id,
@@ -203,7 +236,8 @@ export function updateExperience(id: string, raw: unknown): Experience {
       context: input.context,
       happened_start: input.happened_start ?? null,
       happened_end: input.happened_end ?? null,
-      status: input.status
+      status: input.status,
+      draft_state_json: input.draft_state_json ?? null
     })
     writeChildren(db, id, input)
   })()
@@ -211,8 +245,15 @@ export function updateExperience(id: string, raw: unknown): Experience {
 }
 
 export function deleteExperience(id: string): { deleted: boolean } {
-  const info = getDb().prepare('DELETE FROM experiences WHERE id = ?').run(id)
-  return { deleted: info.changes > 0 }
+  const db = getDb()
+  // vec_experiences is a virtual table with no FK cascade, so drop its row explicitly —
+  // in one transaction so a crash can't orphan an embedding from its experience.
+  let changes = 0
+  db.transaction(() => {
+    db.prepare('DELETE FROM vec_experiences WHERE experience_id = ?').run(id)
+    changes = db.prepare('DELETE FROM experiences WHERE id = ?').run(id).changes
+  })()
+  return { deleted: changes > 0 }
 }
 
 export function getExperience(id: string): Experience | null {
@@ -220,10 +261,10 @@ export function getExperience(id: string): Experience | null {
   const row = db
     .prepare(
       `SELECT id, title, situation, task, action, result_text, context,
-              happened_start, happened_end, status, created_at, updated_at
+              happened_start, happened_end, status, draft_state_json, created_at, updated_at
        FROM experiences WHERE id = ?`
     )
-    .get(id) as Omit<Experience, 'skills' | 'tags' | 'metrics'> | undefined
+    .get(id) as Omit<Experience, 'skills' | 'tags' | 'metrics' | 'sources'> | undefined
   if (!row) return null
 
   const skills = db
@@ -241,8 +282,14 @@ export function getExperience(id: string): Experience | null {
   const metrics = db
     .prepare('SELECT id, label, value, unit FROM metrics WHERE experience_id = ? ORDER BY rowid')
     .all(id) as Metric[]
+  const sources = db
+    .prepare(
+      `SELECT s.id, s.kind, s.title, s.raw_text, s.uri_or_path, s.ingested_at FROM experience_sources es
+       JOIN sources s ON s.id = es.source_id WHERE es.experience_id = ? ORDER BY s.ingested_at`
+    )
+    .all(id) as Source[]
 
-  return { ...row, skills, tags, metrics }
+  return { ...row, skills, tags, metrics, sources }
 }
 
 const firstNonEmpty = (r: {
