@@ -23,6 +23,15 @@ export function reciprocalRankFusion(lists: string[][], k = 60): Map<string, num
   return scores
 }
 
+function rankedIds(fused: Map<string, number>): string[] {
+  return [...fused.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
+}
+
+// Embeddings are L2-normalised, so cosine = 1 - distance²/2.
+function cosineFromDistance(distance: number): number {
+  return 1 - (distance * distance) / 2
+}
+
 function ftsCandidates(query: string, limit: number): string[] {
   const match = toFtsMatchQuery(query)
   if (!match) return []
@@ -70,9 +79,8 @@ export async function searchExperiences(
   }
 
   const fused = reciprocalRankFusion([fts, vec])
-  return [...fused.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id]) => allowedById.get(id))
+  return rankedIds(fused)
+    .map((id) => allowedById.get(id))
     .filter((s): s is ExperienceSummary => s !== undefined)
     .slice(0, RESULTS)
 }
@@ -84,7 +92,6 @@ export interface StoryMatch {
 }
 
 // Above this cosine similarity we treat a spoken answer as already being the same banked story.
-// Embeddings are L2-normalised, so cosine = 1 - distance²/2.
 export const STORY_MATCH_THRESHOLD = 0.8
 
 // Semantic "is this story already in the bank?" check: embed the answer, take the nearest banked
@@ -111,8 +118,7 @@ export async function matchBankedStory(
     )
     .get(vector) as { id: string; title: string; distance: number } | undefined
   if (!row) return null
-  const similarity = 1 - (row.distance * row.distance) / 2
-  return { id: row.id, title: row.title, similarity }
+  return { id: row.id, title: row.title, similarity: cosineFromDistance(row.distance) }
 }
 
 export interface CorpusHit {
@@ -183,10 +189,7 @@ export async function searchCorpus(
   }
   const distanceById = new Map(vec.map((v) => [v.id, v.distance]))
   const fused = reciprocalRankFusion([fts, vec.map((v) => v.id)])
-  const topIds = [...fused.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([id]) => id)
+  const topIds = rankedIds(fused).slice(0, limit)
 
   return getChunks(topIds).map((c) => {
     const d = distanceById.get(c.id)
@@ -195,7 +198,7 @@ export async function searchCorpus(
       text: c.text,
       docId: c.doc_id,
       title: c.title,
-      similarity: d === undefined ? 0 : 1 - (d * d) / 2
+      similarity: d === undefined ? 0 : cosineFromDistance(d)
     }
   })
 }
