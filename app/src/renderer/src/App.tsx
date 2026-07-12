@@ -5,6 +5,7 @@ import { BankView } from './bank/BankView'
 import { ExperienceDetail } from './bank/ExperienceDetail'
 import { StarForm } from './capture/StarForm'
 import { BrainDump } from './capture/BrainDump'
+import { ImportWizard } from './ingest/ImportWizard'
 import { StoryView } from './story/StoryView'
 import { PracticeView } from './practice/PracticeView'
 import { SettingsView } from './settings/SettingsView'
@@ -16,6 +17,7 @@ type Route =
   | { name: 'list' }
   | { name: 'new' }
   | { name: 'brain' }
+  | { name: 'import' }
   | { name: 'generate' }
   | { name: 'practice' }
   | { name: 'settings' }
@@ -96,6 +98,7 @@ function App(): React.JSX.Element {
             onOpen={(id) => setRoute({ name: 'detail', id })}
             onNew={() => setRoute({ name: 'new' })}
             onBrainDump={() => setRoute({ name: 'brain' })}
+            onImport={() => setRoute({ name: 'import' })}
           />
         )}
 
@@ -110,6 +113,21 @@ function App(): React.JSX.Element {
             skills={taxonomy.skills}
             tags={taxonomy.tags}
             onExit={() => setRoute({ name: 'list' })}
+            onSaved={(id) => {
+              bump()
+              setRoute({ name: 'detail', id })
+            }}
+          />
+        )}
+
+        {route.name === 'import' && (
+          <ImportWizard
+            skills={taxonomy.skills}
+            tags={taxonomy.tags}
+            onExit={() => {
+              bump()
+              setRoute({ name: 'list' })
+            }}
             onSaved={(id) => {
               bump()
               setRoute({ name: 'detail', id })

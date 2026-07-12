@@ -1,8 +1,11 @@
 import { z } from 'zod'
-import { clipboard, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import { clipboard, dialog, shell, BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import { setSecret, hasSecret, deleteSecret } from './settings/secrets'
 import { startChat, cancelStream } from './ai/client'
-import { extractStar } from './ai/extract'
+import { extractStar, extractResumeStar } from './ai/extract'
+import { ingestFiles, ingestUrl } from './ingest/service'
+import { getSource } from './db/repositories/sources'
+import { assertPublicHttpUrl } from './ingest/fetch-url'
 import { streamStory, storyConfig } from './ai/story'
 import { saveStory, getStory, listStories, storySaveInput } from './db/repositories/stories'
 import { startPractice, answerPractice, answerArg } from './practice'
@@ -78,6 +81,33 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   handle(ipcMain, 'ai:cancel', nonEmpty, (_e, requestId) => cancelStream(requestId))
 
   handle(ipcMain, 'brain:extract', extractArg, (_e, { text }) => extractStar(text))
+  handle(ipcMain, 'resume:extract', extractArg, (_e, { text }) => extractResumeStar(text))
+
+  ipcMain.handle('ingest:pickFiles', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const opts: Electron.OpenDialogOptions = {
+      title: 'Import documents',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Documents', extensions: ['pdf', 'docx', 'txt', 'md', 'markdown'] }]
+    }
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    return res.canceled ? [] : res.filePaths
+  })
+  const ingestFilesArg = z.object({ paths: z.array(z.string().min(1).max(4000)).min(1).max(50) })
+  handle(ipcMain, 'ingest:files', ingestFilesArg, (_e, { paths }) => ingestFiles(paths))
+  const ingestUrlArg = z.object({ url: z.string().trim().min(1).max(4000) })
+  handle(ipcMain, 'ingest:url', ingestUrlArg, (_e, { url }) => ingestUrl(url))
+  handle(ipcMain, 'ingest:openSource', idArg, async (_e, { id }) => {
+    // Resolve the path/url from our own DB — never trust a renderer-supplied path.
+    const s = getSource(id)
+    if (!s) return
+    if (s.kind === 'url' && s.uri_or_path) {
+      assertPublicHttpUrl(s.uri_or_path)
+      await shell.openExternal(s.uri_or_path)
+    } else if (s.attachment_path) {
+      await shell.openPath(s.attachment_path)
+    }
+  })
 
   handle(ipcMain, 'story:generate', storyConfig, (event, config) =>
     streamStory(config, event.sender)

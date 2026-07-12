@@ -62,6 +62,7 @@ interface DraftState {
 export interface StarSeed {
   values: Partial<FormState>
   source?: SourceInput
+  sourceId?: string
   gaps?: Gap[]
   confidence?: Partial<Record<BeatKey, Confidence>>
 }
@@ -186,7 +187,8 @@ export function StarForm({
       // A confirmed record is complete, so its draft-conversation state is cleared.
       draft_state_json: status === 'draft' && gaps.length > 0 ? JSON.stringify(draftState) : null
     }
-    if (!initial && seed?.source) input.source = seed.source
+    if (!initial && seed?.sourceId) input.source_id = seed.sourceId
+    else if (!initial && seed?.source) input.source = seed.source
     return input
   }
 

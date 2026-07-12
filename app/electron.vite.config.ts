@@ -10,7 +10,8 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           'embed.worker': resolve('src/main/embed/worker.ts'),
-          'voice.worker': resolve('src/main/voice/worker.ts')
+          'voice.worker': resolve('src/main/voice/worker.ts'),
+          'ingest.worker': resolve('src/main/ingest/worker.ts')
         }
       }
     }

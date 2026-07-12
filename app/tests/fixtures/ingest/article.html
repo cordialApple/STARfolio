@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>How we cut deploy time by 80%</title>
+    <meta name="description" content="A write-up of a pipeline rebuild." />
+  </head>
+  <body>
+    <nav><a href="/">Home</a> <a href="/blog">Blog</a></nav>
+    <header><h1>How we cut deploy time by 80%</h1></header>
+    <article>
+      <p>
+        Our deploys took forty minutes and blocked every other team. I owned the
+        project to get that number down without a freeze.
+      </p>
+      <h2>The rebuild</h2>
+      <p>
+        I rebuilt the pipeline around a content-addressed cache and split the test
+        suite into parallel shards. Each shard published its own status so a single
+        flaky test no longer failed the whole run.
+      </p>
+      <ul>
+        <li>Cache hit rate climbed to 92%.</li>
+        <li>Deploys dropped to eight minutes.</li>
+      </ul>
+      <p>The team ships on every merge now instead of batching releases.</p>
+    </article>
+    <footer><p>&copy; 2026 Example Inc.</p></footer>
+    <script>console.log('tracking pixel')</script>
+  </body>
+</html>

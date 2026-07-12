@@ -6,6 +6,7 @@ import { initDb } from './db/client'
 import { stopEmbedWorker } from './embed'
 import { backfillEmbeddings, kickEmbedDrain } from './embed/queue'
 import { stopWhisperWorker } from './voice'
+import { stopIngestWorker } from './ingest'
 
 function configureMicPermissions(): void {
   const ses = session.defaultSession
@@ -71,6 +72,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   stopEmbedWorker()
   stopWhisperWorker()
+  stopIngestWorker()
 })
 
 app.on('window-all-closed', () => {

@@ -31,6 +31,15 @@ const BEAT_FIELD: Record<StarBeat, keyof Pick<Experience, 'situation' | 'task' |
     r: 'result_text'
   }
 
+const SOURCE_KIND_LABEL: Record<string, string> = {
+  paste: 'Pasted notes',
+  file: 'File',
+  url: 'Web page',
+  repo: 'Repository',
+  spreadsheet: 'Spreadsheet',
+  code: 'Code'
+}
+
 export interface ExperienceDetailProps {
   id: string
   onBack: () => void
@@ -250,10 +259,26 @@ export function ExperienceDetail({
           <ul className="space-y-2">
             {exp.sources.map((s) => (
               <li key={s.id} className="rounded-lg border border-line bg-raised p-3">
-                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-faint">
-                  {s.kind === 'paste' ? 'Pasted notes' : s.kind}
-                  {s.title ? ` — ${s.title}` : ''}
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-faint">
+                    {SOURCE_KIND_LABEL[s.kind] ?? s.kind}
+                    {s.title ? ` — ${s.title}` : ''}
+                  </div>
+                  {(s.kind === 'url' || s.attachment_path) && (
+                    <button
+                      type="button"
+                      onClick={() => void window.api.ingest.openSource(s.id)}
+                      className="text-xs font-semibold text-fg-brand hover:underline"
+                    >
+                      {s.kind === 'url' ? 'Open page' : 'Open file'}
+                    </button>
+                  )}
                 </div>
+                {s.uri_or_path && s.kind !== 'paste' && (
+                  <div className="mb-1 truncate text-xs text-faint" title={s.uri_or_path}>
+                    {s.uri_or_path}
+                  </div>
+                )}
                 {s.raw_text && (
                   <details>
                     <summary className="cursor-pointer text-sm text-muted hover:text-ink">
