@@ -1,7 +1,7 @@
 import type { WebContents } from 'electron'
 import { z } from 'zod'
 import { MODELS } from './models'
-import { startStream } from './client'
+import { startStream, runToCompletion } from './client'
 import { getExperience, type Experience } from '../db/repositories/experiences'
 
 export const STORY_LENGTHS = ['short', 'medium', 'detailed'] as const
@@ -95,18 +95,38 @@ export class NoExperiencesError extends Error {
   }
 }
 
-// Resolve the selected experiences from the DB (main is the authority on what content the
-// model sees) and stream a grounded story from them via Sonnet.
-export function streamStory(config: StoryConfig, sender: WebContents): void {
+// Main is the authority on what content the model sees: resolve the selected ids to real banked
+// experiences, dropping any that no longer exist, and refuse to generate from nothing.
+function resolveStoryExperiences(config: StoryConfig): Experience[] {
   const experiences = config.experienceIds
     .map((id) => getExperience(id))
     .filter((e): e is Experience => e !== null)
   if (experiences.length === 0) throw new NoExperiencesError()
+  return experiences
+}
 
+// Stream a grounded story from the selected experiences via Sonnet.
+export function streamStory(config: StoryConfig, sender: WebContents): void {
+  const experiences = resolveStoryExperiences(config)
   const { system, prompt, maxTokens } = buildStoryPrompt(config, experiences)
   startStream(
     { prompt, system, model: MODELS.interview, maxTokens, feature: 'story' },
     config.requestId,
     sender
   )
+}
+
+// Buffered variant for callers with no WebContents (the loopback bridge): same grounded prompt,
+// returned as one string plus the ids actually used as provenance.
+export async function generateStoryText(
+  config: StoryConfig,
+  signal: AbortSignal
+): Promise<{ story: string; experienceIds: string[] }> {
+  const experiences = resolveStoryExperiences(config)
+  const { system, prompt, maxTokens } = buildStoryPrompt(config, experiences)
+  const story = await runToCompletion(
+    { prompt, system, model: MODELS.interview, maxTokens, feature: 'story' },
+    signal
+  )
+  return { story, experienceIds: experiences.map((e) => e.id) }
 }
