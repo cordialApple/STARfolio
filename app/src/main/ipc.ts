@@ -1,8 +1,10 @@
 import { z } from 'zod'
-import type { IpcMain, IpcMainInvokeEvent } from 'electron'
+import { clipboard, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import { setSecret, hasSecret, deleteSecret } from './settings/secrets'
-import { startStream, cancelStream } from './ai/client'
+import { startChat, cancelStream } from './ai/client'
 import { extractStar } from './ai/extract'
+import { streamStory, storyConfig } from './ai/story'
+import { saveStory, getStory, listStories, storySaveInput } from './db/repositories/stories'
 import { searchExperiences } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
@@ -37,6 +39,7 @@ const transcribeArg = z.object({
 const idArg = z.object({ id: nonEmpty.max(64) })
 const updateArg = z.object({ id: nonEmpty.max(64), input: experienceInput })
 const extractArg = z.object({ text: z.string().min(1).max(200_000) })
+const copyArg = z.object({ text: z.string().max(50_000) })
 
 function handle<S extends z.ZodTypeAny, R>(
   ipcMain: IpcMain,
@@ -58,11 +61,21 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('ai:deleteKey', () => deleteSecret('anthropic_api_key'))
   handle(ipcMain, 'ai:setKey', nonEmpty, (_e, key) => setSecret('anthropic_api_key', key))
   handle(ipcMain, 'ai:stream', streamArg, (event, { prompt, requestId }) =>
-    startStream(prompt, requestId, event.sender)
+    startChat(prompt, requestId, event.sender)
   )
   handle(ipcMain, 'ai:cancel', nonEmpty, (_e, requestId) => cancelStream(requestId))
 
   handle(ipcMain, 'brain:extract', extractArg, (_e, { text }) => extractStar(text))
+
+  handle(ipcMain, 'story:generate', storyConfig, (event, config) =>
+    streamStory(config, event.sender)
+  )
+  handle(ipcMain, 'story:cancel', nonEmpty, (_e, requestId) => cancelStream(requestId))
+  handle(ipcMain, 'story:save', storySaveInput, (_e, input) => saveStory(input))
+  handle(ipcMain, 'story:get', idArg, (_e, { id }) => getStory(id))
+  ipcMain.handle('story:list', () => listStories())
+
+  handle(ipcMain, 'clipboard:write', copyArg, (_e, { text }) => clipboard.writeText(text))
 
   handle(ipcMain, 'bank:create', experienceInput, (_e, input) => {
     const exp = createExperience(input)

@@ -5,11 +5,14 @@ import { BankView } from './bank/BankView'
 import { ExperienceDetail } from './bank/ExperienceDetail'
 import { StarForm } from './capture/StarForm'
 import { BrainDump } from './capture/BrainDump'
+import { StoryView } from './story/StoryView'
+import { cn } from './lib/cn'
 
 type Route =
   | { name: 'list' }
   | { name: 'new' }
   | { name: 'brain' }
+  | { name: 'generate' }
   | { name: 'detail'; id: string }
   | { name: 'edit'; exp: Experience }
 
@@ -46,7 +49,20 @@ function App(): React.JSX.Element {
             <StarRail filled={['s', 't', 'a', 'r']} variant="mark" />
             STARfolio
           </button>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <nav className="flex items-center gap-1">
+              <NavTab active={route.name !== 'generate'} onClick={() => setRoute({ name: 'list' })}>
+                Bank
+              </NavTab>
+              <NavTab
+                active={route.name === 'generate'}
+                onClick={() => setRoute({ name: 'generate' })}
+              >
+                Generate
+              </NavTab>
+            </nav>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
@@ -59,6 +75,8 @@ function App(): React.JSX.Element {
             onBrainDump={() => setRoute({ name: 'brain' })}
           />
         )}
+
+        {route.name === 'generate' && <StoryView />}
 
         {route.name === 'brain' && (
           <BrainDump
@@ -111,6 +129,30 @@ function App(): React.JSX.Element {
         )}
       </main>
     </div>
+  )
+}
+
+function NavTab({
+  active,
+  onClick,
+  children
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors',
+        active ? 'bg-raised text-ink' : 'text-muted hover:text-ink'
+      )}
+    >
+      {children}
+    </button>
   )
 }
 

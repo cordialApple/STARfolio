@@ -130,6 +130,58 @@ export interface StarExtraction {
 export interface BrainApi {
   extract: (text: string) => Promise<StarExtraction>
 }
+
+export type StoryLength = 'short' | 'medium' | 'detailed'
+export type StoryTone = 'professional' | 'conversational' | 'confident'
+export type StoryKind = 'jd' | 'genre'
+export interface StoryPrompt {
+  kind: StoryKind
+  promptText: string
+  length: StoryLength
+  tone: StoryTone
+}
+export interface StoryConfig extends StoryPrompt {
+  requestId: string
+  experienceIds: string[]
+  notes?: string
+}
+export interface StorySaveInput {
+  content: string
+  experienceIds: string[]
+  prompt: StoryPrompt
+  notes?: string | null
+  parentStoryId?: string | null
+}
+export interface StoryExperienceRef {
+  id: string
+  title: string
+}
+export interface Story {
+  id: string
+  content: string
+  prompt: StoryPrompt
+  notes: string | null
+  parent_story_id: string | null
+  created_at: string
+  experiences: StoryExperienceRef[]
+}
+export interface StorySummary {
+  id: string
+  snippet: string
+  prompt: StoryPrompt
+  created_at: string
+  experiences: StoryExperienceRef[]
+}
+export interface StoryApi {
+  generate: (config: StoryConfig) => Promise<void>
+  cancel: (requestId: string) => Promise<void>
+  save: (input: StorySaveInput) => Promise<Story>
+  get: (id: string) => Promise<Story | null>
+  list: () => Promise<StorySummary[]>
+}
+export interface ClipboardApi {
+  write: (text: string) => Promise<void>
+}
 export interface ExperienceSummary {
   id: string
   title: string
@@ -171,6 +223,8 @@ export interface IpcApi {
   voice: VoiceApi
   ai: AiApi
   brain: BrainApi
+  story: StoryApi
+  clipboard: ClipboardApi
   bank: BankApi
 }
 

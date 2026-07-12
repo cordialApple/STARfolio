@@ -19,5 +19,14 @@ export type {
   Confidence,
   GapField,
   ModelStatus,
-  ModelPhase
+  ModelPhase,
+  Story,
+  StorySummary,
+  StoryConfig,
+  StoryPrompt,
+  StorySaveInput,
+  StoryExperienceRef,
+  StoryLength,
+  StoryTone,
+  StoryKind
 } from '../../../preload/index.d'
