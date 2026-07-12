@@ -109,6 +109,7 @@
     ],
     "win": {
       "executableName": "STARfolio",
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
