@@ -80,7 +80,10 @@ export async function answerTechnical(
   const question = currentQuestion(arg.sessionId)
   if (!question) throw new Error('no question to answer yet')
 
-  const chunks = await searchCorpus(retrievalQuery(config, question), config.discipline, MAX_CHUNKS)
+  let chunks = await searchCorpus(retrievalQuery(config, question), config.discipline, MAX_CHUNKS)
+  // Broaden if the scoped query found nothing, so a follow-up can still cite real material.
+  if (chunks.length === 0) chunks = await searchCorpus(config.promptText, undefined, MAX_CHUNKS)
+
   const turn = await evaluateTechnicalAnswer({
     config,
     chunks,
@@ -89,8 +92,11 @@ export async function answerTechnical(
     answer: arg.answer
   })
 
+  // Checkpoint invariant: a follow-up question must cite >=1 chunk. If retrieval came up empty
+  // (e.g. the corpus was emptied mid-session), end the session rather than emit a citation-less
+  // question — ensureCited already guarantees a real citation whenever chunks exist.
   const nextText = turn.next_text.trim()
-  const ask = turn.next_kind !== 'done' && nextText
+  const ask = turn.next_kind !== 'done' && !!nextText && turn.cited_chunk_ids.length > 0
   commitAnswer({
     sessionId: arg.sessionId,
     answer: arg.answer,
@@ -102,8 +108,8 @@ export async function answerTechnical(
 
   return {
     feedback: turn.feedback,
-    next_kind: turn.next_kind,
-    next_text: nextText,
+    next_kind: ask ? turn.next_kind : 'done',
+    next_text: ask ? nextText : '',
     citations: ask ? citationsFor(turn.cited_chunk_ids, chunks) : []
   }
 }

@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   firstTechnicalQuestion,
   evaluateTechnicalAnswer,
   type TechnicalConfig
 } from '../../src/main/ai/technical'
 import type { CorpusHit } from '../../src/main/search'
+import { initDb, getDb } from '../../src/main/db/client'
+import { createCorpusDoc, insertChunks, deleteCorpusDoc } from '../../src/main/db/repositories/corpus'
+import { startTechnical, answerTechnical } from '../../src/main/technical'
 
 const CHUNKS: CorpusHit[] = [
   { chunkId: 'c1', text: 'raft consensus and leader election', docId: 'd1', title: 'Consensus', similarity: 0.9 },
@@ -47,6 +50,38 @@ describe('technical cite-guarantee', () => {
     const client = mockClient({ feedback, next_kind: 'done', next_text: '', cited_chunk_ids: [] })
     const turn = await evaluateTechnicalAnswer({ config: CONFIG, chunks: CHUNKS, asked: ['a', 'b', 'c'], question: 'q', answer: 'a' }, client as never)
     expect(turn.cited_chunk_ids).toEqual([])
+  })
+})
+
+describe('answerTechnical empty-corpus guard', () => {
+  beforeEach(() => {
+    process.env.STARFOLIO_AI_STUB = '1'
+    process.env.STARFOLIO_EMBED_STUB = '1'
+    initDb(':memory:')
+  })
+  afterEach(() => {
+    delete process.env.STARFOLIO_AI_STUB
+    delete process.env.STARFOLIO_EMBED_STUB
+  })
+
+  it('ends the session rather than emit a citation-less follow-up when the corpus is emptied', async () => {
+    const db = getDb()
+    const docId = createCorpusDoc(db, 'Design', 'systems', null)
+    const ids = insertChunks(db, docId, ['a token bucket rate limiter design in redis'])
+    const insVec = db.prepare('INSERT OR REPLACE INTO vec_corpus (chunk_id, embedding) VALUES (?, ?)')
+    const v = new Float32Array(384)
+    v[0] = 1
+    insVec.run(ids[0], v)
+
+    const start = await startTechnical({ promptText: 'rate limiter', discipline: 'systems' })
+    expect(start.citations.length).toBeGreaterThanOrEqual(1)
+
+    deleteCorpusDoc(docId)
+
+    const res = await answerTechnical({ sessionId: start.sessionId, answer: 'I used a token bucket in redis with atomic refills and a local fallback during partitions to stay available.' })
+    // The invariant holds by construction: no non-terminal question ships without a citation.
+    if (res.next_kind !== 'done') expect(res.citations.length).toBeGreaterThanOrEqual(1)
+    else expect(res.citations).toEqual([])
   })
 })
 

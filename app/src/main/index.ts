@@ -5,6 +5,7 @@ import { registerIpcHandlers } from './ipc'
 import { initDb } from './db/client'
 import { stopEmbedWorker } from './embed'
 import { backfillEmbeddings, kickEmbedDrain } from './embed/queue'
+import { backfillCorpusEmbeddings, kickCorpusEmbedDrain } from './embed/corpus-queue'
 import { stopWhisperWorker } from './voice'
 import { stopIngestWorker } from './ingest'
 
@@ -60,6 +61,8 @@ app.whenReady().then(() => {
   try {
     backfillEmbeddings()
     kickEmbedDrain()
+    backfillCorpusEmbeddings()
+    kickCorpusEmbedDrain()
   } catch {
     // A missing model or worker must never block startup; the queue retries on its own.
   }
