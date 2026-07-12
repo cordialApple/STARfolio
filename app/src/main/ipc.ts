@@ -13,7 +13,7 @@ import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
 import { embedSelfTest, getModelStatus } from './embed'
 import { transcribe } from './voice'
-import { whisperModels, ensureWhisperModel, deleteWhisperModel } from './voice/model'
+import { whisperModels, ensureWhisperModel, deleteWhisperModel, WHISPER_MODELS } from './voice/model'
 import {
   experienceInput,
   listFilter,
@@ -29,7 +29,6 @@ import {
 const nonEmpty = z.string().min(1)
 const MAX_PROMPT = 100_000
 const MAX_PCM_SAMPLES = 16_000 * 300 // 5 minutes at 16 kHz — a generous upper bound
-const WHISPER_MODELS = ['tiny.en', 'base.en', 'small.en'] as const
 
 const streamArg = z.object({
   prompt: z.string().min(1).max(MAX_PROMPT),

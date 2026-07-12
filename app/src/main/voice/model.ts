@@ -15,11 +15,16 @@ export interface WhisperModelInfo {
   status: ModelStatus
 }
 
+// Single source of truth for the installable model set — the IPC-boundary zod enum imports this
+// so the accept-list can never drift from the manager's actual models.
+export const WHISPER_MODELS = ['tiny.en', 'base.en', 'small.en'] as const
+export type WhisperModel = (typeof WHISPER_MODELS)[number]
+
 interface ModelDef {
   url: string
   sizeMB: number
 }
-const MODELS: Record<string, ModelDef> = {
+const MODELS: Record<WhisperModel, ModelDef> = {
   'tiny.en': {
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin',
     sizeMB: 75
@@ -33,8 +38,6 @@ const MODELS: Record<string, ModelDef> = {
     sizeMB: 466
   }
 }
-
-export const WHISPER_MODELS = Object.keys(MODELS)
 
 const statuses = new Map<string, ModelStatus>()
 
@@ -104,7 +107,13 @@ async function download(name: string, dest: string): Promise<void> {
     renameSync(tmp, dest)
     setStatus(name, { phase: 'ready', progress: 100, error: null })
   } catch (err) {
-    file.destroy()
+    // Wait for the fd to actually close before unlinking — on Windows rmSync can EBUSY against a
+    // still-closing handle.
+    await new Promise<void>((resolve) => {
+      if (file.destroyed) return resolve()
+      file.once('close', () => resolve())
+      file.destroy()
+    })
     rmSync(tmp, { force: true })
     setStatus(name, { phase: 'error', progress: 0, error: (err as Error).message })
     throw err

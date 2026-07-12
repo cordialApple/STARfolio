@@ -72,9 +72,15 @@ export function VoiceModelManager({ selected, onSelect }: VoiceModelManagerProps
                   <Badge tone="success">Installed</Badge>
                 ) : downloading ? (
                   <Badge tone="info">{m.status.progress}%</Badge>
+                ) : m.status.phase === 'error' ? (
+                  <Badge tone="danger">Failed</Badge>
                 ) : null}
               </div>
-              <p className="text-xs text-muted">{HINTS[m.name]}</p>
+              <p className="text-xs text-muted">
+                {m.status.phase === 'error' && m.status.error
+                  ? `Download failed: ${m.status.error}`
+                  : HINTS[m.name]}
+              </p>
             </div>
 
             {downloading ? (
@@ -97,7 +103,7 @@ export function VoiceModelManager({ selected, onSelect }: VoiceModelManagerProps
                 onClick={() => void download(m.name)}
               >
                 <Download className="size-4" />
-                Download
+                {m.status.phase === 'error' ? 'Retry' : 'Download'}
               </Button>
             )}
           </li>
