@@ -18,7 +18,8 @@ import { ingestCorpusFiles, ingestCorpusUrl } from './ingest/corpus-service'
 import { listCorpusDocs, deleteCorpusDoc, corpusDisciplines } from './db/repositories/corpus'
 import { generateBullets } from './ai/bullets'
 import { markdownToDocx } from './export/docx'
-import { writeFileSync } from 'fs'
+import { writeFileSync, readFileSync } from 'fs'
+import { exportBank, importBank, backupTo } from './db/backup'
 import { getSession, listSessions, endSession } from './db/repositories/practice'
 import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
@@ -67,6 +68,17 @@ function handle<S extends z.ZodTypeAny, R>(
 }
 
 export function registerIpcHandlers(ipcMain: IpcMain): void {
+  async function saveDialog(opts: Electron.SaveDialogOptions): Promise<string | null> {
+    const win = BrowserWindow.getFocusedWindow()
+    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+    return res.canceled || !res.filePath ? null : res.filePath
+  }
+  async function openDialog(opts: Electron.OpenDialogOptions): Promise<string | null> {
+    const win = BrowserWindow.getFocusedWindow()
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]
+  }
+
   ipcMain.handle('ping', () => 'pong')
   ipcMain.handle('db:selfTest', () => dbSelfTest())
   ipcMain.handle('embed:selfTest', () => embedSelfTest())
@@ -106,15 +118,9 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   handle(ipcMain, 'ingest:files', ingestFilesArg, (_e, { paths }) => ingestFiles(paths))
   const ingestUrlArg = z.object({ url: z.string().trim().min(1).max(4000) })
   handle(ipcMain, 'ingest:url', ingestUrlArg, (_e, { url }) => ingestUrl(url))
-  ipcMain.handle('ingest:pickFolder', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    const opts: Electron.OpenDialogOptions = {
-      title: 'Import a code folder',
-      properties: ['openDirectory']
-    }
-    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
-    return res.canceled ? null : (res.filePaths[0] ?? null)
-  })
+  ipcMain.handle('ingest:pickFolder', () =>
+    openDialog({ title: 'Import a code folder', properties: ['openDirectory'] })
+  )
   handle(ipcMain, 'ingest:codeFolder', z.object({ path: z.string().min(1).max(4000) }), (_e, { path }) =>
     ingestCodeFolder(path)
   )
@@ -173,16 +179,14 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
     filename: z.string().trim().max(120).default('resume')
   })
   handle(ipcMain, 'resume:export', exportArg, async (_e, { markdown, format, filename }) => {
-    const win = BrowserWindow.getFocusedWindow()
     const safe = filename.replace(/[^\w.-]+/g, '-') || 'resume'
-    const opts: Electron.SaveDialogOptions = {
+    const path = await saveDialog({
       defaultPath: `${safe}.${format}`,
       filters: [{ name: format === 'docx' ? 'Word document' : 'Markdown', extensions: [format] }]
-    }
-    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
-    if (res.canceled || !res.filePath) return { saved: false }
-    writeFileSync(res.filePath, format === 'docx' ? markdownToDocx(markdown) : Buffer.from(markdown, 'utf8'))
-    return { saved: true, path: res.filePath }
+    })
+    if (!path) return { saved: false }
+    writeFileSync(path, format === 'docx' ? markdownToDocx(markdown) : Buffer.from(markdown, 'utf8'))
+    return { saved: true, path }
   })
 
   handle(ipcMain, 'story:save', storySaveInput, (_e, input) => saveStory(input))
@@ -243,4 +247,30 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   )
   ipcMain.handle('bank:skills', () => listSkills())
   ipcMain.handle('bank:tags', () => listTags())
+
+  const jsonFilter = [{ name: 'JSON', extensions: ['json'] }]
+
+  ipcMain.handle('bank:exportJson', async () => {
+    const path = await saveDialog({ defaultPath: 'starfolio-bank.json', filters: jsonFilter })
+    if (!path) return { saved: false }
+    writeFileSync(path, JSON.stringify(exportBank(), null, 2), 'utf8')
+    return { saved: true, path }
+  })
+  ipcMain.handle('bank:importJson', async () => {
+    const path = await openDialog({ properties: ['openFile'], filters: jsonFilter })
+    if (!path) return { imported: 0, canceled: true }
+    const { imported, ids } = importBank(JSON.parse(readFileSync(path, 'utf8')))
+    for (const id of ids) enqueueEmbed(id)
+    if (ids.length) kickEmbedDrain()
+    return { imported, canceled: false }
+  })
+  ipcMain.handle('backup:create', async () => {
+    const stamp = new Date().toISOString().slice(0, 10)
+    const path = await saveDialog({
+      defaultPath: `superstar-backup-${stamp}.db`,
+      filters: [{ name: 'SQLite database', extensions: ['db'] }]
+    })
+    if (!path) return { saved: false }
+    return { saved: true, ...backupTo(path) }
+  })
 }

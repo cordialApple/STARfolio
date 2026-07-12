@@ -126,6 +126,11 @@ const api: IpcApi = {
     matchStory: (text) => ipcRenderer.invoke('bank:matchStory', { text }),
     skills: () => ipcRenderer.invoke('bank:skills'),
     tags: () => ipcRenderer.invoke('bank:tags')
+  },
+  backup: {
+    exportJson: () => ipcRenderer.invoke('bank:exportJson'),
+    importJson: () => ipcRenderer.invoke('bank:importJson'),
+    create: () => ipcRenderer.invoke('backup:create')
   }
 }
 

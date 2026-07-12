@@ -431,6 +431,12 @@ export interface BankApi {
   tags: () => Promise<Tag[]>
 }
 
+export interface BackupApi {
+  exportJson: () => Promise<{ saved: boolean; path?: string }>
+  importJson: () => Promise<{ imported: number; canceled: boolean }>
+  create: () => Promise<{ saved: boolean; path?: string }>
+}
+
 export interface IpcApi {
   ping: () => Promise<string>
   db: DbApi
@@ -451,6 +457,7 @@ export interface IpcApi {
   technical: TechnicalApi
   corpus: CorpusApi
   bank: BankApi
+  backup: BackupApi
 }
 
 declare global {

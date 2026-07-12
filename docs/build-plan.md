@@ -17,6 +17,6 @@ Ordering logic: walking skeleton with all risk spikes first; then a lean design 
 | 8 | [Evidence ingestion + knowledge graph](stages/stage-08-evidence-ingestion.md) | spreadsheets/code/repos; entities/edges layer | ☑ |
 | 9 | [Technical-interview layer (bonus)](stages/stage-09-technical-layer.md) | practice over your own reference corpus | ☑ |
 | 10 | [Written materials (bonus)](stages/stage-10-written-materials.md) | JD-tailored resume bullets + resume export | ☑ |
-| 11 | [Maintain, polish, distribute](stages/stage-11-maintain.md) | nudges, export/backup, updater, onboarding | ☐ |
+| 11 | [Maintain, polish, distribute](stages/stage-11-maintain.md) | nudges, export/backup, updater, onboarding | ◐ |
 
 Status legend: ☐ not started · ◐ in progress · ☑ checkpoint passed. Mark stage status here; check off individual steps inside the stage file.

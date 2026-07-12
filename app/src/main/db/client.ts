@@ -4,10 +4,16 @@ import { join } from 'path'
 import { loadVecExtension, runMigrations } from './migrate'
 
 let _db: Database.Database | null = null
+let _dbPath: string | null = null
 
 export function getDb(): Database.Database {
   if (!_db) throw new Error('DB not initialized — call initDb() first')
   return _db
+}
+
+export function getDbPath(): string {
+  if (!_dbPath) throw new Error('DB not initialized — call initDb() first')
+  return _dbPath
 }
 
 export function initDb(dbPath?: string): Database.Database {
@@ -21,6 +27,7 @@ export function initDb(dbPath?: string): Database.Database {
   runMigrations(db, target)
 
   _db = db
+  _dbPath = target
   return db
 }
 

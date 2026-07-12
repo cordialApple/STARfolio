@@ -26,10 +26,14 @@ export function loadVecExtension(db: Database.Database): void {
   db.loadExtension(loadablePath)
 }
 
+export function checkpointDb(db: Database.Database): void {
+  db.pragma('wal_checkpoint(TRUNCATE)')
+}
+
 function backupDb(db: Database.Database, dbPath: string): void {
   if (dbPath === ':memory:' || !existsSync(dbPath)) return
   // Fold the WAL back into the main file first, so the copied snapshot is complete.
-  db.pragma('wal_checkpoint(TRUNCATE)')
+  checkpointDb(db)
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   copyFileSync(dbPath, `${dbPath}.${stamp}.bak`)
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2 } from 'lucide-react'
+import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload } from 'lucide-react'
 import { Badge, Button, Card, Input, Skeleton, useToast } from '../components'
 
 export function SettingsView(): React.JSX.Element {
@@ -11,6 +11,43 @@ export function SettingsView(): React.JSX.Element {
   const [pat, setPat] = useState('')
   const [patBusy, setPatBusy] = useState(false)
   const [graphBusy, setGraphBusy] = useState(false)
+  const [dataBusy, setDataBusy] = useState(false)
+
+  async function runData(errPrefix: string, fn: () => Promise<void>): Promise<void> {
+    setDataBusy(true)
+    try {
+      await fn()
+    } catch (err) {
+      toast(`${errPrefix}: ${(err as Error).message}`, 'danger')
+    } finally {
+      setDataBusy(false)
+    }
+  }
+
+  function exportBank(): Promise<void> {
+    return runData('Could not export bank', async () => {
+      const res = await window.api.backup.exportJson()
+      if (res.saved) toast(`Bank exported to ${res.path}`, 'success')
+    })
+  }
+
+  function importBank(): Promise<void> {
+    return runData('Could not import bank', async () => {
+      const res = await window.api.backup.importJson()
+      if (!res.canceled)
+        toast(
+          res.imported > 0 ? `Imported ${res.imported} experiences.` : 'Nothing to import.',
+          'success'
+        )
+    })
+  }
+
+  function backupDb(): Promise<void> {
+    return runData('Could not back up', async () => {
+      const res = await window.api.backup.create()
+      if (res.saved) toast(`Backed up to ${res.path}`, 'success')
+    })
+  }
 
   async function buildConnections(): Promise<void> {
     setGraphBusy(true)
@@ -260,6 +297,36 @@ export function SettingsView(): React.JSX.Element {
             <Share2 className="size-4" />
             Build connections
           </Button>
+        </div>
+      </Card>
+
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <HardDriveDownload className="size-4" />
+            Data &amp; backups
+          </span>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Export your story bank to a portable JSON file, import one back in (experiences are added,
+            never overwritten), or snapshot the whole database to a single file you can tuck away.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" disabled={dataBusy} onClick={() => void exportBank()}>
+              <Download className="size-4" />
+              Export bank (JSON)
+            </Button>
+            <Button variant="secondary" disabled={dataBusy} onClick={() => void importBank()}>
+              <Upload className="size-4" />
+              Import bank (JSON)
+            </Button>
+            <Button variant="secondary" disabled={dataBusy} onClick={() => void backupDb()}>
+              <HardDriveDownload className="size-4" />
+              Back up database
+            </Button>
+          </div>
         </div>
       </Card>
     </div>
