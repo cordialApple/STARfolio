@@ -8,7 +8,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@main': resolve(__dirname, 'src/main')
+      '@main': resolve(__dirname, 'src/main'),
+      electron: resolve(__dirname, 'tests/mocks/electron.ts')
     }
   }
 })
