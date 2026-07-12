@@ -107,7 +107,9 @@
     },
     "publish": [
       {
-        "provider": "github"
+        "provider": "github",
+        "owner": "cordialApple",
+        "repo": "STARfolio"
       }
     ]
   }
