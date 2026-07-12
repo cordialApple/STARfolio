@@ -27,7 +27,7 @@ export function FilterBar({ filter, onChange, skills, tags }: FilterBarProps): R
         <Input
           type="search"
           value={filter.query ?? ''}
-          placeholder="Search titles and STAR text"
+          placeholder="Search or describe it — “a time I led under pressure”"
           onChange={(e) => set({ query: e.target.value || undefined })}
           className="pl-9"
           aria-label="Search experiences"
