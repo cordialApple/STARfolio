@@ -10,6 +10,6 @@ Companion docs: [concept & user stories](starfolio-concept.md) · [build plan](b
 | [retrieval.md](architecture/retrieval.md) | Hybrid FTS5+vector search with RRF, embed-on-write queue, model manager |
 | [ai-layer.md](architecture/ai-layer.md) | Model routing, structured output, prompt caching, grounding rules, record/replay test seam, cost |
 | [ingestion.md](architecture/ingestion.md) | Extractor pipeline, per-format build order, repo-tarball rationale |
-| [voice.md](architecture/voice.md) | Push-to-talk v1 → streaming v2, rejected Web Speech, whisper fallback ladder |
+| [voice.md](architecture/voice.md) | Push-to-talk v1 (Stage 6) → streaming v2 (Stage 6b): VAD, sliding-window whisper, revisable partials, half-duplex TTS; rejected Web Speech + translation scope; whisper fallback ladder |
 | [privacy-and-risks.md](architecture/privacy-and-risks.md) | Data locality, network egress, backups; risks & fallbacks table |
 | [auth.md](architecture/auth.md) | Anthropic credential strategy: Console key primary, SDK/OAuth-profile fallback, rejected subscription/proxy paths |
