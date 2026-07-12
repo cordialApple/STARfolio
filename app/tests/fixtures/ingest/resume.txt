@@ -1,0 +1,19 @@
+Jordan Rivera
+Senior Software Engineer — jordan.rivera@example.com
+
+EXPERIENCE
+
+Acme Payments — Staff Engineer (2022–2025)
+Led the migration of the billing platform off a monolith onto event-driven services.
+Cut end-of-month invoice generation from six hours to under twenty minutes by
+parallelizing the reconciliation job and adding a caching layer. Mentored four
+engineers through the transition and wrote the runbook the on-call team still uses.
+
+Northwind Retail — Senior Engineer (2019–2022)
+Owned the checkout service through a replatforming that doubled peak throughput.
+Introduced load-shedding and circuit breakers that dropped checkout error rates
+during Black Friday from 4% to under 0.3%. Ran the incident review process and
+turned recurring pages into a backlog the team actually burned down.
+
+SKILLS
+Distributed systems, TypeScript, Go, PostgreSQL, observability, on-call leadership.

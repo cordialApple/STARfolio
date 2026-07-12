@@ -75,6 +75,7 @@ export interface Source {
   title: string | null
   raw_text: string | null
   uri_or_path: string | null
+  attachment_path: string | null
   ingested_at: string
 }
 export interface SourceInput {
@@ -117,6 +118,7 @@ export interface ExperienceInput {
   metrics: MetricInput[]
   draft_state_json?: string | null
   source?: SourceInput
+  source_id?: string
 }
 
 export type Confidence = 'high' | 'medium' | 'low'
@@ -140,6 +142,29 @@ export interface StarExtraction {
 
 export interface BrainApi {
   extract: (text: string) => Promise<StarExtraction>
+}
+
+export interface IngestResult {
+  ok: boolean
+  name: string
+  error?: string
+  scanned?: boolean
+  duplicate?: boolean
+  source?: Source
+}
+export interface IngestApi {
+  pickFiles: () => Promise<string[]>
+  files: (paths: string[]) => Promise<IngestResult[]>
+  url: (url: string) => Promise<IngestResult>
+  openSource: (source: {
+    kind: SourceKind
+    uri_or_path: string | null
+    attachment_path: string | null
+  }) => Promise<void>
+  pathForFile: (file: File) => string
+}
+export interface ResumeApi {
+  extract: (text: string) => Promise<StarExtraction[]>
 }
 
 export type StoryLength = 'short' | 'medium' | 'detailed'
@@ -307,6 +332,8 @@ export interface IpcApi {
   voice: VoiceApi
   ai: AiApi
   brain: BrainApi
+  ingest: IngestApi
+  resume: ResumeApi
   story: StoryApi
   clipboard: ClipboardApi
   practice: PracticeApi

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Inbox, FileText, Sparkles, Loader2 } from 'lucide-react'
+import { Plus, Inbox, FileText, Sparkles, Loader2, Upload } from 'lucide-react'
 import { Button, EmptyState, ErrorState, Skeleton } from '../components'
 import type { ExperienceSummary, ListFilter, ModelStatus, Skill, Tag } from '../lib/bank-types'
 import { FilterBar } from './FilterBar'
@@ -10,13 +10,15 @@ export interface BankViewProps {
   onOpen: (id: string) => void
   onNew: () => void
   onBrainDump: () => void
+  onImport: () => void
 }
 
 export function BankView({
   reloadToken,
   onOpen,
   onNew,
-  onBrainDump
+  onBrainDump,
+  onImport
 }: BankViewProps): React.JSX.Element {
   const [filter, setFilter] = useState<ListFilter>({})
   const [items, setItems] = useState<ExperienceSummary[] | null>(null)
@@ -72,6 +74,10 @@ export function BankView({
           <p className="text-sm text-muted">Every accomplishment, in STAR form.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={onImport}>
+            <Upload className="size-4" />
+            Import
+          </Button>
           <Button variant="secondary" onClick={onBrainDump}>
             <Sparkles className="size-4" />
             Brain dump

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcApi, ModelStatus, WhisperModelInfo } from './index.d'
 
 const api: IpcApi = {
@@ -52,6 +52,16 @@ const api: IpcApi = {
   },
   brain: {
     extract: (text) => ipcRenderer.invoke('brain:extract', { text })
+  },
+  ingest: {
+    pickFiles: () => ipcRenderer.invoke('ingest:pickFiles'),
+    files: (paths) => ipcRenderer.invoke('ingest:files', { paths }),
+    url: (url) => ipcRenderer.invoke('ingest:url', { url }),
+    openSource: (source) => ipcRenderer.invoke('ingest:openSource', source),
+    pathForFile: (file) => webUtils.getPathForFile(file)
+  },
+  resume: {
+    extract: (text) => ipcRenderer.invoke('resume:extract', { text })
   },
   story: {
     generate: (config) => ipcRenderer.invoke('story:generate', config),

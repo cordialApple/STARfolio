@@ -43,5 +43,6 @@ export type {
   TurnExperienceRef,
   WhisperModelInfo,
   WhisperModelName,
-  StoryMatch
+  StoryMatch,
+  IngestResult
 } from '../../../preload/index.d'

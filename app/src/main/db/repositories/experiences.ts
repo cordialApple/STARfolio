@@ -1,12 +1,12 @@
-import { randomUUID, createHash } from 'crypto'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import type Database from 'better-sqlite3'
 import { getDb } from '../client'
+import { sourceInput, insertSource, linkSource, type Source } from './sources'
 
 export const CONTEXTS = ['work', 'project', 'class', 'other'] as const
 export const STATUSES = ['draft', 'confirmed'] as const
 export const SKILL_KINDS = ['technical', 'soft', 'domain'] as const
-export const SOURCE_KINDS = ['paste', 'file', 'url', 'repo', 'spreadsheet', 'code'] as const
 
 const trimmed = (max: number): z.ZodString => z.string().trim().max(max)
 const isoDate = z
@@ -26,13 +26,6 @@ export const metricInput = z.object({
   unit: trimmed(40).nullable().optional()
 })
 
-export const sourceInput = z.object({
-  kind: z.enum(SOURCE_KINDS).default('paste'),
-  raw_text: trimmed(200_000).default(''),
-  title: trimmed(200).nullable().optional(),
-  uri_or_path: trimmed(2000).nullable().optional()
-})
-
 export const experienceInput = z.object({
   title: trimmed(200).default(''),
   situation: trimmed(20_000).default(''),
@@ -47,7 +40,8 @@ export const experienceInput = z.object({
   tags: z.array(z.string().trim().min(1).max(80)).max(50).default([]),
   metrics: z.array(metricInput).max(50).default([]),
   draft_state_json: trimmed(50_000).nullable().optional(),
-  source: sourceInput.optional()
+  source: sourceInput.optional(),
+  source_id: trimmed(64).optional()
 })
 
 export const listFilter = z
@@ -80,14 +74,7 @@ export interface Metric {
   value: number | null
   unit: string | null
 }
-export interface Source {
-  id: string
-  kind: (typeof SOURCE_KINDS)[number]
-  title: string | null
-  raw_text: string | null
-  uri_or_path: string | null
-  ingested_at: string
-}
+export type { Source }
 export interface Experience {
   id: string
   title: string
@@ -175,17 +162,6 @@ function writeChildren(db: Database.Database, id: string, input: ExperienceInput
     insMetric.run(randomUUID(), id, m.label, m.value ?? null, m.unit ?? null)
 }
 
-function attachSource(db: Database.Database, experienceId: string, s: z.infer<typeof sourceInput>): void {
-  const sourceId = randomUUID()
-  const contentHash = createHash('sha256').update(s.raw_text).digest('hex')
-  db.prepare(
-    'INSERT INTO sources (id, kind, uri_or_path, title, raw_text, content_hash) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(sourceId, s.kind, s.uri_or_path ?? null, s.title ?? null, s.raw_text, contentHash)
-  db.prepare(
-    'INSERT OR IGNORE INTO experience_sources (experience_id, source_id) VALUES (?, ?)'
-  ).run(experienceId, sourceId)
-}
-
 export function createExperience(raw: unknown): Experience {
   const input = experienceInput.parse(raw)
   const db = getDb()
@@ -209,7 +185,8 @@ export function createExperience(raw: unknown): Experience {
       draft_state_json: input.draft_state_json ?? null
     })
     writeChildren(db, id, input)
-    if (input.source) attachSource(db, id, input.source)
+    if (input.source_id) linkSource(db, id, input.source_id)
+    else if (input.source) linkSource(db, id, insertSource(db, input.source))
   })()
   return getExperience(id)!
 }
@@ -284,7 +261,7 @@ export function getExperience(id: string): Experience | null {
     .all(id) as Metric[]
   const sources = db
     .prepare(
-      `SELECT s.id, s.kind, s.title, s.raw_text, s.uri_or_path, s.ingested_at FROM experience_sources es
+      `SELECT s.id, s.kind, s.title, s.raw_text, s.uri_or_path, s.attachment_path, s.ingested_at FROM experience_sources es
        JOIN sources s ON s.id = es.source_id WHERE es.experience_id = ? ORDER BY s.ingested_at`
     )
     .all(id) as Source[]
