@@ -16,6 +16,9 @@ import { practiceConfig } from './ai/interview'
 import { technicalConfig } from './ai/technical'
 import { ingestCorpusFiles, ingestCorpusUrl } from './ingest/corpus-service'
 import { listCorpusDocs, deleteCorpusDoc, corpusDisciplines } from './db/repositories/corpus'
+import { generateBullets } from './ai/bullets'
+import { markdownToDocx } from './export/docx'
+import { writeFileSync } from 'fs'
 import { getSession, listSessions, endSession } from './db/repositories/practice'
 import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
@@ -157,6 +160,31 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
     streamStory(config, event.sender)
   )
   handle(ipcMain, 'story:cancel', nonEmpty, (_e, requestId) => cancelStream(requestId))
+  const bulletsArg = z.object({
+    jdText: z.string().trim().min(1).max(20_000),
+    experienceIds: z.array(z.string().min(1).max(64)).min(1).max(20)
+  })
+  handle(ipcMain, 'bullets:generate', bulletsArg, (_e, { jdText, experienceIds }) =>
+    generateBullets(jdText, experienceIds)
+  )
+  const exportArg = z.object({
+    markdown: z.string().min(1).max(100_000),
+    format: z.enum(['md', 'docx']),
+    filename: z.string().trim().max(120).default('resume')
+  })
+  handle(ipcMain, 'resume:export', exportArg, async (_e, { markdown, format, filename }) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const safe = filename.replace(/[^\w.-]+/g, '-') || 'resume'
+    const opts: Electron.SaveDialogOptions = {
+      defaultPath: `${safe}.${format}`,
+      filters: [{ name: format === 'docx' ? 'Word document' : 'Markdown', extensions: [format] }]
+    }
+    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+    if (res.canceled || !res.filePath) return { saved: false }
+    writeFileSync(res.filePath, format === 'docx' ? markdownToDocx(markdown) : Buffer.from(markdown, 'utf8'))
+    return { saved: true, path: res.filePath }
+  })
+
   handle(ipcMain, 'story:save', storySaveInput, (_e, input) => saveStory(input))
   handle(ipcMain, 'story:get', idArg, (_e, { id }) => getStory(id))
   ipcMain.handle('story:list', () => listStories())

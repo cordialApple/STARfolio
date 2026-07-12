@@ -166,6 +166,20 @@ export interface ResumeApi {
   extract: (text: string) => Promise<StarExtraction[]>
 }
 
+export interface ResumeBullet {
+  text: string
+  experienceId: string
+  experienceTitle: string
+}
+export interface MaterialsApi {
+  bullets: (jdText: string, experienceIds: string[]) => Promise<ResumeBullet[]>
+  export: (
+    markdown: string,
+    format: 'md' | 'docx',
+    filename: string
+  ) => Promise<{ saved: boolean; path?: string }>
+}
+
 export type EvidenceKind = 'spreadsheet' | 'code' | 'repo'
 export interface EvidenceApi {
   extract: (text: string, kind: EvidenceKind) => Promise<StarExtraction>
@@ -426,6 +440,7 @@ export interface IpcApi {
   brain: BrainApi
   ingest: IngestApi
   resume: ResumeApi
+  materials: MaterialsApi
   evidence: EvidenceApi
   entity: EntityApi
   graph: GraphApi
