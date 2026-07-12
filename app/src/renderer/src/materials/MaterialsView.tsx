@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { FileDown, Copy, Loader2, Sparkles, FileText } from 'lucide-react'
+import { FileDown, Copy, Sparkles, FileText } from 'lucide-react'
 import { Button, Card, Input, Textarea, useToast } from '../components'
 import type { ResumeBullet } from '../lib/bank-types'
 
@@ -151,7 +151,7 @@ export function MaterialsView(): React.JSX.Element {
                   Export .md
                 </Button>
                 <Button onClick={() => void exportAs('docx')} loading={busy === 'docx'} disabled={keptBullets.length === 0}>
-                  {busy === 'docx' ? <Loader2 className="size-4 animate-spin" /> : <FileDown className="size-4" />}
+                  <FileDown className="size-4" />
                   Export .docx
                 </Button>
               </div>
