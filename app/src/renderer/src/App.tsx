@@ -11,6 +11,7 @@ import { PracticeView } from './practice/PracticeView'
 import { TechnicalView } from './technical/TechnicalView'
 import { MaterialsView } from './materials/MaterialsView'
 import { SettingsView } from './settings/SettingsView'
+import { Onboarding } from './onboarding/Onboarding'
 import { IconButton } from './components'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { cn } from './lib/cn'
@@ -30,6 +31,7 @@ type Route =
 
 function App(): React.JSX.Element {
   const [route, setRoute] = useState<Route>({ name: 'list' })
+  const [onboarding, setOnboarding] = useState<boolean | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [taxonomy, setTaxonomy] = useState<{ skills: Skill[]; tags: Tag[] }>({
     skills: [],
@@ -37,6 +39,10 @@ function App(): React.JSX.Element {
   })
 
   const bump = useCallback((): void => setReloadToken((n) => n + 1), [])
+
+  useEffect(() => {
+    void window.api.prefs.get().then((p) => setOnboarding(!p.onboardingDone))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -48,6 +54,22 @@ function App(): React.JSX.Element {
       cancelled = true
     }
   }, [reloadToken])
+
+  if (onboarding === null) {
+    return <div className="min-h-screen bg-canvas" />
+  }
+
+  if (onboarding) {
+    return (
+      <Onboarding
+        onStartBrainDump={() => {
+          setOnboarding(false)
+          setRoute({ name: 'brain' })
+        }}
+        onExplore={() => setOnboarding(false)}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen bg-canvas text-ink">

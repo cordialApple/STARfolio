@@ -139,6 +139,9 @@ const api: IpcApi = {
   nudge: {
     staleness: () => ipcRenderer.invoke('nudge:staleness')
   },
+  usage: {
+    summary: () => ipcRenderer.invoke('usage:summary')
+  },
   update: {
     version: () => ipcRenderer.invoke('update:version'),
     status: () => ipcRenderer.invoke('update:status'),

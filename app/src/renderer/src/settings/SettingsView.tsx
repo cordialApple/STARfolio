@@ -1,7 +1,23 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw } from 'lucide-react'
-import type { Prefs, UpdateStatus } from '../../../preload/index.d'
+import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw, Coins } from 'lucide-react'
+import type { Prefs, UpdateStatus, UsageSummary } from '../../../preload/index.d'
 import { Badge, Button, Card, Input, Skeleton, Toggle, useToast } from '../components'
+
+const FEATURE_LABELS: Record<string, string> = {
+  chat: 'Brain dump',
+  extract: 'Story extraction',
+  story: 'Story generation',
+  bullets: 'Resume bullets',
+  practice: 'Behavioral practice',
+  technical: 'Technical practice',
+  other: 'Other'
+}
+
+function formatCost(value: number): string {
+  if (value <= 0) return '$0.00'
+  if (value < 0.01) return '<$0.01'
+  return `$${value.toFixed(2)}`
+}
 
 export function SettingsView(): React.JSX.Element {
   const toast = useToast()
@@ -16,6 +32,7 @@ export function SettingsView(): React.JSX.Element {
   const [prefs, setPrefsState] = useState<Prefs | null>(null)
   const [appVersion, setAppVersion] = useState('')
   const [update, setUpdate] = useState<UpdateStatus>({ state: 'idle' })
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
 
   async function savePrefs(patch: Partial<Prefs>): Promise<void> {
     setPrefsState((prev) => (prev ? { ...prev, ...patch } : prev))
@@ -83,6 +100,7 @@ export function SettingsView(): React.JSX.Element {
     setHasKey(await window.api.ai.hasKey())
     setHasPat(await window.api.github.hasPat())
     setPrefsState(await window.api.prefs.get())
+    setUsage(await window.api.usage.summary())
   }
   useEffect(() => {
     void refresh()
@@ -404,6 +422,66 @@ export function SettingsView(): React.JSX.Element {
               checked={prefs.trayResident}
               onCheckedChange={(v) => void savePrefs({ trayResident: v })}
             />
+          </div>
+        )}
+      </Card>
+
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <Coins className="size-4" />
+            Spend
+          </span>
+        }
+        action={
+          usage && usage.totalCalls > 0 ? (
+            <Badge tone="neutral">{formatCost(usage.totalCost)} est.</Badge>
+          ) : null
+        }
+      >
+        {usage === null ? (
+          <Skeleton className="h-24 w-full" />
+        ) : usage.totalCalls === 0 ? (
+          <p className="text-sm text-muted">
+            No AI usage yet. Once you run a brain dump or practice session, an estimated cost
+            breakdown by feature shows up here.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Estimated Anthropic API spend since you started, by feature. Based on public per-token
+              pricing — treat it as a guide, not a bill.
+            </p>
+            <div className="space-y-3">
+              {usage.byFeature.map((f) => (
+                <div key={f.feature} className="space-y-1">
+                  <div className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="font-semibold text-ink">
+                      {FEATURE_LABELS[f.feature] ?? f.feature}
+                    </span>
+                    <span className="tabular-nums text-ink">{formatCost(f.cost)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                    <span>{f.calls === 1 ? '1 call' : `${f.calls} calls`}</span>
+                    <span className="tabular-nums">
+                      {(f.inTokens + f.outTokens + f.cacheReadTokens).toLocaleString()} tokens
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-raised">
+                    <div
+                      className="h-full rounded-full bg-fg-brand"
+                      style={{
+                        width: `${usage.totalCost > 0 ? Math.max(2, (f.cost / usage.totalCost) * 100) : 0}%`
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-baseline justify-between gap-2 border-t border-line pt-3 text-sm font-semibold text-ink">
+              <span>Total</span>
+              <span className="tabular-nums">{formatCost(usage.totalCost)}</span>
+            </div>
           </div>
         )}
       </Card>

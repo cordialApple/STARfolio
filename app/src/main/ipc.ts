@@ -22,6 +22,7 @@ import { writeFileSync, readFileSync } from 'fs'
 import { exportBank, importBank, backupTo } from './db/backup'
 import { getPrefs, setPrefs, staleness, prefsPatch, type Prefs } from './settings/prefs'
 import { checkForUpdate, downloadUpdate, quitAndInstall, updateStatus } from './updater'
+import { usageSummary } from './ai/usage'
 import { getSession, listSessions, endSession } from './db/repositories/practice'
 import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
@@ -93,6 +94,7 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
     return next
   })
   ipcMain.handle('nudge:staleness', () => staleness())
+  ipcMain.handle('usage:summary', () => usageSummary())
   ipcMain.handle('db:selfTest', () => dbSelfTest())
   ipcMain.handle('embed:selfTest', () => embedSelfTest())
   ipcMain.handle('embed:modelStatus', () => getModelStatus())

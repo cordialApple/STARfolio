@@ -460,6 +460,25 @@ export interface NudgeApi {
   staleness: () => Promise<Staleness>
 }
 
+export interface FeatureSpend {
+  feature: string
+  calls: number
+  inTokens: number
+  outTokens: number
+  cacheReadTokens: number
+  cost: number
+}
+
+export interface UsageSummary {
+  byFeature: FeatureSpend[]
+  totalCost: number
+  totalCalls: number
+}
+
+export interface UsageApi {
+  summary: () => Promise<UsageSummary>
+}
+
 export type UpdateStatus =
   | { state: 'idle' }
   | { state: 'checking' }
@@ -501,6 +520,7 @@ export interface IpcApi {
   backup: BackupApi
   prefs: PrefsApi
   nudge: NudgeApi
+  usage: UsageApi
   update: UpdateApi
 }
 
