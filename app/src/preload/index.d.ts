@@ -154,13 +154,56 @@ export interface IngestResult {
 }
 export interface IngestApi {
   pickFiles: () => Promise<string[]>
+  pickFolder: () => Promise<string | null>
   files: (paths: string[]) => Promise<IngestResult[]>
   url: (url: string) => Promise<IngestResult>
+  codeFolder: (path: string) => Promise<IngestResult>
+  repo: (url: string) => Promise<IngestResult>
   openSource: (id: string) => Promise<void>
   pathForFile: (file: File) => string
 }
 export interface ResumeApi {
   extract: (text: string) => Promise<StarExtraction[]>
+}
+
+export type EvidenceKind = 'spreadsheet' | 'code' | 'repo'
+export interface EvidenceApi {
+  extract: (text: string, kind: EvidenceKind) => Promise<StarExtraction>
+}
+
+export type EntityKind = 'person' | 'team' | 'project' | 'org' | 'tool' | 'other'
+export interface EntityInput {
+  kind: EntityKind
+  name: string
+}
+export interface EntityApi {
+  extract: (text: string) => Promise<{ entities: EntityInput[] }>
+}
+
+export interface EntityNode {
+  id: string
+  kind: EntityKind
+  name: string
+}
+export interface Connection {
+  experience: { id: string; title: string }
+  viaEntities: string[]
+  viaSkills: string[]
+}
+export interface Neighbors {
+  entities: EntityNode[]
+  connections: Connection[]
+}
+export interface GraphApi {
+  link: (experienceId: string, entities: EntityInput[]) => Promise<void>
+  neighbors: (id: string) => Promise<Neighbors>
+  backfill: () => Promise<{ processed: number }>
+}
+
+export interface GithubApi {
+  setPat: (pat: string) => Promise<void>
+  hasPat: () => Promise<boolean>
+  deletePat: () => Promise<void>
 }
 
 export type StoryLength = 'short' | 'medium' | 'detailed'
@@ -330,6 +373,10 @@ export interface IpcApi {
   brain: BrainApi
   ingest: IngestApi
   resume: ResumeApi
+  evidence: EvidenceApi
+  entity: EntityApi
+  graph: GraphApi
+  github: GithubApi
   story: StoryApi
   clipboard: ClipboardApi
   practice: PracticeApi
