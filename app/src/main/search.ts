@@ -6,6 +6,7 @@ import {
   type ExperienceSummary,
   type ListFilter
 } from './db/repositories/experiences'
+import { getChunks } from './db/repositories/corpus'
 
 const CANDIDATES = 50
 const RESULTS = 100
@@ -20,6 +21,15 @@ export function reciprocalRankFusion(lists: string[][], k = 60): Map<string, num
     })
   }
   return scores
+}
+
+function rankedIds(fused: Map<string, number>): string[] {
+  return [...fused.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
+}
+
+// Embeddings are L2-normalised, so cosine = 1 - distance²/2.
+function cosineFromDistance(distance: number): number {
+  return 1 - (distance * distance) / 2
 }
 
 function ftsCandidates(query: string, limit: number): string[] {
@@ -69,9 +79,8 @@ export async function searchExperiences(
   }
 
   const fused = reciprocalRankFusion([fts, vec])
-  return [...fused.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id]) => allowedById.get(id))
+  return rankedIds(fused)
+    .map((id) => allowedById.get(id))
     .filter((s): s is ExperienceSummary => s !== undefined)
     .slice(0, RESULTS)
 }
@@ -83,7 +92,6 @@ export interface StoryMatch {
 }
 
 // Above this cosine similarity we treat a spoken answer as already being the same banked story.
-// Embeddings are L2-normalised, so cosine = 1 - distance²/2.
 export const STORY_MATCH_THRESHOLD = 0.8
 
 // Semantic "is this story already in the bank?" check: embed the answer, take the nearest banked
@@ -110,6 +118,87 @@ export async function matchBankedStory(
     )
     .get(vector) as { id: string; title: string; distance: number } | undefined
   if (!row) return null
-  const similarity = 1 - (row.distance * row.distance) / 2
-  return { id: row.id, title: row.title, similarity }
+  return { id: row.id, title: row.title, similarity: cosineFromDistance(row.distance) }
+}
+
+export interface CorpusHit {
+  chunkId: string
+  text: string
+  docId: string
+  title: string
+  similarity: number
+}
+
+const CORPUS_KNN = 40
+
+function corpusFtsCandidates(query: string, discipline: string | undefined, limit: number): string[] {
+  const match = toFtsMatchQuery(query)
+  if (!match) return []
+  const where = discipline ? 'AND d.discipline = ?' : ''
+  const args = discipline ? [match, discipline, limit] : [match, limit]
+  return (
+    getDb()
+      .prepare(
+        `SELECT c.id FROM corpus_chunks c
+         JOIN corpus_fts ON corpus_fts.rowid = c.rowid
+         JOIN corpus_docs d ON d.id = c.doc_id
+         WHERE corpus_fts MATCH ? ${where} ORDER BY rank LIMIT ?`
+      )
+      .all(...args) as { id: string }[]
+  ).map((r) => r.id)
+}
+
+function corpusVecCandidates(
+  vector: Float32Array,
+  discipline: string | undefined,
+  limit: number
+): { id: string; distance: number }[] {
+  if (!discipline) {
+    return getDb()
+      .prepare('SELECT chunk_id AS id, distance FROM vec_corpus WHERE embedding MATCH ? AND k = ? ORDER BY distance')
+      .all(vector, limit) as { id: string; distance: number }[]
+  }
+  return getDb()
+    .prepare(
+      `SELECT v.chunk_id AS id, v.distance AS distance FROM
+         (SELECT chunk_id, distance FROM vec_corpus WHERE embedding MATCH ? AND k = ? ORDER BY distance) v
+       JOIN corpus_chunks c ON c.id = v.chunk_id
+       JOIN corpus_docs d ON d.id = c.doc_id
+       WHERE d.discipline = ? ORDER BY v.distance`
+    )
+    .all(vector, limit * 4, discipline) as { id: string; distance: number }[]
+}
+
+// Hybrid retrieval over the reference corpus: FTS5 ∪ vector KNN → RRF, optionally scoped to a
+// discipline. Returns the top chunks with text so a technical question can cite real material.
+export async function searchCorpus(
+  query: string,
+  discipline?: string,
+  limit = 6,
+  embedText: Embedder = embed
+): Promise<CorpusHit[]> {
+  const q = query.trim()
+  if (!q) return []
+
+  const fts = corpusFtsCandidates(q, discipline, CORPUS_KNN)
+  let vec: { id: string; distance: number }[] = []
+  try {
+    vec = corpusVecCandidates(await embedText(q), discipline, CORPUS_KNN)
+  } catch {
+    // Model unavailable — keyword-only ranking.
+  }
+  const distanceById = new Map(vec.map((v) => [v.id, v.distance]))
+  const fused = reciprocalRankFusion([fts, vec.map((v) => v.id)])
+  const topIds = rankedIds(fused).slice(0, limit)
+
+  return getChunks(topIds).map((c) => {
+    const d = distanceById.get(c.id)
+    return {
+      chunkId: c.id,
+      text: c.text,
+      docId: c.doc_id,
+      title: c.title,
+      similarity: d === undefined ? 0 : cosineFromDistance(d)
+    }
+  })
 }

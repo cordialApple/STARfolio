@@ -7,13 +7,15 @@ import sql002 from './migrations/002_vec_tables.sql?raw'
 import sql003 from './migrations/003_embed_queue.sql?raw'
 import sql004 from './migrations/004_source_indexes.sql?raw'
 import sql005 from './migrations/005_entities_edges.sql?raw'
+import sql006 from './migrations/006_corpus_practice.sql?raw'
 
 export const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: sql001 },
   { version: 2, sql: sql002 },
   { version: 3, sql: sql003 },
   { version: 4, sql: sql004 },
-  { version: 5, sql: sql005 }
+  { version: 5, sql: sql005 },
+  { version: 6, sql: sql006 }
 ]
 
 export function loadVecExtension(db: Database.Database): void {

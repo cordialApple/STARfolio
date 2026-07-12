@@ -99,6 +99,17 @@ const api: IpcApi = {
     get: (sessionId) => ipcRenderer.invoke('practice:get', { sessionId }),
     list: () => ipcRenderer.invoke('practice:list')
   },
+  technical: {
+    start: (config) => ipcRenderer.invoke('technical:start', config),
+    answer: (sessionId, answer) => ipcRenderer.invoke('technical:answer', { sessionId, answer })
+  },
+  corpus: {
+    addFiles: (paths, discipline) => ipcRenderer.invoke('corpus:addFiles', { paths, discipline }),
+    addUrl: (url, discipline) => ipcRenderer.invoke('corpus:addUrl', { url, discipline }),
+    list: (discipline) => ipcRenderer.invoke('corpus:list', { discipline }),
+    remove: (id) => ipcRenderer.invoke('corpus:remove', { id }),
+    disciplines: () => ipcRenderer.invoke('corpus:disciplines')
+  },
   bank: {
     create: (input) => ipcRenderer.invoke('bank:create', input),
     update: (id, input) => ipcRenderer.invoke('bank:update', { id, input }),

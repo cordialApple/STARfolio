@@ -46,8 +46,9 @@ describe('extractDocx', () => {
   })
 })
 
+// pdfjs cold-start is ~5s and slower under CI load; give it headroom over the 5s default.
 describe('extractPdf', () => {
-  it('extracts the text layer and is not flagged scanned', async () => {
+  it('extracts the text layer and is not flagged scanned', { timeout: 20000 }, async () => {
     const { text, numPages } = await extractPdf(read('resume.pdf'), fontDir)
     expect(numPages).toBe(1)
     expect(text).toContain('Jordan Rivera')
@@ -55,7 +56,7 @@ describe('extractPdf', () => {
     expect(looksScanned(text, numPages)).toBe(false)
   })
 
-  it('flags a text-less (scanned) pdf', async () => {
+  it('flags a text-less (scanned) pdf', { timeout: 20000 }, async () => {
     const { text, numPages } = await extractPdf(read('scanned.pdf'), fontDir)
     expect(looksScanned(text, numPages)).toBe(true)
   })

@@ -79,7 +79,7 @@ interface InterviewParseResult {
   usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null }
 }
 
-function getInterviewClient(): InterviewClient {
+export function getInterviewClient(): InterviewClient {
   const apiKey = getSecret('anthropic_api_key')
   if (!apiKey) throw new Error('No Anthropic API key configured')
   return new Anthropic({ apiKey, fetch: resolveAiFetch() }) as unknown as InterviewClient
@@ -108,7 +108,7 @@ function bankLine(candidates: CandidateExperience[]): string {
   return ['Banked experiences (id — title):', ...candidates.map((c) => `- ${c.id} — ${c.title || 'Untitled'}`)].join('\n')
 }
 
-async function parseWith<S extends z.ZodTypeAny>(
+export async function parseWith<S extends z.ZodTypeAny>(
   client: InterviewClient,
   system: string,
   userText: string,

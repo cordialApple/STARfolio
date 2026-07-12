@@ -1,0 +1,17 @@
+Rate limiter design notes
+
+I designed a distributed rate limiter for our API gateway. The core is a token
+bucket per client key, refilled at a fixed rate. Each bucket lives in Redis so the
+limit is enforced across all gateway instances, not just one.
+
+The hard part was consistency under load. A naive read-modify-write on the bucket
+races when two gateway nodes hit the same key at once. I moved the refill-and-take
+into a single Lua script so it runs atomically inside Redis, which removed the race.
+
+For availability I added a local fallback: if Redis is unreachable, each node falls
+back to an in-memory bucket sized to its share of the global limit. This over-admits
+slightly during a partition but never hard-fails the whole gateway.
+
+Scaling limits: at very high key cardinality the Redis memory grows unbounded, so I
+added a TTL on idle buckets. The next bottleneck would be Redis CPU on the Lua
+scripts; sharding by key hash across a Redis cluster is the path past that.
