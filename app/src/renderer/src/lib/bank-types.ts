@@ -40,5 +40,7 @@ export type {
   RubricScore,
   RubricDimension,
   InterviewNextKind,
-  TurnExperienceRef
+  TurnExperienceRef,
+  WhisperModelInfo,
+  WhisperModelName
 } from '../../../preload/index.d'

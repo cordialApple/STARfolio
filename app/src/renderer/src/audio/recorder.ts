@@ -6,6 +6,16 @@ export interface Recording {
   stop: () => Promise<Int16Array>
 }
 
+export interface RecordOptions {
+  onLevel?: (level: number) => void
+}
+
+function rms(frame: Float32Array): number {
+  let sum = 0
+  for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i]
+  return Math.sqrt(sum / (frame.length || 1))
+}
+
 function floatChunksToInt16(chunks: Float32Array[]): Int16Array {
   let total = 0
   for (const c of chunks) total += c.length
@@ -20,7 +30,7 @@ function floatChunksToInt16(chunks: Float32Array[]): Int16Array {
   return out
 }
 
-export async function startRecording(): Promise<Recording> {
+export async function startRecording(opts: RecordOptions = {}): Promise<Recording> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
   })
@@ -32,7 +42,12 @@ export async function startRecording(): Promise<Recording> {
     const source = ctx.createMediaStreamSource(stream)
     const node = new AudioWorkletNode(ctx, 'pcm-processor')
     const chunks: Float32Array[] = []
-    node.port.onmessage = (e: MessageEvent<Float32Array>) => chunks.push(e.data)
+    // Worklet posts ~125 frames/sec; meter every 4th (~30 Hz) to avoid a React state update per frame.
+    let frame = 0
+    node.port.onmessage = (e: MessageEvent<Float32Array>) => {
+      chunks.push(e.data)
+      if (opts.onLevel && frame++ % 4 === 0) opts.onLevel(rms(e.data))
+    }
     source.connect(node)
     const audioCtx = ctx
 

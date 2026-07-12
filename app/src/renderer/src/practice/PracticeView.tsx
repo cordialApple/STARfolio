@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Mic, Send, Square, History, Plus, Sparkles, Inbox } from 'lucide-react'
+import { Mic, Send, Square, History, Plus, Sparkles, Inbox, Volume2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -9,6 +9,7 @@ import {
   Select,
   Skeleton,
   Textarea,
+  Toggle,
   useToast
 } from '../components'
 import type {
@@ -16,9 +17,14 @@ import type {
   PracticeConfig,
   PracticeKind,
   PracticeSession,
-  PracticeSessionSummary
+  PracticeSessionSummary,
+  WhisperModelInfo,
+  WhisperModelName
 } from '../lib/bank-types'
 import { FeedbackCard } from './FeedbackCard'
+import { PushToTalk } from './PushToTalk'
+import { VoiceModelManager } from './VoiceModelManager'
+import { speak, stopSpeaking, ttsAvailable } from '../lib/tts'
 import { cn } from '../lib/cn'
 
 const THEMES = [
@@ -56,6 +62,26 @@ export function PracticeView(): React.JSX.Element {
   const [ended, setEnded] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [voiceModel, setVoiceModel] = useState<WhisperModelName>('base.en')
+  const [models, setModels] = useState<WhisperModelInfo[]>([])
+  const [tts, setTts] = useState(false)
+
+  useEffect(() => {
+    void window.api.voice.models().then(setModels)
+    return window.api.voice.onModelStatus(setModels)
+  }, [])
+  useEffect(() => () => stopSpeaking(), [])
+  // Stop any in-flight question read-aloud when leaving the live interview for another view.
+  useEffect(() => {
+    if (view !== 'live') stopSpeaking()
+  }, [view])
+
+  const voiceReady = models.find((m) => m.name === voiceModel)?.downloaded ?? false
+
+  function say(text: string): void {
+    if (tts) speak(text)
+  }
+
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -73,6 +99,7 @@ export function PracticeView(): React.JSX.Element {
       setTurns([{ role: 'interviewer', text: question }])
       setEnded(false)
       setView('live')
+      say(question)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -106,6 +133,8 @@ export function PracticeView(): React.JSX.Element {
       if (res.next_kind === 'done') {
         setEnded(true)
         toast('Session complete — nice work.', 'success')
+      } else if (res.next_text) {
+        say(res.next_text)
       }
     } catch (err) {
       setError((err as Error).message)
@@ -117,6 +146,7 @@ export function PracticeView(): React.JSX.Element {
   }
 
   async function endNow(): Promise<void> {
+    stopSpeaking()
     if (sessionId) {
       try {
         await window.api.practice.end(sessionId)
@@ -134,14 +164,30 @@ export function PracticeView(): React.JSX.Element {
   if (view === 'live')
     return (
       <div className="mx-auto max-w-2xl space-y-5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-bold text-ink">Mock interview</h1>
-          {!ended && (
-            <Button variant="ghost" size="sm" onClick={() => void endNow()}>
-              <Square className="size-4" />
-              End session
-            </Button>
-          )}
+          <div className="flex items-center gap-3">
+            {ttsAvailable() && (
+              <span className="flex items-center gap-1.5 text-xs font-medium text-muted">
+                <Volume2 className="size-4" />
+                Read aloud
+                <Toggle
+                  label="Read interviewer questions aloud"
+                  checked={tts}
+                  onCheckedChange={(on) => {
+                    setTts(on)
+                    if (!on) stopSpeaking()
+                  }}
+                />
+              </span>
+            )}
+            {!ended && (
+              <Button variant="ghost" size="sm" onClick={() => void endNow()}>
+                <Square className="size-4" />
+                End session
+              </Button>
+            )}
+          </div>
         </div>
 
         <ol className="space-y-4">
@@ -194,11 +240,25 @@ export function PracticeView(): React.JSX.Element {
           </div>
         ) : (
           <div className="space-y-2">
+            {voiceReady ? (
+              <PushToTalk
+                model={voiceModel}
+                disabled={busy}
+                onTranscript={(t) =>
+                  setAnswer((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))
+                }
+                onError={setError}
+              />
+            ) : (
+              <p className="text-xs text-muted">
+                Want to speak your answers? Download a voice model in the session setup.
+              </p>
+            )}
             <Textarea
               rows={4}
               value={answer}
               disabled={busy}
-              placeholder="Answer out loud in your head, then type it here…"
+              placeholder="Speak with the mic above, or type here — edit freely before sending…"
               onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit()
@@ -275,6 +335,16 @@ export function PracticeView(): React.JSX.Element {
               Start interview
             </Button>
           </div>
+        </div>
+      </Card>
+
+      <Card title="Voice (optional)">
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Download a whisper model to speak your answers with push-to-talk. Runs fully on your
+            machine — no audio leaves your computer.
+          </p>
+          <VoiceModelManager selected={voiceModel} onSelect={setVoiceModel} />
         </div>
       </Card>
     </div>

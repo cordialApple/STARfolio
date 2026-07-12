@@ -14,8 +14,19 @@ export interface EmbedApi {
   onStatus: (cb: (status: ModelStatus) => void) => () => void
 }
 
+export type WhisperModelName = 'tiny.en' | 'base.en' | 'small.en'
+export interface WhisperModelInfo {
+  name: WhisperModelName
+  sizeMB: number
+  downloaded: boolean
+  status: ModelStatus
+}
 export interface VoiceApi {
   transcribe: (pcm: number[], model?: string) => Promise<string>
+  models: () => Promise<WhisperModelInfo[]>
+  downloadModel: (model: WhisperModelName) => Promise<WhisperModelInfo[]>
+  deleteModel: (model: WhisperModelName) => Promise<WhisperModelInfo[]>
+  onModelStatus: (cb: (models: WhisperModelInfo[]) => void) => () => void
 }
 
 export interface AiApi {

@@ -13,6 +13,7 @@ import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
 import { embedSelfTest, getModelStatus } from './embed'
 import { transcribe } from './voice'
+import { whisperModels, ensureWhisperModel, deleteWhisperModel, WHISPER_MODELS } from './voice/model'
 import {
   experienceInput,
   listFilter,
@@ -28,7 +29,6 @@ import {
 const nonEmpty = z.string().min(1)
 const MAX_PROMPT = 100_000
 const MAX_PCM_SAMPLES = 16_000 * 300 // 5 minutes at 16 kHz — a generous upper bound
-const WHISPER_MODELS = ['tiny.en', 'base.en', 'small.en'] as const
 
 const streamArg = z.object({
   prompt: z.string().min(1).max(MAX_PROMPT),
@@ -38,6 +38,7 @@ const transcribeArg = z.object({
   pcm: z.array(z.number()).min(1).max(MAX_PCM_SAMPLES),
   model: z.enum(WHISPER_MODELS).optional()
 })
+const voiceModelArg = z.object({ model: z.enum(WHISPER_MODELS) })
 
 const idArg = z.object({ id: nonEmpty.max(64) })
 const updateArg = z.object({ id: nonEmpty.max(64), input: experienceInput })
@@ -59,6 +60,14 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('embed:selfTest', () => embedSelfTest())
   ipcMain.handle('embed:modelStatus', () => getModelStatus())
   handle(ipcMain, 'voice:transcribe', transcribeArg, (_e, { pcm, model }) => transcribe(pcm, model))
+  ipcMain.handle('voice:models', () => whisperModels())
+  handle(ipcMain, 'voice:downloadModel', voiceModelArg, (_e, { model }) =>
+    ensureWhisperModel(model).then(() => whisperModels())
+  )
+  handle(ipcMain, 'voice:deleteModel', voiceModelArg, (_e, { model }) => {
+    deleteWhisperModel(model)
+    return whisperModels()
+  })
 
   ipcMain.handle('ai:hasKey', () => hasSecret('anthropic_api_key'))
   ipcMain.handle('ai:deleteKey', () => deleteSecret('anthropic_api_key'))

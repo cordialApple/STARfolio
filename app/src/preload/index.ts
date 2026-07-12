@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { IpcApi, ModelStatus } from './index.d'
+import type { IpcApi, ModelStatus, WhisperModelInfo } from './index.d'
 
 const api: IpcApi = {
   ping: () => ipcRenderer.invoke('ping'),
@@ -16,7 +16,15 @@ const api: IpcApi = {
     }
   },
   voice: {
-    transcribe: (pcm, model) => ipcRenderer.invoke('voice:transcribe', { pcm, model })
+    transcribe: (pcm, model) => ipcRenderer.invoke('voice:transcribe', { pcm, model }),
+    models: () => ipcRenderer.invoke('voice:models'),
+    downloadModel: (model) => ipcRenderer.invoke('voice:downloadModel', { model }),
+    deleteModel: (model) => ipcRenderer.invoke('voice:deleteModel', { model }),
+    onModelStatus: (cb) => {
+      const handler = (_: Electron.IpcRendererEvent, models: WhisperModelInfo[]): void => cb(models)
+      ipcRenderer.on('voice:modelStatus', handler)
+      return () => ipcRenderer.removeListener('voice:modelStatus', handler)
+    }
   },
   ai: {
     setKey: (key) => ipcRenderer.invoke('ai:setKey', key),
