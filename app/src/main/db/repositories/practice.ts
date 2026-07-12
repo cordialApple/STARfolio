@@ -43,12 +43,28 @@ function parseConfig(json: string | null): PracticeConfig {
   }
 }
 
-export function createSession(config: PracticeConfig): string {
+export function createSession(config: unknown, mode: 'behavioral' | 'technical' = 'behavioral'): string {
   const id = randomUUID()
   getDb()
-    .prepare(`INSERT INTO practice_sessions (id, mode, config_json) VALUES (?, 'behavioral', ?)`)
-    .run(id, JSON.stringify(config))
+    .prepare('INSERT INTO practice_sessions (id, mode, config_json) VALUES (?, ?, ?)')
+    .run(id, mode, JSON.stringify(config))
   return id
+}
+
+export function sessionMode(sessionId: string): 'behavioral' | 'technical' | null {
+  const row = getDb()
+    .prepare('SELECT mode FROM practice_sessions WHERE id = ?')
+    .get(sessionId) as { mode: string } | undefined
+  return row ? (row.mode === 'technical' ? 'technical' : 'behavioral') : null
+}
+
+function linkTurnChunks(db: ReturnType<typeof getDb>, turnId: string, chunkIds: string[]): void {
+  const link = db.prepare(
+    'INSERT OR IGNORE INTO practice_turn_corpus_chunks (turn_id, chunk_id) VALUES (?, ?)'
+  )
+  for (const id of chunkIds) {
+    if (db.prepare('SELECT 1 FROM corpus_chunks WHERE id = ?').get(id)) link.run(turnId, id)
+  }
 }
 
 export function sessionConfig(sessionId: string): PracticeConfig | null {
@@ -56,6 +72,13 @@ export function sessionConfig(sessionId: string): PracticeConfig | null {
     .prepare('SELECT config_json FROM practice_sessions WHERE id = ?')
     .get(sessionId) as { config_json: string | null } | undefined
   return row ? parseConfig(row.config_json) : null
+}
+
+export function rawSessionConfig(sessionId: string): string | null {
+  const row = getDb()
+    .prepare('SELECT config_json FROM practice_sessions WHERE id = ?')
+    .get(sessionId) as { config_json: string | null } | undefined
+  return row ? row.config_json : null
 }
 
 export function askedQuestions(sessionId: string): string[] {
@@ -79,10 +102,14 @@ export function currentQuestion(sessionId: string): string | null {
   return row?.content ?? null
 }
 
-export function addInterviewerTurn(sessionId: string, content: string): void {
-  getDb()
-    .prepare(`INSERT INTO practice_turns (id, session_id, role, content) VALUES (?, ?, 'interviewer', ?)`)
-    .run(randomUUID(), sessionId, content)
+export function addInterviewerTurn(sessionId: string, content: string, chunkIds: string[] = []): void {
+  const db = getDb()
+  const turnId = randomUUID()
+  db.transaction(() => {
+    db.prepare(`INSERT INTO practice_turns (id, session_id, role, content) VALUES (?, ?, 'interviewer', ?)`)
+      .run(turnId, sessionId, content)
+    linkTurnChunks(db, turnId, chunkIds)
+  })()
 }
 
 export function isSessionOpen(sessionId: string): boolean {
@@ -92,7 +119,7 @@ export function isSessionOpen(sessionId: string): boolean {
   return row != null && row.ended_at === null
 }
 
-export type NextMove = { kind: 'ask'; text: string } | { kind: 'done' }
+export type NextMove = { kind: 'ask'; text: string; chunkIds?: string[] } | { kind: 'done' }
 
 // The candidate's answer (with feedback, flags, provenance links) AND the state transition it
 // causes — either the next interviewer turn or ending the session — commit as one transaction,
@@ -100,7 +127,7 @@ export type NextMove = { kind: 'ask'; text: string } | { kind: 'done' }
 export function commitAnswer(params: {
   sessionId: string
   answer: string
-  feedback: InterviewFeedback
+  feedback: object
   flags: TurnFlags
   experienceIds: string[]
   next: NextMove
@@ -119,8 +146,10 @@ export function commitAnswer(params: {
       if (db.prepare('SELECT 1 FROM experiences WHERE id = ?').get(expId)) link.run(turnId, expId)
     }
     if (params.next.kind === 'ask') {
+      const nextId = randomUUID()
       db.prepare(`INSERT INTO practice_turns (id, session_id, role, content) VALUES (?, ?, 'interviewer', ?)`)
-        .run(randomUUID(), params.sessionId, params.next.text)
+        .run(nextId, params.sessionId, params.next.text)
+      linkTurnChunks(db, nextId, params.next.chunkIds ?? [])
     } else {
       db.prepare(`UPDATE practice_sessions SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL`)
         .run(params.sessionId)

@@ -11,7 +11,11 @@ import { assertPublicHttpUrl } from './ingest/fetch-url'
 import { streamStory, storyConfig } from './ai/story'
 import { saveStory, getStory, listStories, storySaveInput } from './db/repositories/stories'
 import { startPractice, answerPractice, answerArg } from './practice'
+import { startTechnical, answerTechnical, technicalAnswerArg } from './technical'
 import { practiceConfig } from './ai/interview'
+import { technicalConfig } from './ai/technical'
+import { ingestCorpusFiles, ingestCorpusUrl } from './ingest/corpus-service'
+import { listCorpusDocs, deleteCorpusDoc, corpusDisciplines } from './db/repositories/corpus'
 import { getSession, listSessions, endSession } from './db/repositories/practice'
 import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
@@ -165,6 +169,30 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   handle(ipcMain, 'practice:end', sessionArg, (_e, { sessionId }) => endSession(sessionId))
   handle(ipcMain, 'practice:get', sessionArg, (_e, { sessionId }) => getSession(sessionId))
   ipcMain.handle('practice:list', () => listSessions())
+
+  handle(ipcMain, 'technical:start', technicalConfig, (_e, config) => startTechnical(config))
+  handle(ipcMain, 'technical:answer', technicalAnswerArg, (_e, arg) => answerTechnical(arg))
+
+  const disciplineOpt = z.string().trim().max(80).optional()
+  const corpusFilesArg = z.object({
+    paths: z.array(z.string().min(1).max(4000)).min(1).max(50),
+    discipline: z.string().trim().max(80).default('')
+  })
+  handle(ipcMain, 'corpus:addFiles', corpusFilesArg, (_e, { paths, discipline }) =>
+    ingestCorpusFiles(paths, discipline)
+  )
+  const corpusUrlArg = z.object({
+    url: z.string().trim().min(1).max(4000),
+    discipline: z.string().trim().max(80).default('')
+  })
+  handle(ipcMain, 'corpus:addUrl', corpusUrlArg, (_e, { url, discipline }) =>
+    ingestCorpusUrl(url, discipline)
+  )
+  handle(ipcMain, 'corpus:list', z.object({ discipline: disciplineOpt }), (_e, { discipline }) =>
+    listCorpusDocs(discipline)
+  )
+  handle(ipcMain, 'corpus:remove', idArg, (_e, { id }) => deleteCorpusDoc(id))
+  ipcMain.handle('corpus:disciplines', () => corpusDisciplines())
 
   handle(ipcMain, 'bank:create', experienceInput, (_e, input) => {
     const exp = createExperience(input)
