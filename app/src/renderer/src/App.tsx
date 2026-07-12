@@ -7,6 +7,9 @@ import { StarForm } from './capture/StarForm'
 import { BrainDump } from './capture/BrainDump'
 import { StoryView } from './story/StoryView'
 import { PracticeView } from './practice/PracticeView'
+import { SettingsView } from './settings/SettingsView'
+import { IconButton } from './components'
+import { Settings as SettingsIcon } from 'lucide-react'
 import { cn } from './lib/cn'
 
 type Route =
@@ -15,6 +18,7 @@ type Route =
   | { name: 'brain' }
   | { name: 'generate' }
   | { name: 'practice' }
+  | { name: 'settings' }
   | { name: 'detail'; id: string }
   | { name: 'edit'; exp: Experience }
 
@@ -72,6 +76,14 @@ function App(): React.JSX.Element {
                 Practice
               </NavTab>
             </nav>
+            <IconButton
+              label="Settings"
+              size="sm"
+              onClick={() => setRoute({ name: 'settings' })}
+              className={cn(route.name === 'settings' && 'bg-raised')}
+            >
+              <SettingsIcon className="size-4" />
+            </IconButton>
             <ThemeToggle />
           </div>
         </div>
@@ -90,6 +102,8 @@ function App(): React.JSX.Element {
         {route.name === 'generate' && <StoryView />}
 
         {route.name === 'practice' && <PracticeView />}
+
+        {route.name === 'settings' && <SettingsView />}
 
         {route.name === 'brain' && (
           <BrainDump
