@@ -1,0 +1,74 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import {
+  firstQuestion,
+  evaluateAnswer,
+  RUBRIC_DIMENSIONS,
+  type CandidateExperience,
+  type PracticeConfig
+} from '../../src/main/ai/interview'
+
+const config: PracticeConfig = { kind: 'genre', promptText: 'Leadership' }
+const candidates: CandidateExperience[] = [
+  { id: 'exp-1', title: 'Deploy pipeline rewrite' },
+  { id: 'exp-2', title: 'Mentored interns' }
+]
+
+const VAGUE = 'I helped out and it went fine.'
+const STRONG =
+  'When the deploy pipeline kept failing under load I took ownership, rewrote the retry logic and added caching, and cut build times from 20 minutes to 4, which unblocked the whole team for the release.'
+
+describe('interviewer engine (stub)', () => {
+  beforeAll(() => {
+    process.env.STARFOLIO_AI_STUB = '1'
+  })
+  afterAll(() => {
+    delete process.env.STARFOLIO_AI_STUB
+  })
+
+  it('opens with a themed first question', async () => {
+    const q = await firstQuestion(config, candidates)
+    expect(q.toLowerCase()).toContain('leadership')
+  })
+
+  it('scores all four rubric dimensions on every answer', async () => {
+    const turn = await evaluateAnswer({ config, candidates, asked: ['Q1'], question: 'Q1', answer: STRONG })
+    for (const d of RUBRIC_DIMENSIONS) {
+      expect(turn.feedback[d].score).toBeGreaterThanOrEqual(1)
+      expect(turn.feedback[d].score).toBeLessThanOrEqual(5)
+      expect(turn.feedback[d].note.length).toBeGreaterThan(0)
+    }
+    expect(turn.feedback.summary.length).toBeGreaterThan(0)
+  })
+
+  it('drills down on a vague, unquantified answer', async () => {
+    const turn = await evaluateAnswer({ config, candidates, asked: ['Q1'], question: 'Q1', answer: VAGUE })
+    expect(turn.next_kind).toBe('drilldown')
+    expect(turn.next_text.length).toBeGreaterThan(0)
+    expect(turn.feedback.measurable_result.score).toBeLessThanOrEqual(2)
+  })
+
+  it('advances on a strong, quantified answer', async () => {
+    const turn = await evaluateAnswer({ config, candidates, asked: ['Q1'], question: 'Q1', answer: STRONG })
+    expect(turn.next_kind).toBe('question')
+    expect(turn.feedback.measurable_result.score).toBeGreaterThanOrEqual(3)
+  })
+
+  it('links an answer to the banked experience it draws on', async () => {
+    const turn = await evaluateAnswer({ config, candidates, asked: ['Q1'], question: 'Q1', answer: STRONG })
+    expect(turn.used_experience_ids).toContain('exp-1')
+    expect(turn.unbanked).toBe(false)
+  })
+
+  it('flags an answer with no matching banked experience as unbanked', async () => {
+    const turn = await evaluateAnswer({
+      config,
+      candidates,
+      asked: ['Q1'],
+      question: 'Q1',
+      answer:
+        'I organized a charity bake sale and we raised 500 dollars for the shelter over one weekend of work.'
+    })
+    expect(turn.used_experience_ids).toHaveLength(0)
+    expect(turn.unbanked).toBe(true)
+  })
+})
