@@ -49,7 +49,7 @@ test('mode A: scripted session — vague answer drills down, feedback scores all
   // First question from the interviewer.
   await expect(win.getByText(/tell me about a time/i)).toBeVisible()
 
-  const box = win.getByPlaceholder(/Answer out loud/)
+  const box = win.getByPlaceholder(/type here/)
 
   // Answer 1: deliberately vague → must trigger a drill-down and score all four dimensions.
   await box.fill('It went okay I guess.')
