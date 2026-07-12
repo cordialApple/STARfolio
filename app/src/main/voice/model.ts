@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
-import { existsSync, mkdirSync, createWriteStream, renameSync, rmSync, statSync } from 'fs'
+import { existsSync, mkdirSync, createWriteStream, renameSync, rmSync } from 'fs'
 
 export type ModelPhase = 'idle' | 'downloading' | 'ready' | 'error'
 export interface ModelStatus {
@@ -122,9 +122,4 @@ export async function ensureWhisperModel(name: string): Promise<string> {
   }
   await download(name, dest)
   return dest
-}
-
-export function whisperModelBytes(name: string): number {
-  const p = modelPath(name)
-  return existsSync(p) ? statSync(p).size : 0
 }

@@ -39,6 +39,7 @@ const transcribeArg = z.object({
   pcm: z.array(z.number()).min(1).max(MAX_PCM_SAMPLES),
   model: z.enum(WHISPER_MODELS).optional()
 })
+const voiceModelArg = z.object({ model: z.enum(WHISPER_MODELS) })
 
 const idArg = z.object({ id: nonEmpty.max(64) })
 const updateArg = z.object({ id: nonEmpty.max(64), input: experienceInput })
@@ -61,10 +62,10 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('embed:modelStatus', () => getModelStatus())
   handle(ipcMain, 'voice:transcribe', transcribeArg, (_e, { pcm, model }) => transcribe(pcm, model))
   ipcMain.handle('voice:models', () => whisperModels())
-  handle(ipcMain, 'voice:downloadModel', z.object({ model: z.enum(WHISPER_MODELS) }), (_e, { model }) =>
+  handle(ipcMain, 'voice:downloadModel', voiceModelArg, (_e, { model }) =>
     ensureWhisperModel(model).then(() => whisperModels())
   )
-  handle(ipcMain, 'voice:deleteModel', z.object({ model: z.enum(WHISPER_MODELS) }), (_e, { model }) => {
+  handle(ipcMain, 'voice:deleteModel', voiceModelArg, (_e, { model }) => {
     deleteWhisperModel(model)
     return whisperModels()
   })
