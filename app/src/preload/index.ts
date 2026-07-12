@@ -77,6 +77,7 @@ const api: IpcApi = {
     get: (id) => ipcRenderer.invoke('bank:get', { id }),
     list: (filter) => ipcRenderer.invoke('bank:list', filter),
     search: (filter) => ipcRenderer.invoke('bank:search', filter),
+    matchStory: (text) => ipcRenderer.invoke('bank:matchStory', { text }),
     skills: () => ipcRenderer.invoke('bank:skills'),
     tags: () => ipcRenderer.invoke('bank:tags')
   }

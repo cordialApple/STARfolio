@@ -42,5 +42,6 @@ export type {
   InterviewNextKind,
   TurnExperienceRef,
   WhisperModelInfo,
-  WhisperModelName
+  WhisperModelName,
+  StoryMatch
 } from '../../../preload/index.d'

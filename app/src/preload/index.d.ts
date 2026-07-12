@@ -283,6 +283,11 @@ export interface ListFilter {
   dateEnd?: string | null
 }
 
+export interface StoryMatch {
+  id: string
+  title: string
+  similarity: number
+}
 export interface BankApi {
   create: (input: ExperienceInput) => Promise<Experience>
   update: (id: string, input: ExperienceInput) => Promise<Experience>
@@ -290,6 +295,7 @@ export interface BankApi {
   get: (id: string) => Promise<Experience | null>
   list: (filter: ListFilter) => Promise<ExperienceSummary[]>
   search: (filter: ListFilter) => Promise<ExperienceSummary[]>
+  matchStory: (text: string) => Promise<StoryMatch | null>
   skills: () => Promise<Skill[]>
   tags: () => Promise<Tag[]>
 }

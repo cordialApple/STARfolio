@@ -75,3 +75,41 @@ export async function searchExperiences(
     .filter((s): s is ExperienceSummary => s !== undefined)
     .slice(0, RESULTS)
 }
+
+export interface StoryMatch {
+  id: string
+  title: string
+  similarity: number
+}
+
+// Above this cosine similarity we treat a spoken answer as already being the same banked story.
+// Embeddings are L2-normalised, so cosine = 1 - distance²/2.
+export const STORY_MATCH_THRESHOLD = 0.8
+
+// Semantic "is this story already in the bank?" check: embed the answer, take the nearest banked
+// experience by vector distance, and return it with a cosine similarity. Null when there's nothing
+// to compare against or the embedding model isn't available (caller then treats it as unbanked).
+export async function matchBankedStory(
+  text: string,
+  embedText: Embedder = embed
+): Promise<StoryMatch | null> {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  let vector: Float32Array
+  try {
+    vector = await embedText(trimmed)
+  } catch {
+    return null
+  }
+  const row = getDb()
+    .prepare(
+      `SELECT e.id AS id, e.title AS title, v.distance AS distance
+       FROM (SELECT experience_id, distance FROM vec_experiences
+             WHERE embedding MATCH ? AND k = 1 ORDER BY distance) v
+       JOIN experiences e ON e.id = v.experience_id`
+    )
+    .get(vector) as { id: string; title: string; distance: number } | undefined
+  if (!row) return null
+  const similarity = 1 - (row.distance * row.distance) / 2
+  return { id: row.id, title: row.title, similarity }
+}

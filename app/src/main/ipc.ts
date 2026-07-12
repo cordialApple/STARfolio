@@ -8,7 +8,7 @@ import { saveStory, getStory, listStories, storySaveInput } from './db/repositor
 import { startPractice, answerPractice, answerArg } from './practice'
 import { practiceConfig } from './ai/interview'
 import { getSession, listSessions, endSession } from './db/repositories/practice'
-import { searchExperiences } from './search'
+import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
 import { embedSelfTest, getModelStatus } from './embed'
@@ -112,6 +112,9 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   handle(ipcMain, 'bank:get', idArg, (_e, { id }) => getExperience(id))
   handle(ipcMain, 'bank:list', listFilter, (_e, filter) => listExperiences(filter))
   handle(ipcMain, 'bank:search', listFilter, (_e, filter) => searchExperiences(filter))
+  handle(ipcMain, 'bank:matchStory', z.object({ text: z.string().trim().min(1).max(20_000) }), (_e, { text }) =>
+    matchBankedStory(text)
+  )
   ipcMain.handle('bank:skills', () => listSkills())
   ipcMain.handle('bank:tags', () => listTags())
 }
