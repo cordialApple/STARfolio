@@ -28,5 +28,17 @@ export type {
   StoryExperienceRef,
   StoryLength,
   StoryTone,
-  StoryKind
+  StoryKind,
+  PracticeConfig,
+  PracticeKind,
+  PracticeStartResult,
+  PracticeAnswerResult,
+  PracticeSession,
+  PracticeSessionSummary,
+  PracticeTurn,
+  InterviewFeedback,
+  RubricScore,
+  RubricDimension,
+  InterviewNextKind,
+  TurnExperienceRef
 } from '../../../preload/index.d'

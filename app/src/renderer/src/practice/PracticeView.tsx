@@ -1,0 +1,444 @@
+import { useEffect, useRef, useState } from 'react'
+import { Mic, Send, Square, History, Plus, Sparkles, Inbox } from 'lucide-react'
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Select,
+  Skeleton,
+  Textarea,
+  useToast
+} from '../components'
+import type {
+  InterviewFeedback,
+  PracticeConfig,
+  PracticeKind,
+  PracticeSession,
+  PracticeSessionSummary
+} from '../lib/bank-types'
+import { FeedbackCard } from './FeedbackCard'
+import { cn } from '../lib/cn'
+
+const THEMES = [
+  'Leadership',
+  'Problem solving',
+  'Teamwork',
+  'Conflict',
+  'Handling failure',
+  'Working under pressure'
+]
+
+interface LiveTurn {
+  role: 'interviewer' | 'candidate'
+  text: string
+  feedback?: InterviewFeedback
+  used?: { id: string; title: string }[]
+  unbanked?: boolean
+}
+
+type View = 'setup' | 'live' | 'history' | 'transcript'
+
+export function PracticeView(): React.JSX.Element {
+  const toast = useToast()
+  const [view, setView] = useState<View>('setup')
+
+  const [mode, setMode] = useState<PracticeKind>('genre')
+  const [jd, setJd] = useState('')
+  const [theme, setTheme] = useState(THEMES[0])
+  const [starting, setStarting] = useState(false)
+
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [turns, setTurns] = useState<LiveTurn[]>([])
+  const [answer, setAnswer] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [ended, setEnded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [turns.length, busy])
+
+  async function start(): Promise<void> {
+    const promptText = mode === 'jd' ? jd.trim() : theme
+    if (!promptText) return
+    setStarting(true)
+    setError(null)
+    try {
+      const config: PracticeConfig = { kind: mode, promptText }
+      const { sessionId: id, question } = await window.api.practice.start(config)
+      setSessionId(id)
+      setTurns([{ role: 'interviewer', text: question }])
+      setEnded(false)
+      setView('live')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  async function submit(): Promise<void> {
+    const text = answer.trim()
+    if (!text || !sessionId) return
+    setBusy(true)
+    setError(null)
+    const optimistic: LiveTurn = { role: 'candidate', text }
+    setTurns((t) => [...t, optimistic])
+    setAnswer('')
+    try {
+      const res = await window.api.practice.answer(sessionId, text)
+      setTurns((t) => {
+        const copy = [...t]
+        copy[copy.length - 1] = {
+          role: 'candidate',
+          text,
+          feedback: res.feedback,
+          used: res.used,
+          unbanked: res.unbanked
+        }
+        if (res.next_kind === 'done') return copy
+        if (res.next_text) copy.push({ role: 'interviewer', text: res.next_text })
+        return copy
+      })
+      if (res.next_kind === 'done') {
+        setEnded(true)
+        toast('Session complete — nice work.', 'success')
+      }
+    } catch (err) {
+      setError((err as Error).message)
+      setTurns((t) => t.slice(0, -1))
+      setAnswer(text)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function endNow(): Promise<void> {
+    if (sessionId) {
+      try {
+        await window.api.practice.end(sessionId)
+      } catch {
+        // best-effort; the transcript is already persisted
+      }
+    }
+    setEnded(true)
+  }
+
+  if (view === 'history') return <HistoryList onOpen={(id) => { setSessionId(id); setView('transcript') }} onBack={() => setView('setup')} />
+  if (view === 'transcript' && sessionId)
+    return <Transcript id={sessionId} onBack={() => setView('history')} />
+
+  if (view === 'live')
+    return (
+      <div className="mx-auto max-w-2xl space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-ink">Mock interview</h1>
+          {!ended && (
+            <Button variant="ghost" size="sm" onClick={() => void endNow()}>
+              <Square className="size-4" />
+              End session
+            </Button>
+          )}
+        </div>
+
+        <ol className="space-y-4">
+          {turns.map((t, i) =>
+            t.role === 'interviewer' ? (
+              <li key={i} className="rounded-lg border border-line bg-surface p-4">
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-brand">
+                  <Mic className="size-3.5" />
+                  Interviewer
+                </div>
+                <p className="text-ink">{t.text}</p>
+              </li>
+            ) : (
+              <li key={i} className="space-y-2 pl-4">
+                <p className="whitespace-pre-wrap text-ink">{t.text}</p>
+                {t.feedback && <FeedbackCard feedback={t.feedback} />}
+                {t.used && t.used.length > 0 && (
+                  <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                    Drew on:
+                    {t.used.map((u) => (
+                      <span key={u.id} className="rounded-pill bg-raised px-2 py-0.5 font-medium">
+                        {u.title}
+                      </span>
+                    ))}
+                  </p>
+                )}
+                {t.unbanked && (
+                  <p className="flex items-center gap-1.5 rounded-lg bg-warning/15 px-3 py-1.5 text-xs font-medium text-fg-warning">
+                    <Sparkles className="size-3.5" />
+                    That story isn&apos;t in your bank yet — worth capturing later.
+                  </p>
+                )}
+              </li>
+            )
+          )}
+        </ol>
+
+        {error && <ErrorState description={error} />}
+
+        {ended ? (
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setView('setup')}>
+              <Plus className="size-4" />
+              New session
+            </Button>
+            <Button variant="secondary" onClick={() => setView('history')}>
+              <History className="size-4" />
+              Review sessions
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Textarea
+              rows={4}
+              value={answer}
+              disabled={busy}
+              placeholder="Answer out loud in your head, then type it here…"
+              onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit()
+              }}
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-faint">⌘/Ctrl + Enter to send</span>
+              <Button loading={busy} disabled={busy || !answer.trim()} onClick={() => void submit()}>
+                <Send className="size-4" />
+                Answer
+              </Button>
+            </div>
+          </div>
+        )}
+        <div ref={scrollRef} />
+      </div>
+    )
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-ink">Practice</h1>
+          <p className="text-sm text-muted">
+            A live mock interview — pointed questions, honest feedback, sharp follow-ups.
+          </p>
+        </div>
+        <Button variant="secondary" size="sm" onClick={() => setView('history')}>
+          <History className="size-4" />
+          History
+        </Button>
+      </div>
+
+      <Card title="Set up your session">
+        <div className="space-y-4">
+          <div className="inline-flex rounded-lg border border-line p-0.5">
+            <TabButton active={mode === 'genre'} onClick={() => setMode('genre')}>
+              By theme
+            </TabButton>
+            <TabButton active={mode === 'jd'} onClick={() => setMode('jd')}>
+              For a job description
+            </TabButton>
+          </div>
+
+          {mode === 'genre' ? (
+            <label className="block space-y-1 text-sm">
+              <span className="font-semibold text-muted">Theme</span>
+              <Select value={theme} onChange={(e) => setTheme(e.target.value)}>
+                {THEMES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          ) : (
+            <Textarea
+              rows={5}
+              value={jd}
+              placeholder="Paste the job description you're interviewing for…"
+              onChange={(e) => setJd(e.target.value)}
+            />
+          )}
+
+          {error && <ErrorState description={error} />}
+
+          <div className="flex justify-end">
+            <Button
+              loading={starting}
+              disabled={starting || (mode === 'jd' && !jd.trim())}
+              onClick={() => void start()}
+            >
+              <Mic className="size-4" />
+              Start interview
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  children
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'rounded-md px-3 py-1.5 text-sm font-semibold transition-colors',
+        active ? 'bg-raised text-ink' : 'text-muted hover:text-ink'
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function HistoryList({
+  onOpen,
+  onBack
+}: {
+  onOpen: (id: string) => void
+  onBack: () => void
+}): React.JSX.Element {
+  const [sessions, setSessions] = useState<PracticeSessionSummary[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.practice
+      .list()
+      .then((s) => !cancelled && setSessions(s))
+      .catch((e) => !cancelled && setError((e as Error).message))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-ink">Session history</h1>
+        <Button variant="secondary" size="sm" onClick={onBack}>
+          New session
+        </Button>
+      </div>
+      {error ? (
+        <ErrorState description={error} />
+      ) : sessions === null ? (
+        <div className="space-y-2">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      ) : sessions.length === 0 ? (
+        <EmptyState icon={Inbox} title="No sessions yet" description="Run a mock interview and it'll show up here." />
+      ) : (
+        <ul className="space-y-2">
+          {sessions.map((s) => (
+            <li key={s.id}>
+              <button
+                type="button"
+                onClick={() => onOpen(s.id)}
+                className="flex w-full items-center justify-between gap-3 rounded-lg border border-line bg-surface p-4 text-left hover:bg-raised"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-ink">{s.config.promptText}</span>
+                  <span className="text-xs text-muted">
+                    {new Date(s.started_at + 'Z').toLocaleString()} · {s.answered}{' '}
+                    {s.answered === 1 ? 'answer' : 'answers'}
+                  </span>
+                </span>
+                <Badge tone={s.ended_at ? 'success' : 'warning'}>
+                  {s.ended_at ? 'Complete' : 'In progress'}
+                </Badge>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
+  const [session, setSession] = useState<PracticeSession | null | undefined>(undefined)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.practice
+      .get(id)
+      .then((s) => !cancelled && setSession(s))
+      .catch((e) => !cancelled && setError((e as Error).message))
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-5">
+      <button
+        type="button"
+        onClick={onBack}
+        className="text-sm font-semibold text-muted hover:text-ink"
+      >
+        ← Back to history
+      </button>
+      {error ? (
+        <ErrorState description={error} />
+      ) : session === undefined ? (
+        <div className="space-y-2">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : session === null ? (
+        <ErrorState title="Not found" description="This session no longer exists." />
+      ) : (
+        <>
+          <div>
+            <h1 className="text-2xl font-bold text-ink">{session.config.promptText}</h1>
+            <p className="text-sm text-muted">{new Date(session.started_at + 'Z').toLocaleString()}</p>
+          </div>
+          <ol className="space-y-4">
+            {session.turns.map((t) =>
+              t.role === 'interviewer' ? (
+                <li key={t.id} className="rounded-lg border border-line bg-surface p-4">
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-brand">
+                    Interviewer
+                  </div>
+                  <p className="text-ink">{t.content}</p>
+                </li>
+              ) : (
+                <li key={t.id} className="space-y-2 pl-4">
+                  <p className="whitespace-pre-wrap text-ink">{t.content}</p>
+                  {t.feedback && <FeedbackCard feedback={t.feedback} />}
+                  {t.experiences.length > 0 && (
+                    <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                      Drew on:
+                      {t.experiences.map((u) => (
+                        <span key={u.id} className="rounded-pill bg-raised px-2 py-0.5 font-medium">
+                          {u.title}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                </li>
+              )
+            )}
+          </ol>
+        </>
+      )}
+    </div>
+  )
+}
