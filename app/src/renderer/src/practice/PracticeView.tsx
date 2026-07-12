@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Mic, Send, Square, History, Plus, Sparkles, Inbox, Volume2 } from 'lucide-react'
+import { Mic, Send, Square, History, Plus, Sparkles, Inbox, Volume2, Check, Loader2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -19,13 +19,18 @@ import type {
   PracticeSession,
   PracticeSessionSummary,
   WhisperModelInfo,
-  WhisperModelName
+  WhisperModelName,
+  StoryMatch
 } from '../lib/bank-types'
 import { FeedbackCard } from './FeedbackCard'
 import { PushToTalk } from './PushToTalk'
 import { VoiceModelManager } from './VoiceModelManager'
 import { speak, stopSpeaking, ttsAvailable } from '../lib/tts'
 import { cn } from '../lib/cn'
+
+// Mirror of STORY_MATCH_THRESHOLD in the main-process search module: above this cosine similarity
+// the spoken answer is treated as already being that banked story.
+const MATCH_THRESHOLD = 0.8
 
 const THEMES = [
   'Leadership',
@@ -41,7 +46,9 @@ interface LiveTurn {
   text: string
   feedback?: InterviewFeedback
   used?: { id: string; title: string }[]
-  unbanked?: boolean
+  matchChecked?: boolean
+  match?: StoryMatch | null
+  captured?: boolean
 }
 
 type View = 'setup' | 'live' | 'history' | 'transcript'
@@ -107,27 +114,42 @@ export function PracticeView(): React.JSX.Element {
     }
   }
 
+  // Background semantic check: is this spoken answer already one of the banked stories? Runs after
+  // the feedback shows so it never blocks the interview; the capture banner appears when it resolves.
+  async function checkMatch(idx: number, text: string): Promise<void> {
+    let match: StoryMatch | null = null
+    try {
+      match = await window.api.bank.matchStory(text)
+    } catch {
+      match = null
+    }
+    setTurns((t) => t.map((turn, i) => (i === idx ? { ...turn, matchChecked: true, match } : turn)))
+  }
+
   async function submit(): Promise<void> {
     const text = answer.trim()
     if (!text || !sessionId) return
     setBusy(true)
     setError(null)
-    const optimistic: LiveTurn = { role: 'candidate', text }
-    setTurns((t) => [...t, optimistic])
+    let candidateIdx = 0
+    setTurns((t) => {
+      candidateIdx = t.length
+      return [...t, { role: 'candidate', text }]
+    })
     setAnswer('')
     try {
       const res = await window.api.practice.answer(sessionId, text)
       setTurns((t) => {
         const copy = [...t]
-        copy[copy.length - 1] = {
+        copy[candidateIdx] = {
           role: 'candidate',
           text,
           feedback: res.feedback,
           used: res.used,
-          unbanked: res.unbanked
+          matchChecked: false
         }
-        if (res.next_kind === 'done') return copy
-        if (res.next_text) copy.push({ role: 'interviewer', text: res.next_text })
+        if (res.next_kind !== 'done' && res.next_text)
+          copy.push({ role: 'interviewer', text: res.next_text })
         return copy
       })
       if (res.next_kind === 'done') {
@@ -136,12 +158,49 @@ export function PracticeView(): React.JSX.Element {
       } else if (res.next_text) {
         say(res.next_text)
       }
+      void checkMatch(candidateIdx, text)
     } catch (err) {
       setError((err as Error).message)
       setTurns((t) => t.slice(0, -1))
       setAnswer(text)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const [capturingIdx, setCapturingIdx] = useState<number | null>(null)
+  async function captureToBank(idx: number, text: string): Promise<void> {
+    setCapturingIdx(idx)
+    try {
+      // Re-check right before saving so we don't create a duplicate of a story banked meanwhile.
+      const dup = await window.api.bank.matchStory(text)
+      if (dup && dup.similarity >= MATCH_THRESHOLD) {
+        setTurns((t) => t.map((turn, i) => (i === idx ? { ...turn, match: dup } : turn)))
+        toast(`This looks like your existing “${dup.title}.” Skipped to avoid a duplicate.`, 'neutral')
+        return
+      }
+      const ext = await window.api.brain.extract(text)
+      await window.api.bank.create({
+        title: ext.title,
+        situation: ext.situation.text,
+        task: ext.task.text,
+        action: ext.action.text,
+        result_text: ext.result.text,
+        context: ext.context,
+        happened_start: null,
+        happened_end: null,
+        status: 'draft',
+        skills: ext.skills,
+        tags: ext.tags,
+        metrics: ext.metrics,
+        source: { kind: 'paste', raw_text: text }
+      })
+      setTurns((t) => t.map((turn, i) => (i === idx ? { ...turn, captured: true } : turn)))
+      toast('Saved to your bank as a draft — polish it in the Bank tab.', 'success')
+    } catch (err) {
+      toast(`Could not capture: ${(err as Error).message}`, 'danger')
+    } finally {
+      setCapturingIdx(null)
     }
   }
 
@@ -155,6 +214,49 @@ export function PracticeView(): React.JSX.Element {
       }
     }
     setEnded(true)
+  }
+
+  function captureBanner(t: LiveTurn, i: number): React.JSX.Element | null {
+    if (t.captured)
+      return (
+        <p className="flex items-center gap-1.5 rounded-lg bg-success/15 px-3 py-1.5 text-xs font-medium text-fg-success">
+          <Check className="size-3.5" />
+          Saved to your bank as a draft.
+        </p>
+      )
+    if (!t.matchChecked)
+      return (
+        <p className="flex items-center gap-1.5 px-1 text-xs text-faint">
+          <Loader2 className="size-3.5 animate-spin" />
+          Checking your bank…
+        </p>
+      )
+    if (t.match && t.match.similarity >= MATCH_THRESHOLD)
+      return (
+        <p className="flex items-center gap-1.5 px-1 text-xs text-muted">
+          <Check className="size-3.5 text-fg-success" />
+          Already in your bank as &ldquo;{t.match.title}.&rdquo;
+        </p>
+      )
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-warning/15 px-3 py-2 text-xs font-medium text-fg-warning">
+        <span className="flex items-center gap-1.5">
+          <Sparkles className="size-3.5" />
+          Not in your bank yet.
+          {t.match && ` (closest: “${t.match.title}”)`}
+        </span>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={capturingIdx === i}
+          disabled={capturingIdx !== null}
+          onClick={() => void captureToBank(i, t.text)}
+        >
+          <Sparkles className="size-3.5" />
+          Capture it
+        </Button>
+      </div>
+    )
   }
 
   if (view === 'history') return <HistoryList onOpen={(id) => { setSessionId(id); setView('transcript') }} onBack={() => setView('setup')} />
@@ -214,12 +316,7 @@ export function PracticeView(): React.JSX.Element {
                     ))}
                   </p>
                 )}
-                {t.unbanked && (
-                  <p className="flex items-center gap-1.5 rounded-lg bg-warning/15 px-3 py-1.5 text-xs font-medium text-fg-warning">
-                    <Sparkles className="size-3.5" />
-                    That story isn&apos;t in your bank yet — worth capturing later.
-                  </p>
-                )}
+                {t.feedback && captureBanner(t, i)}
               </li>
             )
           )}

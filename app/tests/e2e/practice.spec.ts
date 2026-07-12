@@ -65,7 +65,9 @@ test('mode A: scripted session — vague answer drills down, feedback scores all
   await box.fill(STRONG)
   await win.getByRole('button', { name: 'Answer' }).click()
   await expect(win.getByText(/handled a setback/i)).toBeVisible()
-  await expect(win.getByText('Deploy pipeline rewrite')).toBeVisible()
+  // The answer cites the bank (shown in the "Drew on:" chip; the title may also appear in the
+  // bank-match banner, so match the first).
+  await expect(win.getByText('Deploy pipeline rewrite').first()).toBeVisible()
 
   // Answer 3: closes the scripted three-answer session.
   await box.fill(STRONG)
