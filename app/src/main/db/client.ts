@@ -23,6 +23,7 @@ export function initDb(dbPath?: string): Database.Database {
   loadVecExtension(db)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  db.pragma('busy_timeout = 5000')
 
   runMigrations(db, target)
 
