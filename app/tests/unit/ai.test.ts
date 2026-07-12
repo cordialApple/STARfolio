@@ -32,7 +32,11 @@ function recorder(): {
 describe('AI stub transport', () => {
   it('streams tokens then completes with usage', async () => {
     const rec = recorder()
-    await stubTransport('haiku-test').stream('hello world', new AbortController().signal, rec)
+    await stubTransport().stream(
+      { model: 'haiku-test', prompt: 'hello world' },
+      new AbortController().signal,
+      rec
+    )
     expect(rec.tokens.join('')).toContain('stub reply to: hello world')
     expect(rec.done).toBe(true)
     expect(rec.error).toBeNull()
@@ -43,7 +47,7 @@ describe('AI stub transport', () => {
     const rec = recorder()
     const ac = new AbortController()
     ac.abort()
-    await stubTransport().stream('never streamed', ac.signal, rec)
+    await stubTransport().stream({ model: 'stub', prompt: 'never streamed' }, ac.signal, rec)
     expect(rec.tokens.length).toBe(0)
     expect(rec.done).toBe(false)
   })
