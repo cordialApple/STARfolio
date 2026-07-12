@@ -13,8 +13,14 @@ export interface UrlResult {
   finalUrl: string
   meta: Record<string, unknown>
 }
+export interface PackDoc {
+  text: string
+  title: string | null
+  meta: Record<string, unknown>
+}
+type IngestReply = DocResult | UrlResult | PackDoc
 type Reply =
-  | { id: string; ok: true; doc?: DocResult; url?: UrlResult }
+  | { id: string; ok: true; doc?: DocResult; url?: UrlResult; pack?: PackDoc }
   | { id: string; ok: false; error: string }
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -22,10 +28,10 @@ const REQUEST_TIMEOUT_MS = 60_000
 let child: UtilityProcess | null = null
 const pending = new Map<
   string,
-  { resolve: (v: DocResult | UrlResult) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+  { resolve: (v: IngestReply) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
 >()
 
-function settle(id: string): { resolve: (v: DocResult | UrlResult) => void; reject: (e: Error) => void } | undefined {
+function settle(id: string): { resolve: (v: IngestReply) => void; reject: (e: Error) => void } | undefined {
   const p = pending.get(id)
   if (!p) return undefined
   clearTimeout(p.timer)
@@ -41,7 +47,7 @@ function ensureWorker(): UtilityProcess {
   worker.on('message', (msg: Reply) => {
     const p = settle(msg.id)
     if (!p) return
-    if (msg.ok) p.resolve((msg.doc ?? msg.url)!)
+    if (msg.ok) p.resolve((msg.doc ?? msg.url ?? msg.pack)!)
     else p.reject(new Error(msg.error))
   })
   worker.on('exit', () => {
@@ -56,17 +62,15 @@ function ensureWorker(): UtilityProcess {
   return worker
 }
 
-function request<T extends DocResult | UrlResult>(
-  message: Record<string, unknown>
-): Promise<T> {
+function request<T extends IngestReply>(message: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   const worker = ensureWorker()
   const id = randomUUID()
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id)
-      reject(new Error('The document took too long to read and was skipped.'))
-    }, REQUEST_TIMEOUT_MS)
-    pending.set(id, { resolve: resolve as (v: DocResult | UrlResult) => void, reject, timer })
+      reject(new Error('That input took too long to read and was skipped.'))
+    }, timeoutMs)
+    pending.set(id, { resolve: resolve as (v: IngestReply) => void, reject, timer })
     worker.postMessage({ ...message, id })
   })
 }
@@ -77,6 +81,22 @@ export function parseDocument(filename: string, bytes: Uint8Array): Promise<DocR
 
 export function parseUrlDocument(url: string): Promise<UrlResult> {
   return request<UrlResult>({ type: 'parseUrl', url })
+}
+
+export function parseSheetDocument(filename: string, bytes: Uint8Array): Promise<PackDoc> {
+  return request<PackDoc>({ type: 'parseSheet', filename, bytes })
+}
+
+export function packFolderDocument(path: string): Promise<PackDoc> {
+  return request<PackDoc>({ type: 'packFolder', path }, 180_000)
+}
+
+export function packZipDocument(filename: string, bytes: Uint8Array): Promise<PackDoc> {
+  return request<PackDoc>({ type: 'packZip', filename, bytes }, 180_000)
+}
+
+export function packRepoDocument(url: string, token?: string): Promise<PackDoc> {
+  return request<PackDoc>({ type: 'packRepo', url, token }, 180_000)
 }
 
 export function stopIngestWorker(): void {

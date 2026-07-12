@@ -2,10 +2,15 @@ import { createRequire } from 'module'
 import { dirname, join } from 'path'
 import { detectFileKind, decodeText, extractDocx, extractPdf, looksScanned, htmlToArticle } from './extractors'
 import { fetchArticleHtml } from './fetch-url'
+import { sheetToText, packFolder, packZipBytes, packRepo } from './evidence-extractors'
 
 type Request =
   | { type: 'parseDoc'; id: string; filename: string; bytes: Uint8Array }
   | { type: 'parseUrl'; id: string; url: string }
+  | { type: 'parseSheet'; id: string; filename: string; bytes: Uint8Array }
+  | { type: 'packFolder'; id: string; path: string }
+  | { type: 'packZip'; id: string; filename: string; bytes: Uint8Array }
+  | { type: 'packRepo'; id: string; url: string; token?: string }
 
 interface DocResult {
   text: string
@@ -18,9 +23,15 @@ interface UrlResult {
   finalUrl: string
   meta: Record<string, unknown>
 }
+interface PackDoc {
+  text: string
+  title: string | null
+  meta: Record<string, unknown>
+}
 type Reply =
   | { id: string; ok: true; doc: DocResult }
   | { id: string; ok: true; url: UrlResult }
+  | { id: string; ok: true; pack: PackDoc }
   | { id: string; ok: false; error: string }
 
 interface ParentPort {
@@ -74,6 +85,29 @@ async function parseUrl(url: string): Promise<UrlResult> {
   }
 }
 
+async function parseSheet(filename: string, bytes: Uint8Array): Promise<PackDoc> {
+  const text = await sheetToText(filename, bytes)
+  if (!text.trim()) throw new Error('That spreadsheet had no readable rows.')
+  return { text, title: null, meta: { kind: 'spreadsheet' } }
+}
+
+async function packFolderDoc(path: string): Promise<PackDoc> {
+  const { text, languages, tree, truncated } = await packFolder(path)
+  if (!tree.trim()) throw new Error('That folder had no readable files.')
+  return { text, title: null, meta: { kind: 'code', languages, truncated } }
+}
+
+async function packZipDoc(bytes: Uint8Array): Promise<PackDoc> {
+  const { text, languages, tree, truncated } = await packZipBytes(bytes)
+  if (!tree.trim()) throw new Error('That archive had no readable files.')
+  return { text, title: null, meta: { kind: 'code', languages, truncated } }
+}
+
+async function packRepoDoc(url: string, token?: string): Promise<PackDoc> {
+  const { text, title, languages, truncated } = await packRepo(url, token)
+  return { text, title, meta: { kind: 'repo', languages, truncated, repo: title } }
+}
+
 parentPort.on('message', (e) => {
   const msg = e.data
   void (async () => {
@@ -82,6 +116,14 @@ parentPort.on('message', (e) => {
         parentPort.postMessage({ id: msg.id, ok: true, doc: await parseDoc(msg.filename, msg.bytes) })
       else if (msg.type === 'parseUrl')
         parentPort.postMessage({ id: msg.id, ok: true, url: await parseUrl(msg.url) })
+      else if (msg.type === 'parseSheet')
+        parentPort.postMessage({ id: msg.id, ok: true, pack: await parseSheet(msg.filename, msg.bytes) })
+      else if (msg.type === 'packFolder')
+        parentPort.postMessage({ id: msg.id, ok: true, pack: await packFolderDoc(msg.path) })
+      else if (msg.type === 'packZip')
+        parentPort.postMessage({ id: msg.id, ok: true, pack: await packZipDoc(msg.bytes) })
+      else if (msg.type === 'packRepo')
+        parentPort.postMessage({ id: msg.id, ok: true, pack: await packRepoDoc(msg.url, msg.token) })
     } catch (err) {
       parentPort.postMessage({ id: msg.id, ok: false, error: (err as Error).message })
     }
