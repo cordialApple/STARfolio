@@ -50,5 +50,13 @@ export type {
   EntityInput,
   EntityNode,
   Connection,
-  Neighbors
+  Neighbors,
+  Citation,
+  CorpusDocSummary,
+  CorpusIngestResult,
+  TechnicalFeedback,
+  TechnicalRubricDimension,
+  TechnicalConfig,
+  TechnicalStartResult,
+  TechnicalAnswerResult
 } from '../../../preload/index.d'

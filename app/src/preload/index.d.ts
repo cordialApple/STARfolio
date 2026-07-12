@@ -324,6 +324,59 @@ export interface PracticeApi {
   get: (sessionId: string) => Promise<PracticeSession | null>
   list: () => Promise<PracticeSessionSummary[]>
 }
+export type TechnicalRubricDimension = 'correctness' | 'depth' | 'tradeoffs' | 'communication'
+export interface TechnicalFeedback {
+  correctness: RubricScore
+  depth: RubricScore
+  tradeoffs: RubricScore
+  communication: RubricScore
+  summary: string
+}
+export interface TechnicalConfig {
+  promptText: string
+  discipline?: string
+}
+export interface Citation {
+  chunkId: string
+  title: string
+}
+export interface TechnicalStartResult {
+  sessionId: string
+  question: string
+  citations: Citation[]
+}
+export interface TechnicalAnswerResult {
+  feedback: TechnicalFeedback
+  next_kind: InterviewNextKind
+  next_text: string
+  citations: Citation[]
+}
+export interface TechnicalApi {
+  start: (config: TechnicalConfig) => Promise<TechnicalStartResult>
+  answer: (sessionId: string, answer: string) => Promise<TechnicalAnswerResult>
+}
+
+export interface CorpusDocSummary {
+  id: string
+  title: string
+  discipline: string | null
+  chunks: number
+}
+export interface CorpusIngestResult {
+  ok: boolean
+  name: string
+  error?: string
+  docId?: string
+  chunks?: number
+}
+export interface CorpusApi {
+  addFiles: (paths: string[], discipline: string) => Promise<CorpusIngestResult[]>
+  addUrl: (url: string, discipline: string) => Promise<CorpusIngestResult>
+  list: (discipline?: string) => Promise<CorpusDocSummary[]>
+  remove: (id: string) => Promise<{ deleted: boolean }>
+  disciplines: () => Promise<string[]>
+}
+
 export interface ExperienceSummary {
   id: string
   title: string
@@ -380,6 +433,8 @@ export interface IpcApi {
   story: StoryApi
   clipboard: ClipboardApi
   practice: PracticeApi
+  technical: TechnicalApi
+  corpus: CorpusApi
   bank: BankApi
 }
 

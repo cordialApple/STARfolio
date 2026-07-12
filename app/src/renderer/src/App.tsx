@@ -8,6 +8,7 @@ import { BrainDump } from './capture/BrainDump'
 import { ImportWizard } from './ingest/ImportWizard'
 import { StoryView } from './story/StoryView'
 import { PracticeView } from './practice/PracticeView'
+import { TechnicalView } from './technical/TechnicalView'
 import { SettingsView } from './settings/SettingsView'
 import { IconButton } from './components'
 import { Settings as SettingsIcon } from 'lucide-react'
@@ -20,6 +21,7 @@ type Route =
   | { name: 'import' }
   | { name: 'generate' }
   | { name: 'practice' }
+  | { name: 'technical' }
   | { name: 'settings' }
   | { name: 'detail'; id: string }
   | { name: 'edit'; exp: Experience }
@@ -60,7 +62,7 @@ function App(): React.JSX.Element {
           <div className="flex items-center gap-2">
             <nav className="flex items-center gap-1">
               <NavTab
-                active={route.name !== 'generate' && route.name !== 'practice'}
+                active={!['generate', 'practice', 'technical', 'settings'].includes(route.name)}
                 onClick={() => setRoute({ name: 'list' })}
               >
                 Bank
@@ -76,6 +78,12 @@ function App(): React.JSX.Element {
                 onClick={() => setRoute({ name: 'practice' })}
               >
                 Practice
+              </NavTab>
+              <NavTab
+                active={route.name === 'technical'}
+                onClick={() => setRoute({ name: 'technical' })}
+              >
+                Technical
               </NavTab>
             </nav>
             <IconButton
@@ -105,6 +113,8 @@ function App(): React.JSX.Element {
         {route.name === 'generate' && <StoryView />}
 
         {route.name === 'practice' && <PracticeView />}
+
+        {route.name === 'technical' && <TechnicalView />}
 
         {route.name === 'settings' && <SettingsView />}
 
