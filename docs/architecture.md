@@ -12,3 +12,4 @@ Companion docs: [concept & user stories](starfolio-concept.md) · [build plan](b
 | [ingestion.md](architecture/ingestion.md) | Extractor pipeline, per-format build order, repo-tarball rationale |
 | [voice.md](architecture/voice.md) | Push-to-talk v1 → streaming v2, rejected Web Speech, whisper fallback ladder |
 | [privacy-and-risks.md](architecture/privacy-and-risks.md) | Data locality, network egress, backups; risks & fallbacks table |
+| [auth.md](architecture/auth.md) | Anthropic credential strategy: Console key primary, SDK/OAuth-profile fallback, rejected subscription/proxy paths |

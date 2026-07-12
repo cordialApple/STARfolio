@@ -17,3 +17,4 @@ All data in one SQLite file under `userData`; the only network egress is the Ant
 | Stage-2.5 retrieval eval fails on abstract themed queries | pre-named ladder: Haiku query expansion → larger embedding model (bge-base) → LLM rerank |
 | Model IDs/pricing rotate | single routing config module; usage_log makes cost drift visible |
 | LLM invents details | grounding rules + provenance links + gaps-not-fills are spec'd into every generation prompt and its UI |
+| Anthropic auth/billing policy churn (subscription OAuth banned, Agent SDK terms whipsawed in 2026) | Console API key is the primary credential — stable terms; alternatives isolated behind the `AiTransport` seam ([auth.md](auth.md)) |
