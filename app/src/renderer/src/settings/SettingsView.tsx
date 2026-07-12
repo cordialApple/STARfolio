@@ -181,12 +181,13 @@ export function SettingsView(): React.JSX.Element {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-ink">Settings</h1>
         <p className="text-sm text-muted">Your key and data stay on this machine.</p>
       </div>
 
+      <div className="gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -533,6 +534,7 @@ export function SettingsView(): React.JSX.Element {
           )}
         </div>
       </Card>
+      </div>
     </div>
   )
 }
