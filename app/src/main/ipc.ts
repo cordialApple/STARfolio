@@ -13,6 +13,7 @@ import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
 import { embedSelfTest, getModelStatus } from './embed'
 import { transcribe } from './voice'
+import { whisperModels, ensureWhisperModel, deleteWhisperModel } from './voice/model'
 import {
   experienceInput,
   listFilter,
@@ -59,6 +60,14 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('embed:selfTest', () => embedSelfTest())
   ipcMain.handle('embed:modelStatus', () => getModelStatus())
   handle(ipcMain, 'voice:transcribe', transcribeArg, (_e, { pcm, model }) => transcribe(pcm, model))
+  ipcMain.handle('voice:models', () => whisperModels())
+  handle(ipcMain, 'voice:downloadModel', z.object({ model: z.enum(WHISPER_MODELS) }), (_e, { model }) =>
+    ensureWhisperModel(model).then(() => whisperModels())
+  )
+  handle(ipcMain, 'voice:deleteModel', z.object({ model: z.enum(WHISPER_MODELS) }), (_e, { model }) => {
+    deleteWhisperModel(model)
+    return whisperModels()
+  })
 
   ipcMain.handle('ai:hasKey', () => hasSecret('anthropic_api_key'))
   ipcMain.handle('ai:deleteKey', () => deleteSecret('anthropic_api_key'))

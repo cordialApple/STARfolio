@@ -34,7 +34,15 @@ function ensureWorker(): UtilityProcess {
   return worker
 }
 
+// Deterministic offline transcript for e2e/CI — no model download, no worker. The push-to-talk
+// UI flow (record → transcript → edit → send) is what's under test, not whisper's accuracy.
+function stubTranscript(pcm: number[]): string {
+  const seconds = (pcm.length / 16000).toFixed(1)
+  return `This is a stub transcript of a ${seconds} second recording.`
+}
+
 export async function transcribe(pcm: number[], model?: string): Promise<string> {
+  if (process.env.STARFOLIO_WHISPER_STUB === '1') return stubTranscript(pcm)
   const modelName = model ?? process.env.STARFOLIO_WHISPER_MODEL ?? 'base.en'
   const modelPath = await ensureWhisperModel(modelName)
   const worker = ensureWorker()
