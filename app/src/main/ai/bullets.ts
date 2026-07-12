@@ -86,7 +86,7 @@ export async function generateBullets(jdText: string, experienceIds: string[]): 
 
 function stubBullets(experiences: Experience[]): BulletExtraction['bullets'] {
   return experiences.slice(0, 8).map((e) => ({
-    text: `Delivered ${e.title || 'a key result'} — ${(e.action || e.result_text || 'drove measurable impact').slice(0, 100)}`,
+    text: `Delivered ${e.title || 'a key result'}`,
     experience_id: e.id
   }))
 }
