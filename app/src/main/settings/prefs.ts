@@ -55,9 +55,11 @@ function writeRaw(key: string, value: string): void {
 
 export function getPrefs(): Prefs {
   const out = { ...DEFAULTS }
+  let onboardingStored = false
   for (const k of Object.keys(KEYS) as (keyof Prefs)[]) {
     const raw = readRaw(KEYS[k])
     if (raw == null) continue
+    if (k === 'onboardingDone') onboardingStored = true
     if (k === 'reminderIntervalDays') {
       const n = Number(raw)
       if (Number.isFinite(n) && n > 0) out.reminderIntervalDays = n
@@ -66,6 +68,9 @@ export function getPrefs(): Prefs {
     } else {
       out[k] = (raw === '1') as never
     }
+  }
+  if (process.env.STARFOLIO_E2E === '1' && !onboardingStored) {
+    out.onboardingDone = true
   }
   return out
 }

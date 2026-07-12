@@ -13,7 +13,7 @@ let app: ElectronApplication
 
 test.beforeAll(async () => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'starfolio-ingest-'))
-  const env = { ...process.env, STARFOLIO_AI_STUB: '1', STARFOLIO_EMBED_STUB: '1' }
+  const env = { ...process.env, STARFOLIO_AI_STUB: '1', STARFOLIO_EMBED_STUB: '1', STARFOLIO_E2E: '1' }
   const args = [`--user-data-dir=${userDataDir}`]
   app = existsSync(PACKAGED_EXE)
     ? await electron.launch({ executablePath: PACKAGED_EXE, args, env })
