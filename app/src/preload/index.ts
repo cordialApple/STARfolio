@@ -45,6 +45,16 @@ const api: IpcApi = {
   brain: {
     extract: (text) => ipcRenderer.invoke('brain:extract', { text })
   },
+  story: {
+    generate: (config) => ipcRenderer.invoke('story:generate', config),
+    cancel: (requestId) => ipcRenderer.invoke('story:cancel', requestId),
+    save: (input) => ipcRenderer.invoke('story:save', input),
+    get: (id) => ipcRenderer.invoke('story:get', { id }),
+    list: () => ipcRenderer.invoke('story:list')
+  },
+  clipboard: {
+    write: (text) => ipcRenderer.invoke('clipboard:write', { text })
+  },
   bank: {
     create: (input) => ipcRenderer.invoke('bank:create', input),
     update: (id, input) => ipcRenderer.invoke('bank:update', { id, input }),

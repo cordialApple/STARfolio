@@ -6,6 +6,13 @@ export interface StreamUsage {
   cacheRead: number
 }
 
+export interface StreamRequest {
+  model: string
+  prompt: string
+  system?: string
+  maxTokens?: number
+}
+
 export interface StreamCallbacks {
   onToken: (token: string) => void
   onDone: (usage: StreamUsage) => void
@@ -13,18 +20,25 @@ export interface StreamCallbacks {
 }
 
 export interface AiTransport {
-  model: string
-  stream(prompt: string, signal: AbortSignal, cb: StreamCallbacks): Promise<void>
+  stream(req: StreamRequest, signal: AbortSignal, cb: StreamCallbacks): Promise<void>
 }
 
-export function anthropicTransport(apiKey: string, model: string): AiTransport {
+export function anthropicTransport(apiKey: string): AiTransport {
   const client = new Anthropic({ apiKey })
   return {
-    model,
-    async stream(prompt, signal, cb): Promise<void> {
+    async stream(req, signal, cb): Promise<void> {
       try {
         const stream = client.messages.stream(
-          { model, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] },
+          {
+            model: req.model,
+            max_tokens: req.maxTokens ?? 1024,
+            // Stable system prompt cached so repeated generations pay for the grounding
+            // instructions once; the per-request experience context stays uncached.
+            system: req.system
+              ? [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }]
+              : undefined,
+            messages: [{ role: 'user', content: req.prompt }]
+          },
           { signal }
         )
         stream.on('text', (t) => cb.onToken(t))
@@ -43,18 +57,17 @@ export function anthropicTransport(apiKey: string, model: string): AiTransport {
 }
 
 // Deterministic stub — the CI/e2e test seam. No network, no key, no nondeterminism.
-export function stubTransport(model = 'stub'): AiTransport {
+export function stubTransport(): AiTransport {
   return {
-    model,
-    async stream(prompt, signal, cb): Promise<void> {
-      const tokens = `stub reply to: ${prompt}`.match(/\S+\s*/g) ?? []
+    async stream(req, signal, cb): Promise<void> {
+      const tokens = `stub reply to: ${req.prompt}`.match(/\S+\s*/g) ?? []
       let out = 0
       for (const t of tokens) {
         if (signal.aborted) return
         cb.onToken(t)
         out += 1
       }
-      cb.onDone({ in: prompt.length, out, cacheRead: 0 })
+      cb.onDone({ in: req.prompt.length, out, cacheRead: 0 })
     }
   }
 }

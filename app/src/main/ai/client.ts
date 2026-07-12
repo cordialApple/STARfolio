@@ -6,14 +6,22 @@ import { logUsage } from './usage'
 
 const active = new Map<string, AbortController>()
 
-function resolveTransport(): AiTransport {
-  if (process.env.STARFOLIO_AI_STUB === '1') return stubTransport(MODELS.extract)
-  const apiKey = getSecret('anthropic_api_key')
-  if (!apiKey) throw new Error('No Anthropic API key configured')
-  return anthropicTransport(apiKey, MODELS.extract)
+export interface StreamJob {
+  prompt: string
+  system?: string
+  model: string
+  maxTokens?: number
+  feature: string
 }
 
-export function startStream(prompt: string, requestId: string, sender: WebContents): void {
+function resolveTransport(): AiTransport {
+  if (process.env.STARFOLIO_AI_STUB === '1') return stubTransport()
+  const apiKey = getSecret('anthropic_api_key')
+  if (!apiKey) throw new Error('No Anthropic API key configured')
+  return anthropicTransport(apiKey)
+}
+
+export function startStream(job: StreamJob, requestId: string, sender: WebContents): void {
   // Persistent request-id-keyed channels + caller-supplied requestId: the renderer subscribes
   // once and knows the id before invoking, so synchronously-emitted tokens are never missed.
   const send = (channel: string, ...args: unknown[]): void => {
@@ -32,22 +40,30 @@ export function startStream(prompt: string, requestId: string, sender: WebConten
   active.set(requestId, ac)
 
   transport
-    .stream(prompt, ac.signal, {
-      onToken: (t) => send('ai:token', t),
-      onDone: (usage) => {
-        logUsage(transport.model, usage, 'chat')
-        active.delete(requestId)
-        send('ai:done')
-      },
-      onError: (msg) => {
-        active.delete(requestId)
-        send('ai:error', msg)
+    .stream(
+      { model: job.model, prompt: job.prompt, system: job.system, maxTokens: job.maxTokens },
+      ac.signal,
+      {
+        onToken: (t) => send('ai:token', t),
+        onDone: (usage) => {
+          logUsage(job.model, usage, job.feature)
+          active.delete(requestId)
+          send('ai:done')
+        },
+        onError: (msg) => {
+          active.delete(requestId)
+          send('ai:error', msg)
+        }
       }
-    })
+    )
     .catch((err) => {
       active.delete(requestId)
       send('ai:error', (err as Error).message)
     })
+}
+
+export function startChat(prompt: string, requestId: string, sender: WebContents): void {
+  startStream({ prompt, model: MODELS.extract, feature: 'chat' }, requestId, sender)
 }
 
 export function cancelStream(requestId: string): void {
