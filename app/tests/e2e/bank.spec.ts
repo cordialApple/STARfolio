@@ -10,7 +10,7 @@ let app: ElectronApplication
 
 test.beforeAll(async () => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'starfolio-bank-'))
-  const env = { ...process.env, STARFOLIO_AI_STUB: '1' }
+  const env = { ...process.env, STARFOLIO_AI_STUB: '1', STARFOLIO_EMBED_STUB: '1' }
   const args = [`--user-data-dir=${userDataDir}`]
   app = existsSync(PACKAGED_EXE)
     ? await electron.launch({ executablePath: PACKAGED_EXE, args, env })
@@ -50,9 +50,13 @@ test('bank flow: create, filter, edit, confirm — and it persists', async () =>
   const search = win.getByRole('searchbox', { name: 'Search experiences' })
   await search.fill('deploy')
   await expect(win.getByRole('heading', { name: 'Cut the deploy time' })).toBeVisible()
-  await search.fill('zzznotfound')
-  await expect(win.getByText('No matches')).toBeVisible()
   await search.fill('')
+
+  // Hybrid search always returns nearest matches, so the empty state is a structured-filter
+  // concern: filter to drafts and the lone confirmed experience drops out.
+  await win.getByLabel('Filter by status').selectOption('draft')
+  await expect(win.getByText('No matches')).toBeVisible()
+  await win.getByLabel('Filter by status').selectOption('')
 
   await win.getByRole('button', { name: /Cut the deploy time/ }).click()
   await win.getByRole('button', { name: 'Edit' }).click()
