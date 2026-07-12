@@ -1,10 +1,12 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Mic, Loader2 } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { startRecording, type Recording } from '../audio/recorder'
 import type { WhisperModelName } from '../lib/bank-types'
 
 type Phase = 'idle' | 'recording' | 'transcribing'
+
+const MAX_RECORD_MS = 180_000
 
 export interface PushToTalkProps {
   model: WhisperModelName
@@ -22,12 +24,24 @@ export function PushToTalk({
   const [phase, setPhase] = useState<Phase>('idle')
   const [level, setLevel] = useState(0)
   const recRef = useRef<Recording | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Release the mic if we unmount mid-recording (nav away / session end) — event handlers
+  // never fire on unmount, so without this the stream + AudioContext stay open.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      void recRef.current?.stop()
+      recRef.current = null
+    }
+  }, [])
 
   async function begin(): Promise<void> {
     if (phase !== 'idle' || disabled) return
     try {
       recRef.current = await startRecording({ onLevel: setLevel })
       setPhase('recording')
+      timerRef.current = setTimeout(() => void end(), MAX_RECORD_MS)
     } catch (err) {
       const e = err as Error
       onError(
@@ -40,6 +54,10 @@ export function PushToTalk({
   }
 
   async function end(): Promise<void> {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
     const rec = recRef.current
     if (phase !== 'recording' || !rec) return
     recRef.current = null
@@ -76,9 +94,11 @@ export function PushToTalk({
       <button
         type="button"
         disabled={disabled || phase === 'transcribing'}
-        onPointerDown={() => void begin()}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId)
+          void begin()
+        }}
         onPointerUp={() => void end()}
-        onPointerLeave={() => void end()}
         aria-label={phase === 'recording' ? 'Release to transcribe' : 'Hold to talk'}
         className={cn(
           'inline-flex size-12 shrink-0 items-center justify-center rounded-full transition-colors',

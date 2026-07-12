@@ -71,6 +71,10 @@ export function PracticeView(): React.JSX.Element {
     return window.api.voice.onModelStatus(setModels)
   }, [])
   useEffect(() => () => stopSpeaking(), [])
+  // Stop any in-flight question read-aloud when leaving the live interview for another view.
+  useEffect(() => {
+    if (view !== 'live') stopSpeaking()
+  }, [view])
 
   const voiceReady = models.find((m) => m.name === voiceModel)?.downloaded ?? false
 

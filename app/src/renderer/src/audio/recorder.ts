@@ -42,9 +42,11 @@ export async function startRecording(opts: RecordOptions = {}): Promise<Recordin
     const source = ctx.createMediaStreamSource(stream)
     const node = new AudioWorkletNode(ctx, 'pcm-processor')
     const chunks: Float32Array[] = []
+    // Worklet posts ~125 frames/sec; meter every 4th (~30 Hz) to avoid a React state update per frame.
+    let frame = 0
     node.port.onmessage = (e: MessageEvent<Float32Array>) => {
       chunks.push(e.data)
-      opts.onLevel?.(rms(e.data))
+      if (opts.onLevel && frame++ % 4 === 0) opts.onLevel(rms(e.data))
     }
     source.connect(node)
     const audioCtx = ctx
