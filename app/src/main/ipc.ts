@@ -5,6 +5,9 @@ import { startChat, cancelStream } from './ai/client'
 import { extractStar } from './ai/extract'
 import { streamStory, storyConfig } from './ai/story'
 import { saveStory, getStory, listStories, storySaveInput } from './db/repositories/stories'
+import { startPractice, answerPractice, answerArg } from './practice'
+import { practiceConfig } from './ai/interview'
+import { getSession, listSessions, endSession } from './db/repositories/practice'
 import { searchExperiences } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
@@ -76,6 +79,13 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('story:list', () => listStories())
 
   handle(ipcMain, 'clipboard:write', copyArg, (_e, { text }) => clipboard.writeText(text))
+
+  const sessionArg = z.object({ sessionId: nonEmpty.max(64) })
+  handle(ipcMain, 'practice:start', practiceConfig, (_e, config) => startPractice(config))
+  handle(ipcMain, 'practice:answer', answerArg, (_e, arg) => answerPractice(arg))
+  handle(ipcMain, 'practice:end', sessionArg, (_e, { sessionId }) => endSession(sessionId))
+  handle(ipcMain, 'practice:get', sessionArg, (_e, { sessionId }) => getSession(sessionId))
+  ipcMain.handle('practice:list', () => listSessions())
 
   handle(ipcMain, 'bank:create', experienceInput, (_e, input) => {
     const exp = createExperience(input)
