@@ -6,6 +6,7 @@ import { ExperienceDetail } from './bank/ExperienceDetail'
 import { StarForm } from './capture/StarForm'
 import { BrainDump } from './capture/BrainDump'
 import { StoryView } from './story/StoryView'
+import { PracticeView } from './practice/PracticeView'
 import { cn } from './lib/cn'
 
 type Route =
@@ -13,6 +14,7 @@ type Route =
   | { name: 'new' }
   | { name: 'brain' }
   | { name: 'generate' }
+  | { name: 'practice' }
   | { name: 'detail'; id: string }
   | { name: 'edit'; exp: Experience }
 
@@ -51,7 +53,10 @@ function App(): React.JSX.Element {
           </button>
           <div className="flex items-center gap-2">
             <nav className="flex items-center gap-1">
-              <NavTab active={route.name !== 'generate'} onClick={() => setRoute({ name: 'list' })}>
+              <NavTab
+                active={route.name !== 'generate' && route.name !== 'practice'}
+                onClick={() => setRoute({ name: 'list' })}
+              >
                 Bank
               </NavTab>
               <NavTab
@@ -59,6 +64,12 @@ function App(): React.JSX.Element {
                 onClick={() => setRoute({ name: 'generate' })}
               >
                 Generate
+              </NavTab>
+              <NavTab
+                active={route.name === 'practice'}
+                onClick={() => setRoute({ name: 'practice' })}
+              >
+                Practice
               </NavTab>
             </nav>
             <ThemeToggle />
@@ -77,6 +88,8 @@ function App(): React.JSX.Element {
         )}
 
         {route.name === 'generate' && <StoryView />}
+
+        {route.name === 'practice' && <PracticeView />}
 
         {route.name === 'brain' && (
           <BrainDump

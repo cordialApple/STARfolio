@@ -29,7 +29,11 @@ jobs:
 
       - name: Set version from tag
         shell: bash
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          # npm/electron-builder need full semver; normalize a 2-part tag like v0.1 to 0.1.0
+          if [[ "$v" =~ ^[0-9]+\.[0-9]+$ ]]; then v="$v.0"; fi
+          npm version "$v" --no-git-tag-version --allow-same-version
 
       - name: Build unpacked (rebuilds native for Electron ABI, then packs)
         run: npm run build:unpack

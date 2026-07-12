@@ -182,6 +182,73 @@ export interface StoryApi {
 export interface ClipboardApi {
   write: (text: string) => Promise<void>
 }
+
+export type PracticeKind = 'jd' | 'genre'
+export interface PracticeConfig {
+  kind: PracticeKind
+  promptText: string
+}
+export interface RubricScore {
+  score: number
+  note: string
+}
+export type RubricDimension = 'star_completeness' | 'specificity' | 'measurable_result' | 'length'
+export interface InterviewFeedback {
+  star_completeness: RubricScore
+  specificity: RubricScore
+  measurable_result: RubricScore
+  length: RubricScore
+  summary: string
+}
+export type InterviewNextKind = 'drilldown' | 'question' | 'done'
+export interface PracticeStartResult {
+  sessionId: string
+  question: string
+}
+export interface PracticeAnswerResult {
+  feedback: InterviewFeedback
+  next_kind: InterviewNextKind
+  next_text: string
+  used_experience_ids: string[]
+  unbanked: boolean
+  used: { id: string; title: string }[]
+}
+export type TurnRole = 'interviewer' | 'candidate'
+export interface TurnExperienceRef {
+  id: string
+  title: string
+}
+export interface PracticeTurn {
+  id: string
+  role: TurnRole
+  content: string
+  feedback: InterviewFeedback | null
+  flags: { unbanked?: boolean } | null
+  experiences: TurnExperienceRef[]
+  created_at: string
+}
+export interface PracticeSession {
+  id: string
+  config: PracticeConfig
+  started_at: string
+  ended_at: string | null
+  turns: PracticeTurn[]
+}
+export interface PracticeSessionSummary {
+  id: string
+  config: PracticeConfig
+  started_at: string
+  ended_at: string | null
+  question_count: number
+  answered: number
+}
+export interface PracticeApi {
+  start: (config: PracticeConfig) => Promise<PracticeStartResult>
+  answer: (sessionId: string, answer: string) => Promise<PracticeAnswerResult>
+  end: (sessionId: string) => Promise<void>
+  get: (sessionId: string) => Promise<PracticeSession | null>
+  list: () => Promise<PracticeSessionSummary[]>
+}
 export interface ExperienceSummary {
   id: string
   title: string
@@ -225,6 +292,7 @@ export interface IpcApi {
   brain: BrainApi
   story: StoryApi
   clipboard: ClipboardApi
+  practice: PracticeApi
   bank: BankApi
 }
 

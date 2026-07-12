@@ -55,6 +55,13 @@ const api: IpcApi = {
   clipboard: {
     write: (text) => ipcRenderer.invoke('clipboard:write', { text })
   },
+  practice: {
+    start: (config) => ipcRenderer.invoke('practice:start', config),
+    answer: (sessionId, answer) => ipcRenderer.invoke('practice:answer', { sessionId, answer }),
+    end: (sessionId) => ipcRenderer.invoke('practice:end', { sessionId }),
+    get: (sessionId) => ipcRenderer.invoke('practice:get', { sessionId }),
+    list: () => ipcRenderer.invoke('practice:list')
+  },
   bank: {
     create: (input) => ipcRenderer.invoke('bank:create', input),
     update: (id, input) => ipcRenderer.invoke('bank:update', { id, input }),
