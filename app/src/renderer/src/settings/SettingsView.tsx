@@ -1,6 +1,23 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2 } from 'lucide-react'
-import { Badge, Button, Card, Input, Skeleton, useToast } from '../components'
+import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw, Coins } from 'lucide-react'
+import type { Prefs, UpdateStatus, UsageSummary } from '../../../preload/index.d'
+import { Badge, Button, Card, Input, Skeleton, Toggle, useToast } from '../components'
+
+const FEATURE_LABELS: Record<string, string> = {
+  chat: 'Brain dump',
+  extract: 'Story extraction',
+  story: 'Story generation',
+  bullets: 'Resume bullets',
+  practice: 'Behavioral practice',
+  technical: 'Technical practice',
+  other: 'Other'
+}
+
+function formatCost(value: number): string {
+  if (value <= 0) return '$0.00'
+  if (value < 0.01) return '<$0.01'
+  return `$${value.toFixed(2)}`
+}
 
 export function SettingsView(): React.JSX.Element {
   const toast = useToast()
@@ -11,6 +28,58 @@ export function SettingsView(): React.JSX.Element {
   const [pat, setPat] = useState('')
   const [patBusy, setPatBusy] = useState(false)
   const [graphBusy, setGraphBusy] = useState(false)
+  const [dataBusy, setDataBusy] = useState(false)
+  const [prefs, setPrefsState] = useState<Prefs | null>(null)
+  const [appVersion, setAppVersion] = useState('')
+  const [update, setUpdate] = useState<UpdateStatus>({ state: 'idle' })
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
+
+  async function savePrefs(patch: Partial<Prefs>): Promise<void> {
+    setPrefsState((prev) => (prev ? { ...prev, ...patch } : prev))
+    try {
+      const next = await window.api.prefs.set(patch)
+      setPrefsState(next)
+    } catch (err) {
+      toast(`Could not save setting: ${(err as Error).message}`, 'danger')
+      setPrefsState(await window.api.prefs.get())
+    }
+  }
+
+  async function runData(errPrefix: string, fn: () => Promise<void>): Promise<void> {
+    setDataBusy(true)
+    try {
+      await fn()
+    } catch (err) {
+      toast(`${errPrefix}: ${(err as Error).message}`, 'danger')
+    } finally {
+      setDataBusy(false)
+    }
+  }
+
+  function exportBank(): Promise<void> {
+    return runData('Could not export bank', async () => {
+      const res = await window.api.backup.exportJson()
+      if (res.saved) toast(`Bank exported to ${res.path}`, 'success')
+    })
+  }
+
+  function importBank(): Promise<void> {
+    return runData('Could not import bank', async () => {
+      const res = await window.api.backup.importJson()
+      if (!res.canceled)
+        toast(
+          res.imported > 0 ? `Imported ${res.imported} experiences.` : 'Nothing to import.',
+          'success'
+        )
+    })
+  }
+
+  function backupDb(): Promise<void> {
+    return runData('Could not back up', async () => {
+      const res = await window.api.backup.create()
+      if (res.saved) toast(`Backed up to ${res.path}`, 'success')
+    })
+  }
 
   async function buildConnections(): Promise<void> {
     setGraphBusy(true)
@@ -30,10 +99,28 @@ export function SettingsView(): React.JSX.Element {
   async function refresh(): Promise<void> {
     setHasKey(await window.api.ai.hasKey())
     setHasPat(await window.api.github.hasPat())
+    setPrefsState(await window.api.prefs.get())
+    setUsage(await window.api.usage.summary())
   }
   useEffect(() => {
     void refresh()
   }, [])
+
+  useEffect(() => {
+    void window.api.update.version().then(setAppVersion)
+    void window.api.update.status().then(setUpdate)
+    return window.api.update.onStatus(setUpdate)
+  }, [])
+
+  function checkUpdate(): void {
+    void window.api.update.check()
+  }
+  function downloadUpdate(): void {
+    void window.api.update.download()
+  }
+  function installUpdate(): void {
+    void window.api.update.install()
+  }
 
   async function savePat(): Promise<void> {
     const value = pat.trim()
@@ -94,12 +181,13 @@ export function SettingsView(): React.JSX.Element {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-ink">Settings</h1>
         <p className="text-sm text-muted">Your key and data stay on this machine.</p>
       </div>
 
+      <div className="gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -262,6 +350,191 @@ export function SettingsView(): React.JSX.Element {
           </Button>
         </div>
       </Card>
+
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <HardDriveDownload className="size-4" />
+            Data &amp; backups
+          </span>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Export your story bank to a portable JSON file, import one back in (experiences are added,
+            never overwritten), or snapshot the whole database to a single file you can tuck away.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" disabled={dataBusy} onClick={() => void exportBank()}>
+              <Download className="size-4" />
+              Export bank (JSON)
+            </Button>
+            <Button variant="secondary" disabled={dataBusy} onClick={() => void importBank()}>
+              <Upload className="size-4" />
+              Import bank (JSON)
+            </Button>
+            <Button variant="secondary" disabled={dataBusy} onClick={() => void backupDb()}>
+              <HardDriveDownload className="size-4" />
+              Back up database
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <Bell className="size-4" />
+            Reminders &amp; startup
+          </span>
+        }
+      >
+        {prefs === null ? (
+          <Skeleton className="h-24 w-full" />
+        ) : (
+          <div className="space-y-4">
+            <Toggle
+              label="Remind me to bank a fresh story"
+              checked={prefs.reminderEnabled}
+              onCheckedChange={(v) => void savePrefs({ reminderEnabled: v })}
+            />
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-sm text-ink">Remind after this many days idle</span>
+              <Input
+                type="number"
+                min={1}
+                max={365}
+                className="w-24"
+                value={String(prefs.reminderIntervalDays)}
+                disabled={!prefs.reminderEnabled}
+                onChange={(e) => {
+                  const n = Number(e.target.value)
+                  if (Number.isFinite(n) && n >= 1 && n <= 365) void savePrefs({ reminderIntervalDays: n })
+                }}
+              />
+            </label>
+            <Toggle
+              label="Launch STARfolio at login"
+              checked={prefs.launchAtLogin}
+              onCheckedChange={(v) => void savePrefs({ launchAtLogin: v })}
+            />
+            <Toggle
+              label="Keep running in the tray when closed"
+              checked={prefs.trayResident}
+              onCheckedChange={(v) => void savePrefs({ trayResident: v })}
+            />
+          </div>
+        )}
+      </Card>
+
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <Coins className="size-4" />
+            Spend
+          </span>
+        }
+        action={
+          usage && usage.totalCalls > 0 ? (
+            <Badge tone="neutral">{formatCost(usage.totalCost)} est.</Badge>
+          ) : null
+        }
+      >
+        {usage === null ? (
+          <Skeleton className="h-24 w-full" />
+        ) : usage.totalCalls === 0 ? (
+          <p className="text-sm text-muted">
+            No AI usage yet. Once you run a brain dump or practice session, an estimated cost
+            breakdown by feature shows up here.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Estimated Anthropic API spend since you started, by feature. Based on public per-token
+              pricing — treat it as a guide, not a bill.
+            </p>
+            <div className="space-y-3">
+              {usage.byFeature.map((f) => (
+                <div key={f.feature} className="space-y-1">
+                  <div className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="font-semibold text-ink">
+                      {FEATURE_LABELS[f.feature] ?? f.feature}
+                    </span>
+                    <span className="tabular-nums text-ink">{formatCost(f.cost)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                    <span>{f.calls === 1 ? '1 call' : `${f.calls} calls`}</span>
+                    <span className="tabular-nums">
+                      {(f.inTokens + f.outTokens + f.cacheReadTokens).toLocaleString()} tokens
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-raised">
+                    <div
+                      className="h-full rounded-full bg-fg-brand"
+                      style={{
+                        width: `${usage.totalCost > 0 ? Math.max(2, (f.cost / usage.totalCost) * 100) : 0}%`
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-baseline justify-between gap-2 border-t border-line pt-3 text-sm font-semibold text-ink">
+              <span>Total</span>
+              <span className="tabular-nums">{formatCost(usage.totalCost)}</span>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <RefreshCw className="size-4" />
+            Updates
+          </span>
+        }
+        action={appVersion ? <Badge tone="neutral">v{appVersion}</Badge> : null}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            STARfolio updates itself from GitHub Releases. It isn&apos;t code-signed, so the first
+            install shows a SmartScreen warning — updates after that are trusted automatically.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              loading={update.state === 'checking'}
+              disabled={update.state === 'checking' || update.state === 'downloading'}
+              onClick={checkUpdate}
+            >
+              <RefreshCw className="size-4" />
+              Check for updates
+            </Button>
+            {update.state === 'available' && (
+              <Button onClick={downloadUpdate}>
+                <Download className="size-4" />
+                Download v{update.version}
+              </Button>
+            )}
+            {update.state === 'downloaded' && (
+              <Button onClick={installUpdate}>
+                Restart to install v{update.version}
+              </Button>
+            )}
+          </div>
+          {update.state === 'not-available' && (
+            <p className="text-sm text-fg-success">You&apos;re on the latest version.</p>
+          )}
+          {update.state === 'downloading' && (
+            <p className="text-sm text-muted">Downloading… {update.percent}%</p>
+          )}
+          {update.state === 'error' && (
+            <p className="text-sm text-fg-danger">{update.message}</p>
+          )}
+        </div>
+      </Card>
+      </div>
     </div>
   )
 }

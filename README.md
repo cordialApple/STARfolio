@@ -12,6 +12,22 @@ the Anthropic API directly.
 - **Architecture spec:** [docs/architecture.md](docs/architecture.md)
 - **Build plan (staged):** [docs/build-plan.md](docs/build-plan.md)
 
+## Install
+
+Download the latest `STARfolio-<version>-setup.exe` from the
+[Releases](https://github.com/cordialApple/STARfolio/releases) page and run it. The default
+install is per-user and needs no admin rights.
+
+Windows may show a SmartScreen warning ("Windows protected your PC") because this app isn't
+code-signed. Click **More info** then **Run anyway** to install. This shows on the initial
+installer download and won't recur for auto-updates once the app trusts itself as
+already-installed.
+
+Once installed, STARfolio checks GitHub Releases for updates: open **Settings → Updates**,
+click **Check for updates**, then download and restart to install. If the in-app updater
+ever fails, the accepted fallback is to download the newer installer from the Releases page
+and run it over the existing install.
+
 ## Stack
 
 Electron + React + TypeScript + Tailwind, SQLite (`better-sqlite3`) with FTS5 keyword search
@@ -57,6 +73,8 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow creates a **draft** GitHub Release with the assets; review and publish it from
-the GitHub Releases page. Auto-update wiring (electron-updater consuming `latest.yml`) lands
-in a later stage — this stage produces a downloadable, updater-ready release.
+The workflow creates a **draft** GitHub Release with the assets; review and **publish** it
+from the GitHub Releases page. Publishing is required: electron-updater cannot see draft
+releases, so an unpublished release looks identical to "no update available" to installed
+clients. Once published, installed apps pick it up via **Settings → Updates** (the app reads
+`latest.yml`, downloads the installer over the unsigned-update path, and installs on restart).

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { StarRail, ThemeToggle } from './components'
+import { StarRail, StalenessBanner, ThemeToggle } from './components'
 import type { Experience, Skill, Tag } from './lib/bank-types'
 import { BankView } from './bank/BankView'
 import { ExperienceDetail } from './bank/ExperienceDetail'
@@ -11,6 +11,7 @@ import { PracticeView } from './practice/PracticeView'
 import { TechnicalView } from './technical/TechnicalView'
 import { MaterialsView } from './materials/MaterialsView'
 import { SettingsView } from './settings/SettingsView'
+import { Onboarding } from './onboarding/Onboarding'
 import { IconButton } from './components'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { cn } from './lib/cn'
@@ -30,6 +31,7 @@ type Route =
 
 function App(): React.JSX.Element {
   const [route, setRoute] = useState<Route>({ name: 'list' })
+  const [onboarding, setOnboarding] = useState<boolean | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [taxonomy, setTaxonomy] = useState<{ skills: Skill[]; tags: Tag[] }>({
     skills: [],
@@ -37,6 +39,10 @@ function App(): React.JSX.Element {
   })
 
   const bump = useCallback((): void => setReloadToken((n) => n + 1), [])
+
+  useEffect(() => {
+    void window.api.prefs.get().then((p) => setOnboarding(!p.onboardingDone))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -49,10 +55,26 @@ function App(): React.JSX.Element {
     }
   }, [reloadToken])
 
+  if (onboarding === null) {
+    return <div className="min-h-screen bg-canvas" />
+  }
+
+  if (onboarding) {
+    return (
+      <Onboarding
+        onStartBrainDump={() => {
+          setOnboarding(false)
+          setRoute({ name: 'brain' })
+        }}
+        onExplore={() => setOnboarding(false)}
+      />
+    )
+  }
+
   return (
     <div className="min-h-screen bg-canvas text-ink">
       <header className="sticky top-0 z-10 border-b border-line bg-canvas/85 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
           <button
             type="button"
             onClick={() => setRoute({ name: 'list' })}
@@ -111,13 +133,16 @@ function App(): React.JSX.Element {
 
       <main className="px-6 py-8">
         {route.name === 'list' && (
-          <BankView
-            reloadToken={reloadToken}
-            onOpen={(id) => setRoute({ name: 'detail', id })}
-            onNew={() => setRoute({ name: 'new' })}
-            onBrainDump={() => setRoute({ name: 'brain' })}
-            onImport={() => setRoute({ name: 'import' })}
-          />
+          <>
+            <StalenessBanner reloadToken={reloadToken} onNew={() => setRoute({ name: 'new' })} />
+            <BankView
+              reloadToken={reloadToken}
+              onOpen={(id) => setRoute({ name: 'detail', id })}
+              onNew={() => setRoute({ name: 'new' })}
+              onBrainDump={() => setRoute({ name: 'brain' })}
+              onImport={() => setRoute({ name: 'import' })}
+            />
+          </>
         )}
 
         {route.name === 'generate' && <StoryView />}

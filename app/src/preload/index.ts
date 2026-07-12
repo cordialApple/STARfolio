@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { IpcApi, ModelStatus, WhisperModelInfo } from './index.d'
+import type { IpcApi, ModelStatus, WhisperModelInfo, UpdateStatus } from './index.d'
 
 const api: IpcApi = {
   ping: () => ipcRenderer.invoke('ping'),
@@ -126,6 +126,33 @@ const api: IpcApi = {
     matchStory: (text) => ipcRenderer.invoke('bank:matchStory', { text }),
     skills: () => ipcRenderer.invoke('bank:skills'),
     tags: () => ipcRenderer.invoke('bank:tags')
+  },
+  backup: {
+    exportJson: () => ipcRenderer.invoke('bank:exportJson'),
+    importJson: () => ipcRenderer.invoke('bank:importJson'),
+    create: () => ipcRenderer.invoke('backup:create')
+  },
+  prefs: {
+    get: () => ipcRenderer.invoke('prefs:get'),
+    set: (patch) => ipcRenderer.invoke('prefs:set', patch)
+  },
+  nudge: {
+    staleness: () => ipcRenderer.invoke('nudge:staleness')
+  },
+  usage: {
+    summary: () => ipcRenderer.invoke('usage:summary')
+  },
+  update: {
+    version: () => ipcRenderer.invoke('update:version'),
+    status: () => ipcRenderer.invoke('update:status'),
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onStatus: (cb) => {
+      const handler = (_: Electron.IpcRendererEvent, status: UpdateStatus): void => cb(status)
+      ipcRenderer.on('update:status', handler)
+      return () => ipcRenderer.removeListener('update:status', handler)
+    }
   }
 }
 

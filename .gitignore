@@ -2,7 +2,8 @@
 node_modules/
 
 # claude code local settings (personal, per-machine)
-.claude/settings.local.json
+.claude/
+HANDOFF.md
 
 # build output
 app/out/

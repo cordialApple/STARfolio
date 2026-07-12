@@ -67,7 +67,7 @@ export function BankView({
   const draftCount = items?.filter((i) => i.status === 'draft').length ?? 0
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-ink">Your bank</h1>
@@ -115,7 +115,8 @@ export function BankView({
           action={<Button onClick={() => setFilter((f) => ({ ...f }))}>Retry</Button>}
         />
       ) : items === null ? (
-        <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Skeleton className="h-28 w-full" />
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-28 w-full" />
@@ -142,7 +143,7 @@ export function BankView({
           />
         )
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-3 sm:grid-cols-2">
           {items.map((exp) => (
             <li key={exp.id}>
               <ExperienceCard experience={exp} onOpen={onOpen} />

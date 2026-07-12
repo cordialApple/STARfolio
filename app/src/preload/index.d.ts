@@ -431,6 +431,72 @@ export interface BankApi {
   tags: () => Promise<Tag[]>
 }
 
+export interface BackupApi {
+  exportJson: () => Promise<{ saved: boolean; path?: string }>
+  importJson: () => Promise<{ imported: number; canceled: boolean }>
+  create: () => Promise<{ saved: boolean; path?: string }>
+}
+
+export interface Prefs {
+  reminderEnabled: boolean
+  reminderIntervalDays: number
+  launchAtLogin: boolean
+  trayResident: boolean
+  onboardingDone: boolean
+  reminderSnoozedAt: string | null
+}
+
+export interface Staleness {
+  count: number
+  daysSinceLast: number | null
+}
+
+export interface PrefsApi {
+  get: () => Promise<Prefs>
+  set: (patch: Partial<Prefs>) => Promise<Prefs>
+}
+
+export interface NudgeApi {
+  staleness: () => Promise<Staleness>
+}
+
+export interface FeatureSpend {
+  feature: string
+  calls: number
+  inTokens: number
+  outTokens: number
+  cacheReadTokens: number
+  cost: number
+}
+
+export interface UsageSummary {
+  byFeature: FeatureSpend[]
+  totalCost: number
+  totalCalls: number
+}
+
+export interface UsageApi {
+  summary: () => Promise<UsageSummary>
+}
+
+export type UpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'available'; version: string }
+  | { state: 'not-available' }
+  | { state: 'downloading'; percent: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string }
+
+export interface UpdateApi {
+  version: () => Promise<string>
+  status: () => Promise<UpdateStatus>
+  check: () => Promise<UpdateStatus>
+  download: () => Promise<UpdateStatus>
+  install: () => Promise<void>
+  onStatus: (cb: (status: UpdateStatus) => void) => () => void
+}
+
 export interface IpcApi {
   ping: () => Promise<string>
   db: DbApi
@@ -451,6 +517,11 @@ export interface IpcApi {
   technical: TechnicalApi
   corpus: CorpusApi
   bank: BankApi
+  backup: BackupApi
+  prefs: PrefsApi
+  nudge: NudgeApi
+  usage: UsageApi
+  update: UpdateApi
 }
 
 declare global {
