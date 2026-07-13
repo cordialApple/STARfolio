@@ -24,6 +24,7 @@ test.afterAll(async () => {
 test('bank flow: create, filter, edit, confirm — and it persists', async () => {
   const win = await app.firstWindow()
   await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Bank' }).click()
 
   await expect(win.getByText('Your bank is empty')).toBeVisible()
 

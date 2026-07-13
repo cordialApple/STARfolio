@@ -71,6 +71,7 @@ test('evidence: a code folder packs into a source-backed draft whose entities co
 
   await win.reload()
   await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Bank' }).click()
   await win.getByText('Related work').first().click()
 
   await expect(win.getByText('Connected to')).toBeVisible()

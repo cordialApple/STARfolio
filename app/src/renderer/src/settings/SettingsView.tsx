@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw, Coins } from 'lucide-react'
+import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw, Coins, Volume2, Search, Palette, Monitor, Sun, Moon } from 'lucide-react'
 import type { Prefs, UpdateStatus, UsageSummary } from '../../../preload/index.d'
 import { Badge, Button, Card, Input, Skeleton, Toggle, useToast } from '../components'
+import { cn } from '../lib/cn'
+import { useTheme } from '../theme/ThemeProvider'
+import type { ThemeMode } from '../theme/ThemeProvider'
+import { VoiceModelManager } from './VoiceModelManager'
 
 const FEATURE_LABELS: Record<string, string> = {
   chat: 'Brain dump',
@@ -19,8 +23,44 @@ function formatCost(value: number): string {
   return `$${value.toFixed(2)}`
 }
 
+type SectionId = 'reminders' | 'appearance' | 'apikey' | 'github' | 'voice' | 'connections' | 'data' | 'spend' | 'updates'
+
+const SECTIONS: { group: string; items: { id: SectionId; label: string; icon: typeof Bell }[] }[] = [
+  {
+    group: 'General',
+    items: [
+      { id: 'reminders', label: 'Reminders & startup', icon: Bell },
+      { id: 'appearance', label: 'Appearance', icon: Palette }
+    ]
+  },
+  {
+    group: 'AI',
+    items: [
+      { id: 'apikey', label: 'Anthropic API key', icon: KeyRound },
+      { id: 'github', label: 'GitHub token', icon: GitBranch },
+      { id: 'voice', label: 'Voice', icon: Volume2 }
+    ]
+  },
+  {
+    group: 'Data',
+    items: [
+      { id: 'connections', label: 'Connections', icon: Share2 },
+      { id: 'data', label: 'Data & backups', icon: HardDriveDownload }
+    ]
+  },
+  { group: 'Usage', items: [{ id: 'spend', label: 'Spend', icon: Coins }] },
+  { group: 'About', items: [{ id: 'updates', label: 'Updates', icon: RefreshCw }] }
+]
+
+const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: typeof Bell }[] = [
+  { mode: 'system', label: 'System', icon: Monitor },
+  { mode: 'light', label: 'Light', icon: Sun },
+  { mode: 'dark', label: 'Dark', icon: Moon }
+]
+
 export function SettingsView(): React.JSX.Element {
   const toast = useToast()
+  const { mode: themeMode, setMode: setThemeMode } = useTheme()
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
@@ -33,6 +73,8 @@ export function SettingsView(): React.JSX.Element {
   const [appVersion, setAppVersion] = useState('')
   const [update, setUpdate] = useState<UpdateStatus>({ state: 'idle' })
   const [usage, setUsage] = useState<UsageSummary | null>(null)
+  const [active, setActive] = useState<SectionId>('reminders')
+  const [q, setQ] = useState('')
 
   async function savePrefs(patch: Partial<Prefs>): Promise<void> {
     setPrefsState((prev) => (prev ? { ...prev, ...patch } : prev))
@@ -180,6 +222,12 @@ export function SettingsView(): React.JSX.Element {
     }
   }
 
+  const ql = q.trim().toLowerCase()
+  const groups = SECTIONS.map((g) => ({
+    ...g,
+    items: g.items.filter((it) => !ql || it.label.toLowerCase().includes(ql))
+  })).filter((g) => g.items.length > 0)
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
@@ -187,7 +235,53 @@ export function SettingsView(): React.JSX.Element {
         <p className="text-sm text-muted">Your key and data stay on this machine.</p>
       </div>
 
-      <div className="gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
+      <div className="flex gap-6">
+        <aside className="w-56 shrink-0 space-y-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
+            <Input
+              className="pl-9"
+              placeholder="Search settings"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <nav className="space-y-4">
+            {groups.map((g) => (
+              <div key={g.group} className="space-y-1">
+                <p className="px-3 text-xs font-semibold uppercase tracking-wide text-faint">
+                  {g.group}
+                </p>
+                {g.items.map((it) => {
+                  const Icon = it.icon
+                  return (
+                    <button
+                      key={it.id}
+                      type="button"
+                      onClick={() => setActive(it.id)}
+                      aria-current={active === it.id ? 'page' : undefined}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm',
+                        active === it.id
+                          ? 'bg-raised font-semibold text-ink'
+                          : 'text-muted hover:bg-raised/50 hover:text-ink'
+                      )}
+                    >
+                      <Icon className="size-4 shrink-0" />
+                      {it.label}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+            {groups.length === 0 && (
+              <p className="px-3 text-sm text-faint">No settings match “{q}”.</p>
+            )}
+          </nav>
+        </aside>
+
+        <div className="min-w-0 flex-1">
+      {active === 'apikey' && (
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -258,7 +352,9 @@ export function SettingsView(): React.JSX.Element {
           )}
         </div>
       </Card>
+      )}
 
+      {active === 'github' && (
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -329,7 +425,32 @@ export function SettingsView(): React.JSX.Element {
           )}
         </div>
       </Card>
+      )}
 
+      {active === 'voice' && (
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <Volume2 className="size-4" />
+            Voice
+          </span>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Download a whisper model to speak your answers in behavioral and technical practice.
+            Models run fully on-device — nothing is uploaded. The selected model is used for
+            push-to-talk.
+          </p>
+          <VoiceModelManager
+            selected={prefs?.voiceModel ?? 'base.en'}
+            onSelect={(m) => void savePrefs({ voiceModel: m })}
+          />
+        </div>
+      </Card>
+      )}
+
+      {active === 'connections' && (
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -350,7 +471,9 @@ export function SettingsView(): React.JSX.Element {
           </Button>
         </div>
       </Card>
+      )}
 
+      {active === 'data' && (
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -380,7 +503,9 @@ export function SettingsView(): React.JSX.Element {
           </div>
         </div>
       </Card>
+      )}
 
+      {active === 'reminders' && (
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -426,7 +551,49 @@ export function SettingsView(): React.JSX.Element {
           </div>
         )}
       </Card>
+      )}
 
+      {active === 'appearance' && (
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <Palette className="size-4" />
+            Appearance
+          </span>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Choose how STARfolio looks. System follows your OS light/dark setting.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {THEME_OPTIONS.map((opt) => {
+              const Icon = opt.icon
+              const selected = themeMode === opt.mode
+              return (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  onClick={() => setThemeMode(opt.mode)}
+                  aria-pressed={selected}
+                  className={cn(
+                    'flex flex-col items-center gap-2 rounded-lg border px-3 py-4 text-sm font-semibold transition-colors',
+                    selected
+                      ? 'border-fg-brand bg-raised text-ink'
+                      : 'border-line text-muted hover:bg-raised/50 hover:text-ink'
+                  )}
+                >
+                  <Icon className="size-5" />
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </Card>
+      )}
+
+      {active === 'spend' && (
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -486,7 +653,9 @@ export function SettingsView(): React.JSX.Element {
           </div>
         )}
       </Card>
+      )}
 
+      {active === 'updates' && (
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -534,6 +703,8 @@ export function SettingsView(): React.JSX.Element {
           )}
         </div>
       </Card>
+      )}
+        </div>
       </div>
     </div>
   )

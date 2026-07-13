@@ -12,6 +12,7 @@ import { getPrefs, type Prefs } from './settings/prefs'
 import { startReminderScheduler, stopReminderScheduler } from './nudges/reminder'
 import { syncTray, destroyTray, applyLoginItem } from './nudges/tray'
 import { initUpdater } from './updater'
+import { startLoopbackServer, stopLoopbackServer, loopbackEnabled } from './loopback/server'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -100,6 +101,7 @@ if (!app.requestSingleInstanceLock()) {
     initDb()
     initUpdater(() => mainWindow?.webContents ?? null)
     registerIpcHandlers(ipcMain, { onPrefsChange: applyPrefs })
+    if (loopbackEnabled()) void startLoopbackServer()
     createWindow()
     applyPrefs(getPrefs())
     startReminderScheduler(showWindow)
@@ -130,6 +132,7 @@ app.on('will-quit', () => {
   stopEmbedWorker()
   stopWhisperWorker()
   stopIngestWorker()
+  stopLoopbackServer()
 })
 
 app.on('window-all-closed', () => {

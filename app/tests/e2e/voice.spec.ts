@@ -51,18 +51,19 @@ test('voice: whisper transcribe stub + model manager over IPC', async () => {
 
 // The actual mic capture → transcript path (getUserMedia + AudioWorklet in the packaged app) is
 // verified by the manual voice checkpoint; here we assert the voice UI + model gating are wired.
-test('voice: model manager UI + push-to-talk gating in the practice flow', async () => {
+test('voice: model manager in settings + push-to-talk gating in the practice flow', async () => {
   const win = await app.firstWindow()
 
-  await win.getByRole('button', { name: 'Practice', exact: true }).click()
-  await expect(win.getByRole('heading', { name: 'Voice (optional)' })).toBeVisible()
+  await win.getByRole('button', { name: 'Settings', exact: true }).click()
+  await win.getByRole('button', { name: 'Voice', exact: true }).click()
   // Under the whisper stub base.en reports installed, which enables push-to-talk.
   await expect(win.getByText('Installed')).toBeVisible()
 
+  await win.getByRole('button', { name: 'Practice', exact: true }).click()
   await win.getByRole('button', { name: 'Start interview' }).click()
   await expect(win.getByText(/tell me about a time/i)).toBeVisible()
 
-  // Model ready → the hold-to-talk mic is offered alongside the editable answer box.
+  // Model ready (base.en from prefs default) → the hold-to-talk mic is offered alongside the editable answer box.
   await expect(win.getByRole('button', { name: /Hold to talk/i })).toBeVisible()
   await expect(win.getByPlaceholder(/Speak with the mic above/)).toBeVisible()
 })

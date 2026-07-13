@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { getDb } from '../db/client'
 
+const VOICE_MODELS = ['tiny.en', 'base.en', 'small.en'] as const
+type VoiceModel = (typeof VOICE_MODELS)[number]
+
 export const prefsPatch = z
   .object({
     reminderEnabled: z.boolean(),
@@ -8,7 +11,8 @@ export const prefsPatch = z
     launchAtLogin: z.boolean(),
     trayResident: z.boolean(),
     onboardingDone: z.boolean(),
-    reminderSnoozedAt: z.string().nullable()
+    reminderSnoozedAt: z.string().nullable(),
+    voiceModel: z.enum(VOICE_MODELS)
   })
   .partial()
   .strict()
@@ -20,6 +24,7 @@ export interface Prefs {
   trayResident: boolean
   onboardingDone: boolean
   reminderSnoozedAt: string | null
+  voiceModel: VoiceModel
 }
 
 const DEFAULTS: Prefs = {
@@ -28,7 +33,8 @@ const DEFAULTS: Prefs = {
   launchAtLogin: false,
   trayResident: false,
   onboardingDone: false,
-  reminderSnoozedAt: null
+  reminderSnoozedAt: null,
+  voiceModel: 'base.en'
 }
 
 const KEYS: Record<keyof Prefs, string> = {
@@ -37,7 +43,8 @@ const KEYS: Record<keyof Prefs, string> = {
   launchAtLogin: 'pref.startup.launch_at_login',
   trayResident: 'pref.tray.resident',
   onboardingDone: 'pref.onboarding.done',
-  reminderSnoozedAt: 'pref.reminder.snoozed_at'
+  reminderSnoozedAt: 'pref.reminder.snoozed_at',
+  voiceModel: 'pref.voice.model'
 }
 
 function readRaw(key: string): string | null {
@@ -65,6 +72,8 @@ export function getPrefs(): Prefs {
       if (Number.isFinite(n) && n > 0) out.reminderIntervalDays = n
     } else if (k === 'reminderSnoozedAt') {
       out.reminderSnoozedAt = raw || null
+    } else if (k === 'voiceModel') {
+      if ((VOICE_MODELS as readonly string[]).includes(raw)) out.voiceModel = raw as VoiceModel
     } else {
       out[k] = (raw === '1') as never
     }

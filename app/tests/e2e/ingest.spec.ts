@@ -52,6 +52,7 @@ test('import: a document becomes a draft with its source attached and visible on
 
   await win.reload()
   await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Bank' }).click()
   await win.getByText(title).first().click()
 
   await expect(win.getByText('Built from')).toBeVisible()
@@ -62,6 +63,7 @@ test('import: the wizard offers a drop zone and a url field', async () => {
   const win = await app.firstWindow()
   await win.reload()
   await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Bank' }).click()
   await win.getByRole('button', { name: 'Import', exact: true }).click()
 
   await expect(win.getByRole('heading', { name: 'Import', exact: true })).toBeVisible()

@@ -66,6 +66,37 @@ export function startChat(prompt: string, requestId: string, sender: WebContents
   startStream({ prompt, model: MODELS.extract, feature: 'chat' }, requestId, sender)
 }
 
+// Non-streaming variant: accumulate the whole generation into one string. Used by callers with
+// no WebContents to stream to (e.g. the loopback bridge), which need a single buffered result.
+export function runToCompletion(job: StreamJob, signal: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let transport: AiTransport
+    try {
+      transport = resolveTransport()
+    } catch (err) {
+      reject(err)
+      return
+    }
+    let out = ''
+    transport
+      .stream(
+        { model: job.model, prompt: job.prompt, system: job.system, maxTokens: job.maxTokens },
+        signal,
+        {
+          onToken: (t) => {
+            out += t
+          },
+          onDone: (usage) => {
+            logUsage(job.model, usage, job.feature)
+            resolve(out)
+          },
+          onError: (msg) => reject(new Error(msg))
+        }
+      )
+      .catch(reject)
+  })
+}
+
 export function cancelStream(requestId: string): void {
   active.get(requestId)?.abort()
   active.delete(requestId)

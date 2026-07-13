@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { StarRail, StalenessBanner, ThemeToggle } from './components'
+import { StarRail, StalenessBanner } from './components'
 import type { Experience, Skill, Tag } from './lib/bank-types'
 import { BankView } from './bank/BankView'
 import { ExperienceDetail } from './bank/ExperienceDetail'
@@ -12,8 +12,14 @@ import { TechnicalView } from './technical/TechnicalView'
 import { MaterialsView } from './materials/MaterialsView'
 import { SettingsView } from './settings/SettingsView'
 import { Onboarding } from './onboarding/Onboarding'
-import { IconButton } from './components'
-import { Settings as SettingsIcon } from 'lucide-react'
+import {
+  Settings as SettingsIcon,
+  MessagesSquare,
+  Sparkles,
+  Code2,
+  FileText,
+  Library
+} from 'lucide-react'
 import { cn } from './lib/cn'
 
 type Route =
@@ -29,8 +35,20 @@ type Route =
   | { name: 'detail'; id: string }
   | { name: 'edit'; exp: Experience }
 
+const NAV_TABS: {
+  route: Route
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+}[] = [
+  { route: { name: 'practice' }, label: 'Practice', icon: MessagesSquare },
+  { route: { name: 'generate' }, label: 'Generate', icon: Sparkles },
+  { route: { name: 'technical' }, label: 'Technical', icon: Code2 },
+  { route: { name: 'materials' }, label: 'Resume', icon: FileText },
+  { route: { name: 'list' }, label: 'Bank', icon: Library }
+]
+
 function App(): React.JSX.Element {
-  const [route, setRoute] = useState<Route>({ name: 'list' })
+  const [route, setRoute] = useState<Route>({ name: 'practice' })
   const [onboarding, setOnboarding] = useState<boolean | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [taxonomy, setTaxonomy] = useState<{ skills: Skill[]; tags: Tag[] }>({
@@ -71,67 +89,42 @@ function App(): React.JSX.Element {
     )
   }
 
-  return (
-    <div className="min-h-screen bg-canvas text-ink">
-      <header className="sticky top-0 z-10 border-b border-line bg-canvas/85 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
-          <button
-            type="button"
-            onClick={() => setRoute({ name: 'list' })}
-            className="flex items-center gap-2.5 font-extrabold tracking-tight text-ink"
-          >
-            <StarRail filled={['s', 't', 'a', 'r']} variant="mark" />
-            STARfolio
-          </button>
-          <div className="flex items-center gap-2">
-            <nav className="flex items-center gap-1">
-              <NavTab
-                active={
-                  !['generate', 'practice', 'technical', 'materials', 'settings'].includes(route.name)
-                }
-                onClick={() => setRoute({ name: 'list' })}
-              >
-                Bank
-              </NavTab>
-              <NavTab
-                active={route.name === 'generate'}
-                onClick={() => setRoute({ name: 'generate' })}
-              >
-                Generate
-              </NavTab>
-              <NavTab
-                active={route.name === 'practice'}
-                onClick={() => setRoute({ name: 'practice' })}
-              >
-                Practice
-              </NavTab>
-              <NavTab
-                active={route.name === 'technical'}
-                onClick={() => setRoute({ name: 'technical' })}
-              >
-                Technical
-              </NavTab>
-              <NavTab
-                active={route.name === 'materials'}
-                onClick={() => setRoute({ name: 'materials' })}
-              >
-                Resume
-              </NavTab>
-            </nav>
-            <IconButton
-              label="Settings"
-              size="sm"
-              onClick={() => setRoute({ name: 'settings' })}
-              className={cn(route.name === 'settings' && 'bg-raised')}
-            >
-              <SettingsIcon className="size-4" />
-            </IconButton>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+  const bankActive = !['generate', 'practice', 'technical', 'materials', 'settings'].includes(
+    route.name
+  )
 
-      <main className="px-6 py-8">
+  return (
+    <div className="flex min-h-screen bg-canvas text-ink">
+      <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-line bg-canvas/85 px-3 py-5 backdrop-blur">
+        <div className="flex items-center gap-2.5 px-2 pb-5 font-extrabold tracking-tight text-ink">
+          <StarRail filled={['s', 't', 'a', 'r']} variant="mark" />
+          STARfolio
+        </div>
+
+        <nav className="flex flex-col gap-1">
+          {NAV_TABS.map((tab) => (
+            <NavTab
+              key={tab.label}
+              icon={tab.icon}
+              active={tab.route.name === 'list' ? bankActive : route.name === tab.route.name}
+              onClick={() => setRoute(tab.route)}
+            >
+              {tab.label}
+            </NavTab>
+          ))}
+        </nav>
+
+        <NavTab
+          icon={SettingsIcon}
+          active={route.name === 'settings'}
+          onClick={() => setRoute({ name: 'settings' })}
+          className="mt-auto"
+        >
+          Settings
+        </NavTab>
+      </aside>
+
+      <main className="min-w-0 flex-1 overflow-y-auto px-6 py-8">
         {route.name === 'list' && (
           <>
             <StalenessBanner reloadToken={reloadToken} onNew={() => setRoute({ name: 'new' })} />
@@ -228,10 +221,14 @@ function App(): React.JSX.Element {
 function NavTab({
   active,
   onClick,
+  icon: Icon,
+  className,
   children
 }: {
   active: boolean
   onClick: () => void
+  icon: React.ComponentType<{ className?: string }>
+  className?: string
   children: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -240,10 +237,12 @@ function NavTab({
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors',
-        active ? 'bg-raised text-ink' : 'text-muted hover:text-ink'
+        'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-colors',
+        active ? 'bg-raised text-ink' : 'text-muted hover:bg-raised/60 hover:text-ink',
+        className
       )}
     >
+      <Icon className="size-4 shrink-0" />
       {children}
     </button>
   )

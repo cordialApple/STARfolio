@@ -1,12 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, FileText, Link2, Loader2, Send, Trash2, Quote } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Loader2, Send, Quote } from 'lucide-react'
 import { Badge, Button, Card, Input, Textarea, useToast } from '../components'
-import type {
-  Citation,
-  CorpusDocSummary,
-  TechnicalFeedback,
-  TechnicalRubricDimension
-} from '../lib/bank-types'
+import type { Citation, TechnicalFeedback, TechnicalRubricDimension } from '../lib/bank-types'
 
 type Entry =
   | { role: 'interviewer'; text: string; citations: Citation[] }
@@ -38,129 +33,6 @@ function Citations({ citations }: { citations: Citation[] }): React.JSX.Element 
   )
 }
 
-function CorpusManager({ onChanged }: { onChanged: () => void }): React.JSX.Element {
-  const [docs, setDocs] = useState<CorpusDocSummary[] | null>(null)
-  const [discipline, setDiscipline] = useState('')
-  const [url, setUrl] = useState('')
-  const [busy, setBusy] = useState<string | null>(null)
-  const toast = useToast()
-
-  const refresh = useCallback((): void => {
-    void window.api.corpus.list().then(setDocs)
-  }, [])
-  useEffect(() => refresh(), [refresh])
-
-  async function addFiles(): Promise<void> {
-    const paths = await window.api.ingest.pickFiles()
-    if (paths.length === 0) return
-    setBusy('files')
-    try {
-      const results = await window.api.corpus.addFiles(paths, discipline)
-      const added = results.filter((r) => r.ok).length
-      const failed = results.filter((r) => !r.ok)
-      if (added > 0) toast(`Added ${added} document${added === 1 ? '' : 's'} to your corpus.`, 'success')
-      for (const f of failed) toast(`${f.name}: ${f.error}`, 'danger')
-      refresh()
-      onChanged()
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function addUrl(): Promise<void> {
-    if (!url.trim()) return
-    setBusy('url')
-    try {
-      const r = await window.api.corpus.addUrl(url.trim(), discipline)
-      if (r.ok) {
-        toast('Added to your corpus.', 'success')
-        setUrl('')
-        refresh()
-        onChanged()
-      } else toast(r.error ?? 'Could not add that page.', 'danger')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function remove(id: string): Promise<void> {
-    await window.api.corpus.remove(id)
-    refresh()
-    onChanged()
-  }
-
-  return (
-    <Card
-      title={
-        <span className="flex items-center gap-2">
-          <BookOpen className="size-4" />
-          Reference corpus
-        </span>
-      }
-    >
-      <div className="space-y-4">
-        <p className="text-sm text-muted">
-          Add your own system-design notes, docs, or write-ups. Technical practice draws its questions
-          from this material and cites the exact passages.
-        </p>
-        <Input
-          placeholder="Discipline for what you add next (optional, e.g. distributed systems)"
-          value={discipline}
-          onChange={(e) => setDiscipline(e.target.value)}
-        />
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => void addFiles()} loading={busy === 'files'}>
-            <FileText className="size-4" />
-            Add files
-          </Button>
-          <div className="flex flex-1 gap-2">
-            <Input
-              type="url"
-              placeholder="https://example.com/a-design-doc"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void addUrl()
-              }}
-            />
-            <Button onClick={() => void addUrl()} loading={busy === 'url'} disabled={!url.trim()}>
-              <Link2 className="size-4" />
-              Add
-            </Button>
-          </div>
-        </div>
-
-        {docs && docs.length > 0 && (
-          <ul className="space-y-2">
-            {docs.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-line bg-raised p-3"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-ink">{d.title}</div>
-                  <div className="text-xs text-faint">
-                    {d.discipline ? `${d.discipline} · ` : ''}
-                    {d.chunks} chunk{d.chunks === 1 ? '' : 's'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void remove(d.id)}
-                  className="shrink-0 text-faint hover:text-fg-danger"
-                  aria-label={`Remove ${d.title}`}
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </Card>
-  )
-}
-
 export function TechnicalView(): React.JSX.Element {
   const [phase, setPhase] = useState<'setup' | 'live'>('setup')
   const [topic, setTopic] = useState('')
@@ -170,7 +42,6 @@ export function TechnicalView(): React.JSX.Element {
   const [answer, setAnswer] = useState('')
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
-  const [corpusToken, setCorpusToken] = useState(0)
   const toast = useToast()
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -224,8 +95,6 @@ export function TechnicalView(): React.JSX.Element {
           <p className="text-sm text-muted">Mock technical interview over your own reference material.</p>
         </div>
 
-        <CorpusManager onChanged={() => setCorpusToken((n) => n + 1)} />
-
         <Card title="Start a session">
           <div className="space-y-4">
             <label className="space-y-1">
@@ -250,9 +119,6 @@ export function TechnicalView(): React.JSX.Element {
             <Button onClick={() => void start()} loading={busy} disabled={!topic.trim()}>
               Start technical interview
             </Button>
-            <p className="text-xs text-faint" data-corpus-token={corpusToken}>
-              Every question is drawn from — and cites — the corpus above.
-            </p>
           </div>
         </Card>
       </div>

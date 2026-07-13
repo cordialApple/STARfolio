@@ -24,7 +24,6 @@ import type {
 } from '../lib/bank-types'
 import { FeedbackCard } from './FeedbackCard'
 import { PushToTalk } from './PushToTalk'
-import { VoiceModelManager } from './VoiceModelManager'
 import { speak, stopSpeaking, ttsAvailable } from '../lib/tts'
 import { cn } from '../lib/cn'
 
@@ -75,6 +74,7 @@ export function PracticeView(): React.JSX.Element {
 
   useEffect(() => {
     void window.api.voice.models().then(setModels)
+    void window.api.prefs.get().then((p) => setVoiceModel(p.voiceModel))
     return window.api.voice.onModelStatus(setModels)
   }, [])
   useEffect(() => () => stopSpeaking(), [])
@@ -348,7 +348,7 @@ export function PracticeView(): React.JSX.Element {
               />
             ) : (
               <p className="text-xs text-muted">
-                Want to speak your answers? Download a voice model in the session setup.
+                Want to speak your answers? Download a voice model in Settings → Voice.
               </p>
             )}
             <Textarea
@@ -432,16 +432,6 @@ export function PracticeView(): React.JSX.Element {
               Start interview
             </Button>
           </div>
-        </div>
-      </Card>
-
-      <Card title="Voice (optional)">
-        <div className="space-y-3">
-          <p className="text-sm text-muted">
-            Download a whisper model to speak your answers with push-to-talk. Runs fully on your
-            machine — no audio leaves your computer.
-          </p>
-          <VoiceModelManager selected={voiceModel} onSelect={setVoiceModel} />
         </div>
       </Card>
     </div>
