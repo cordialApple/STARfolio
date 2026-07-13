@@ -24,6 +24,7 @@ test.afterAll(async () => {
 test('brain dump: paste → propose → confirm, with the source attached', async () => {
   const win = await app.firstWindow()
   await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Bank' }).click()
 
   await win.getByRole('button', { name: 'Brain dump' }).click()
   await win
