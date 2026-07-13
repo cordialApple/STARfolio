@@ -444,6 +444,7 @@ export interface Prefs {
   trayResident: boolean
   onboardingDone: boolean
   reminderSnoozedAt: string | null
+  voiceModel: WhisperModelName
 }
 
 export interface Staleness {

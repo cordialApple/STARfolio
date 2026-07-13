@@ -57,12 +57,12 @@ test('technical: a corpus-grounded session cites a chunk on every question and f
   )
 })
 
-test('technical: the tab shows the corpus manager and a start form', async () => {
+test('technical: the tab shows a start form', async () => {
   const win = await app.firstWindow()
   await win.reload()
   await win.waitForLoadState('domcontentloaded')
   await win.getByRole('button', { name: 'Technical', exact: true }).click()
 
-  await expect(win.getByText('Reference corpus')).toBeVisible()
+  await expect(win.getByText('Start a session')).toBeVisible()
   await expect(win.getByRole('button', { name: 'Start technical interview' })).toBeVisible()
 })
