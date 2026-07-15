@@ -67,5 +67,8 @@ export type {
   InterviewStarStory,
   InterviewReport,
   InterviewStep,
-  InterviewStartInput
+  InterviewStartInput,
+  InterviewTranscriptTurn,
+  InterviewSessionSummary,
+  InterviewSessionDetail
 } from '../../../preload/index.d'

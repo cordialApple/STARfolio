@@ -1,10 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Sparkles, CheckCircle2, TriangleAlert } from 'lucide-react'
-import { Badge, Button, Card, Input, Select, Textarea, useToast } from '../components'
+import { Send, Sparkles, CheckCircle2, TriangleAlert, History, Inbox } from 'lucide-react'
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Input,
+  Select,
+  Skeleton,
+  Textarea,
+  useToast
+} from '../components'
 import type {
   ExperienceLevel,
   InterviewPhase,
   InterviewReport,
+  InterviewSessionDetail,
+  InterviewSessionSummary,
   InterviewStep
 } from '../lib/bank-types'
 
@@ -23,8 +36,15 @@ const LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: 'senior', label: 'Senior' }
 ]
 
+const LEVEL_LABEL: Record<ExperienceLevel, string> = {
+  entry: 'Entry level',
+  mid: 'Mid level',
+  senior: 'Senior'
+}
+
 export function InterviewView(): React.JSX.Element {
-  const [stage, setStage] = useState<'setup' | 'live'>('setup')
+  const [stage, setStage] = useState<'setup' | 'live' | 'history' | 'debrief'>('setup')
+  const [debriefId, setDebriefId] = useState<string | null>(null)
   const [resumeText, setResumeText] = useState('')
   const [candidateName, setCandidateName] = useState('')
   const [level, setLevel] = useState<ExperienceLevel>('mid')
@@ -99,15 +119,35 @@ export function InterviewView(): React.JSX.Element {
     setPhase('intro')
   }
 
+  if (stage === 'history')
+    return (
+      <HistoryList
+        onOpen={(id) => {
+          setDebriefId(id)
+          setStage('debrief')
+        }}
+        onBack={() => setStage('setup')}
+      />
+    )
+
+  if (stage === 'debrief' && debriefId)
+    return <Debrief id={debriefId} onBack={() => setStage('history')} />
+
   if (stage === 'setup') {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-ink">Mock interview</h1>
-          <p className="text-sm text-muted">
-            Paste your resume. An adaptive interviewer builds a roadmap from it, then walks your
-            projects the way a real one would — and debriefs you at the end.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-ink">Mock interview</h1>
+            <p className="text-sm text-muted">
+              Paste your resume. An adaptive interviewer builds a roadmap from it, then walks your
+              projects the way a real one would — and debriefs you at the end.
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => setStage('history')}>
+            <History className="size-4" />
+            History
+          </Button>
         </div>
 
         <Card title="Set up your interview">
@@ -277,6 +317,147 @@ function StarRow({ label, value }: { label: string; value: string }): React.JSX.
     <div className="flex gap-2">
       <dt className="w-20 shrink-0 font-semibold text-muted">{label}</dt>
       <dd className="text-ink">{value}</dd>
+    </div>
+  )
+}
+
+function HistoryList({
+  onOpen,
+  onBack
+}: {
+  onOpen: (id: string) => void
+  onBack: () => void
+}): React.JSX.Element {
+  const [sessions, setSessions] = useState<InterviewSessionSummary[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.interview
+      .list()
+      .then((s) => !cancelled && setSessions(s))
+      .catch((e) => !cancelled && setError((e as Error).message))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-ink">Interview history</h1>
+        <Button variant="secondary" size="sm" onClick={onBack}>
+          New interview
+        </Button>
+      </div>
+      {error ? (
+        <ErrorState description={error} />
+      ) : sessions === null ? (
+        <div className="space-y-2">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      ) : sessions.length === 0 ? (
+        <EmptyState
+          icon={Inbox}
+          title="No interviews yet"
+          description="Run a mock interview and it'll show up here."
+        />
+      ) : (
+        <ul className="space-y-2">
+          {sessions.map((s) => (
+            <li key={s.id}>
+              <button
+                type="button"
+                onClick={() => onOpen(s.id)}
+                className="flex w-full items-center justify-between gap-3 rounded-lg border border-line bg-surface p-4 text-left hover:bg-raised"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-ink">
+                    {s.candidateName ?? 'Anonymous candidate'}
+                  </span>
+                  <span className="text-xs text-muted">
+                    {new Date(s.startedAt + 'Z').toLocaleString()} · {LEVEL_LABEL[s.level]} ·{' '}
+                    {s.turnCount} {s.turnCount === 1 ? 'turn' : 'turns'}
+                  </span>
+                </span>
+                <Badge tone={s.phase === 'done' ? 'success' : 'warning'}>
+                  {s.phase === 'done' ? 'Complete' : 'In progress'}
+                </Badge>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
+  const [detail, setDetail] = useState<InterviewSessionDetail | null | undefined>(undefined)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.interview
+      .get(id)
+      .then((d) => !cancelled && setDetail(d))
+      .catch((e) => !cancelled && setError((e as Error).message))
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-5">
+      <button
+        type="button"
+        onClick={onBack}
+        className="text-sm font-semibold text-muted hover:text-ink"
+      >
+        ← Back to history
+      </button>
+      {error ? (
+        <ErrorState description={error} />
+      ) : detail === undefined ? (
+        <div className="space-y-2">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : detail === null ? (
+        <ErrorState title="Not found" description="This interview no longer exists." />
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-ink">
+              {detail.candidateName ?? 'Anonymous candidate'}
+            </h1>
+            <Badge tone={detail.phase === 'done' ? 'success' : 'neutral'}>
+              {PHASE_LABEL[detail.phase]}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted">
+            {new Date(detail.startedAt + 'Z').toLocaleString()} · {LEVEL_LABEL[detail.level]}
+          </p>
+          <div className="space-y-4">
+            {detail.transcript.map((t, i) =>
+              t.speaker === 'interviewer' ? (
+                <div key={i} className="rounded-lg border border-line bg-raised p-4">
+                  <p className="whitespace-pre-wrap text-sm font-semibold text-ink">{t.text}</p>
+                </div>
+              ) : (
+                <p
+                  key={i}
+                  className="ml-8 whitespace-pre-wrap rounded-lg bg-canvas px-4 py-3 text-sm text-ink"
+                >
+                  {t.text}
+                </p>
+              )
+            )}
+          </div>
+          {detail.report && <ReportCard report={detail.report} />}
+        </>
+      )}
     </div>
   )
 }
