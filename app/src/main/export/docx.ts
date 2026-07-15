@@ -77,10 +77,22 @@ function markdownToParas(md: string): Para[] {
   return paras
 }
 
+function runXml(text: string, bold: boolean): string {
+  const rPr = bold ? '<w:rPr><w:b/></w:rPr>' : ''
+  return `<w:r>${rPr}<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`
+}
+
+function runsXml(text: string, forceBold: boolean): string {
+  if (forceBold) return runXml(text, true)
+  return text
+    .split('**')
+    .map((seg, i) => (seg ? runXml(seg, i % 2 === 1) : ''))
+    .join('')
+}
+
 function paraXml(p: Para): string {
-  const runProps = p.bold ? '<w:rPr><w:b/></w:rPr>' : ''
   const numPr = p.bullet ? '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' : ''
-  return `<w:p><w:pPr>${numPr}</w:pPr><w:r>${runProps}<w:t xml:space="preserve">${esc(p.text)}</w:t></w:r></w:p>`
+  return `<w:p><w:pPr>${numPr}</w:pPr>${runsXml(p.text, p.bold)}</w:p>`
 }
 
 // Minimal but valid .docx (OOXML). Headings render bold; markdown "- " lines become a
