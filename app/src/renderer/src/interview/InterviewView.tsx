@@ -7,7 +7,8 @@ import {
   History,
   Inbox,
   Trash2,
-  Copy
+  Copy,
+  Download
 } from 'lucide-react'
 import {
   Badge,
@@ -31,7 +32,7 @@ import type {
   InterviewSessionSummary,
   InterviewStep
 } from '../lib/bank-types'
-import { debriefToMarkdown } from './debrief-markdown'
+import { debriefToMarkdown, debriefFilename } from './debrief-markdown'
 
 type Turn = { role: 'interviewer' | 'candidate'; text: string }
 
@@ -462,6 +463,20 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
     }
   }
 
+  async function save(): Promise<void> {
+    if (!detail) return
+    try {
+      const res = await window.api.materials.export(
+        debriefToMarkdown(detail),
+        'md',
+        debriefFilename(detail)
+      )
+      if (res.saved) toast(`Saved to ${res.path}`, 'success')
+    } catch (err) {
+      toast(`Could not export: ${(err as Error).message}`, 'danger')
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     void window.api.interview
@@ -484,10 +499,16 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
           ← Back to history
         </button>
         {detail && (
-          <Button size="sm" variant="secondary" onClick={() => void copy()}>
-            <Copy className="size-4" />
-            Copy debrief
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => void copy()}>
+              <Copy className="size-4" />
+              Copy debrief
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => void save()}>
+              <Download className="size-4" />
+              Export
+            </Button>
+          </div>
         )}
       </div>
       {error ? (

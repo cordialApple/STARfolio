@@ -106,6 +106,8 @@ test('interview: a persisted session appears in history and opens a read-only de
 
   await win.getByRole('button', { name: 'Copy debrief' }).click()
   await expect(win.getByText('Debrief copied to clipboard.')).toBeVisible()
+
+  await expect(win.getByRole('button', { name: 'Export', exact: true })).toBeVisible()
 })
 
 test('interview: a history entry can be deleted from the list', async () => {
