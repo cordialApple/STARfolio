@@ -6,6 +6,7 @@ import {
   addInterviewerTurn,
   commitAnswer,
   createSession,
+  deleteSession,
   deleteTechnicalSession,
   endTechnicalSession,
   getSession,
@@ -171,6 +172,22 @@ describe('practice orchestrator (stub)', () => {
     const turns = getDb()
       .prepare('SELECT count(*) AS n FROM practice_turns WHERE session_id = ?')
       .get(technical) as { n: number }
+    expect(turns.n).toBe(0)
+  })
+
+  it('deletes a behavioral session with its turns and refuses to touch technical sessions', async () => {
+    const { sessionId: behavioral } = await startPractice({ kind: 'genre', promptText: 'Leadership' })
+    await answerPractice({ sessionId: behavioral, answer: STRONG })
+    const technical = createSession({ promptText: 'the rate limiter design' }, 'technical')
+
+    expect(deleteSession(technical)).toEqual({ deleted: false })
+    expect(getTechnicalSession(technical)).not.toBeNull()
+
+    expect(deleteSession(behavioral)).toEqual({ deleted: true })
+    expect(getSession(behavioral)).toBeNull()
+    const turns = getDb()
+      .prepare('SELECT count(*) AS n FROM practice_turns WHERE session_id = ?')
+      .get(behavioral) as { n: number }
     expect(turns.n).toBe(0)
   })
 })

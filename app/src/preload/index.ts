@@ -102,6 +102,7 @@ const api: IpcApi = {
     start: (config) => ipcRenderer.invoke('practice:start', config),
     answer: (sessionId, answer) => ipcRenderer.invoke('practice:answer', { sessionId, answer }),
     end: (sessionId) => ipcRenderer.invoke('practice:end', { sessionId }),
+    remove: (sessionId) => ipcRenderer.invoke('practice:delete', { sessionId }),
     get: (sessionId) => ipcRenderer.invoke('practice:get', { sessionId }),
     list: () => ipcRenderer.invoke('practice:list')
   },

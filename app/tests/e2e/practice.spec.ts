@@ -99,3 +99,27 @@ test('mode A: scripted session — vague answer drills down, feedback scores all
   ])
   expect(persisted.linkedTitles).toContain('Deploy pipeline rewrite')
 })
+
+test('a session can be deleted from history', async () => {
+  const win = await app.firstWindow()
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+
+  await win.getByRole('button', { name: 'Practice', exact: true }).click()
+  await win.getByRole('combobox').selectOption('Teamwork')
+  await win.getByRole('button', { name: 'Start interview' }).click()
+  await expect(win.getByPlaceholder(/type here/)).toBeVisible()
+
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Practice', exact: true }).click()
+  await win.getByRole('button', { name: 'History' }).click()
+
+  await expect(win.getByRole('heading', { name: 'Session history' })).toBeVisible()
+  await expect(win.getByRole('button', { name: /^Teamwork/ })).toBeVisible()
+
+  await win.getByRole('button', { name: 'Delete session on Teamwork' }).click()
+  await win.getByRole('button', { name: 'Delete', exact: true }).click()
+
+  await expect(win.getByRole('button', { name: /^Teamwork/ })).toHaveCount(0)
+})
