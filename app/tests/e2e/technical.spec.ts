@@ -115,6 +115,25 @@ test('technical: history lists a past session and replays its transcript with ru
   await expect(win.getByRole('heading', { name: 'Technical history' })).toBeVisible()
 })
 
+test('technical: a reopened session from history can be copied to the clipboard', async () => {
+  const win = await app.firstWindow()
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Technical', exact: true }).click()
+  await win.getByRole('button', { name: 'History' }).click()
+
+  await expect(win.getByRole('heading', { name: 'Technical history' })).toBeVisible()
+  await win.getByRole('button', { name: /^the consensus protocol/ }).click()
+  await expect(win.getByRole('heading', { name: 'the consensus protocol' })).toBeVisible()
+
+  await win.getByRole('button', { name: 'Copy session' }).click()
+  await expect(win.getByText('Session copied to clipboard.')).toBeVisible()
+
+  const md = await app.evaluate(({ clipboard }) => clipboard.readText())
+  expect(md).toContain('# Technical practice — the consensus protocol')
+  expect(md).toContain('- Correctness:')
+})
+
 test('technical: End session marks the session Complete in history', async () => {
   const win = await app.firstWindow()
   await win.reload()

@@ -375,6 +375,7 @@ function TechnicalHistory({
 function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
   const [session, setSession] = useState<TechnicalSession | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
 
   useEffect(() => {
     let cancelled = false
@@ -387,11 +388,42 @@ function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void })
     }
   }, [id])
 
+  async function copy(): Promise<void> {
+    if (!session) return
+    const entries: TechnicalEntry[] = session.turns.map((t) =>
+      t.role === 'interviewer'
+        ? { role: 'interviewer', text: t.content, citations: t.citations }
+        : { role: 'candidate', text: t.content, feedback: t.feedback! }
+    )
+    try {
+      await window.api.clipboard.write(
+        technicalToMarkdown(session.config.promptText, session.config.discipline, entries)
+      )
+      toast('Session copied to clipboard.', 'success')
+    } catch (err) {
+      toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
+
+  const hasAnswer = !!session && session.turns.some((t) => t.role === 'candidate' && t.feedback)
+
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <button type="button" onClick={onBack} className="text-sm font-semibold text-muted hover:text-ink">
-        ← Back to history
-      </button>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-sm font-semibold text-muted hover:text-ink"
+        >
+          ← Back to history
+        </button>
+        {hasAnswer && (
+          <Button size="sm" variant="secondary" onClick={() => void copy()}>
+            <Copy className="size-4" />
+            Copy session
+          </Button>
+        )}
+      </div>
       {error ? (
         <ErrorState description={error} />
       ) : session === undefined ? (
