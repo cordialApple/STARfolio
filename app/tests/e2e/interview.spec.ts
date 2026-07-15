@@ -100,7 +100,7 @@ test('interview: a persisted session appears in history and opens a read-only de
   await win.getByRole('button', { name: 'History' }).click()
 
   await expect(win.getByText('Interview history')).toBeVisible()
-  await win.getByRole('button', { name: /Casey Historian/ }).click()
+  await win.getByRole('button', { name: /^Casey Historian/ }).click()
 
   await expect(win.getByText('Your debrief')).toBeVisible()
 })
