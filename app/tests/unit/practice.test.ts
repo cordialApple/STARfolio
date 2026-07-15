@@ -6,6 +6,7 @@ import {
   addInterviewerTurn,
   commitAnswer,
   createSession,
+  deleteTechnicalSession,
   endTechnicalSession,
   getSession,
   getTechnicalSession,
@@ -155,5 +156,21 @@ describe('practice orchestrator (stub)', () => {
 
     endTechnicalSession(behavioral)
     expect(getSession(behavioral)!.ended_at).toBeNull()
+  })
+
+  it('deletes a technical session with its turns and refuses to touch behavioral sessions', async () => {
+    const { sessionId: behavioral } = await startPractice({ kind: 'genre', promptText: 'Leadership' })
+    const technical = createSession({ promptText: 'the rate limiter design' }, 'technical')
+    addInterviewerTurn(technical, 'How does it behave under a partition?')
+
+    expect(deleteTechnicalSession(behavioral)).toEqual({ deleted: false })
+    expect(getSession(behavioral)).not.toBeNull()
+
+    expect(deleteTechnicalSession(technical)).toEqual({ deleted: true })
+    expect(getTechnicalSession(technical)).toBeNull()
+    const turns = getDb()
+      .prepare('SELECT count(*) AS n FROM practice_turns WHERE session_id = ?')
+      .get(technical) as { n: number }
+    expect(turns.n).toBe(0)
   })
 })

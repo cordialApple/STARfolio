@@ -393,6 +393,7 @@ export interface TechnicalApi {
   answer: (sessionId: string, answer: string) => Promise<TechnicalAnswerResult>
   get: (sessionId: string) => Promise<TechnicalSession | null>
   end: (sessionId: string) => Promise<void>
+  remove: (sessionId: string) => Promise<{ deleted: boolean }>
   list: () => Promise<TechnicalSessionSummary[]>
 }
 
