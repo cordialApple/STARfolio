@@ -410,10 +410,35 @@ export interface InterviewStartInput {
   candidateName?: string
   level?: ExperienceLevel
 }
+export interface InterviewTranscriptTurn {
+  speaker: 'interviewer' | 'candidate'
+  text: string
+}
+export interface InterviewSessionSummary {
+  id: string
+  candidateName: string | null
+  level: ExperienceLevel
+  phase: InterviewPhase
+  startedAt: string
+  endedAt: string | null
+  turnCount: number
+}
+export interface InterviewSessionDetail {
+  id: string
+  candidateName: string | null
+  level: ExperienceLevel
+  phase: InterviewPhase
+  startedAt: string
+  endedAt: string | null
+  report: InterviewReport | null
+  transcript: InterviewTranscriptTurn[]
+}
 export interface InterviewApi {
   start: (input: InterviewStartInput) => Promise<InterviewStep>
   answer: (sessionId: string, answer: string, elapsedMs?: number) => Promise<InterviewStep>
   report: (sessionId: string) => Promise<InterviewReport | null>
+  list: () => Promise<InterviewSessionSummary[]>
+  get: (sessionId: string) => Promise<InterviewSessionDetail | null>
 }
 
 export interface CorpusDocSummary {

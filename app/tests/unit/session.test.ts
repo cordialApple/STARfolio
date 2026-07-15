@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startInterview, answerInterview, getInterviewReport } from '../../src/main/ai/session'
+import { initDb } from '../../src/main/db/client'
 
-beforeEach(() => vi.stubEnv('STARFOLIO_AI_STUB', '1'))
+beforeEach(() => {
+  vi.stubEnv('STARFOLIO_AI_STUB', '1')
+  initDb(':memory:')
+})
 afterEach(() => vi.unstubAllEnvs())
 
 const detailed =
