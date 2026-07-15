@@ -36,7 +36,8 @@ import {
   listSessions,
   endSession,
   getTechnicalSession,
-  listTechnicalSessions
+  listTechnicalSessions,
+  endTechnicalSession
 } from './db/repositories/practice'
 import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
@@ -234,6 +235,7 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   handle(ipcMain, 'technical:start', technicalConfig, (_e, config) => startTechnical(config))
   handle(ipcMain, 'technical:answer', technicalAnswerArg, (_e, arg) => answerTechnical(arg))
   handle(ipcMain, 'technical:get', sessionArg, (_e, { sessionId }) => getTechnicalSession(sessionId))
+  handle(ipcMain, 'technical:end', sessionArg, (_e, { sessionId }) => endTechnicalSession(sessionId))
   ipcMain.handle('technical:list', () => listTechnicalSessions())
 
   const MAX_INTERVIEW_EXPERIENCES = 40

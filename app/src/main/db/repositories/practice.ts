@@ -164,6 +164,15 @@ export function endSession(sessionId: string): void {
     .run(sessionId)
 }
 
+export function endTechnicalSession(sessionId: string): void {
+  getDb()
+    .prepare(
+      `UPDATE practice_sessions SET ended_at = datetime('now')
+       WHERE id = ? AND ended_at IS NULL AND mode = 'technical'`
+    )
+    .run(sessionId)
+}
+
 function turnExperiences(turnId: string): TurnExperienceRef[] {
   return getDb()
     .prepare(

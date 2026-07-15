@@ -6,6 +6,7 @@ import {
   addInterviewerTurn,
   commitAnswer,
   createSession,
+  endTechnicalSession,
   getSession,
   getTechnicalSession,
   listSessions,
@@ -141,5 +142,18 @@ describe('practice orchestrator (stub)', () => {
     expect(candidate.feedback!.summary).toBe('solid answer')
 
     expect(getTechnicalSession(behavioral)).toBeNull()
+  })
+
+  it('ends a technical session early and leaves behavioral sessions untouched', async () => {
+    const { sessionId: behavioral } = await startPractice({ kind: 'genre', promptText: 'Leadership' })
+    const technical = createSession({ promptText: 'the rate limiter design' }, 'technical')
+
+    endTechnicalSession(technical)
+
+    expect(getTechnicalSession(technical)!.ended_at).not.toBeNull()
+    expect(getSession(behavioral)!.ended_at).toBeNull()
+
+    endTechnicalSession(behavioral)
+    expect(getSession(behavioral)!.ended_at).toBeNull()
   })
 })

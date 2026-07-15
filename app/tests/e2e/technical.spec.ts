@@ -114,3 +114,20 @@ test('technical: history lists a past session and replays its transcript with ru
   await win.getByRole('button', { name: '← Back to history' }).click()
   await expect(win.getByRole('heading', { name: 'Technical history' })).toBeVisible()
 })
+
+test('technical: End session marks the session Complete in history', async () => {
+  const win = await app.firstWindow()
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Technical', exact: true }).click()
+
+  await win.getByPlaceholder('e.g. the rate limiter design in my notes').fill('the sharding strategy')
+  await win.getByRole('button', { name: 'Start technical interview' }).click()
+
+  await win.getByRole('button', { name: 'End session' }).click()
+  await expect(win.getByRole('button', { name: 'End session' })).toHaveCount(0)
+
+  await win.getByRole('button', { name: 'View history' }).click()
+  await expect(win.getByRole('heading', { name: 'Technical history' })).toBeVisible()
+  await expect(win.getByRole('button', { name: /the sharding strategy/ })).toContainText('Complete')
+})

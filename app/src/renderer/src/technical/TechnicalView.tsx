@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Send, Quote, Copy, History, Inbox } from 'lucide-react'
+import { Loader2, Send, Quote, Copy, History, Inbox, Square } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -111,6 +111,17 @@ export function TechnicalView(): React.JSX.Element {
     }
   }
 
+  async function endNow(): Promise<void> {
+    if (sessionId) {
+      try {
+        await window.api.technical.end(sessionId)
+      } catch {
+        // best-effort; the transcript is already persisted
+      }
+    }
+    setDone(true)
+  }
+
   async function copy(): Promise<void> {
     try {
       await window.api.clipboard.write(technicalToMarkdown(topic.trim(), discipline.trim(), entries))
@@ -186,6 +197,12 @@ export function TechnicalView(): React.JSX.Element {
             <Button size="sm" variant="secondary" onClick={() => void copy()}>
               <Copy className="size-4" />
               Copy session
+            </Button>
+          )}
+          {!done && (
+            <Button size="sm" variant="ghost" onClick={() => void endNow()}>
+              <Square className="size-4" />
+              End session
             </Button>
           )}
           <Button variant="ghost" onClick={() => setPhase('setup')}>

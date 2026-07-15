@@ -392,6 +392,7 @@ export interface TechnicalApi {
   start: (config: TechnicalConfig) => Promise<TechnicalStartResult>
   answer: (sessionId: string, answer: string) => Promise<TechnicalAnswerResult>
   get: (sessionId: string) => Promise<TechnicalSession | null>
+  end: (sessionId: string) => Promise<void>
   list: () => Promise<TechnicalSessionSummary[]>
 }
 
