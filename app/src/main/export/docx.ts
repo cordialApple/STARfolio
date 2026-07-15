@@ -69,8 +69,8 @@ function markdownToParas(md: string): Para[] {
   for (const raw of md.replace(/\r\n/g, '\n').split('\n')) {
     const line = raw.trimEnd()
     if (!line.trim()) continue
-    if (line.startsWith('# ')) paras.push({ text: line.slice(2), bold: true, bullet: false })
-    else if (line.startsWith('## ')) paras.push({ text: line.slice(3), bold: true, bullet: false })
+    const heading = line.match(/^#{1,6} /)
+    if (heading) paras.push({ text: line.slice(heading[0].length), bold: true, bullet: false })
     else if (/^[-*] /.test(line)) paras.push({ text: line.slice(2), bold: false, bullet: true })
     else paras.push({ text: line, bold: false, bullet: false })
   }
