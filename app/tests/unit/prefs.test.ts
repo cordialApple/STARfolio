@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getPrefs, setPrefs } from '../../src/main/settings/prefs'
-import { initDb } from '../../src/main/db/client'
+import { getPrefs, setPrefs, staleness } from '../../src/main/settings/prefs'
+import { getDb, initDb } from '../../src/main/db/client'
+import { createExperience } from '../../src/main/db/repositories/experiences'
 
 beforeEach(() => {
   initDb(':memory:')
@@ -58,5 +59,23 @@ describe('setPrefs', () => {
     const out = setPrefs({ reminderIntervalDays: 21 })
     expect(out.reminderEnabled).toBe(true)
     expect(out.reminderIntervalDays).toBe(21)
+  })
+})
+
+describe('staleness', () => {
+  it('reports zero and null on an empty store', () => {
+    expect(staleness()).toEqual({ count: 0, daysSinceLast: null })
+  })
+
+  it('counts experiences and reads zero days right after insert', () => {
+    createExperience({ title: 'a' })
+    createExperience({ title: 'b' })
+    expect(staleness()).toEqual({ count: 2, daysSinceLast: 0 })
+  })
+
+  it('floors a fractional day delta from a backdated update', () => {
+    createExperience({ title: 'old' })
+    getDb().prepare(`UPDATE experiences SET updated_at = datetime('now', '-5.5 days')`).run()
+    expect(staleness()).toEqual({ count: 1, daysSinceLast: 5 })
   })
 })
