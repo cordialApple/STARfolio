@@ -9,6 +9,7 @@ import { ImportWizard } from './ingest/ImportWizard'
 import { StoryView } from './story/StoryView'
 import { PracticeView } from './practice/PracticeView'
 import { TechnicalView } from './technical/TechnicalView'
+import { InterviewView } from './interview/InterviewView'
 import { MaterialsView } from './materials/MaterialsView'
 import { SettingsView } from './settings/SettingsView'
 import { Onboarding } from './onboarding/Onboarding'
@@ -17,6 +18,7 @@ import {
   MessagesSquare,
   Sparkles,
   Code2,
+  UserRoundCheck,
   FileText,
   Library
 } from 'lucide-react'
@@ -30,6 +32,7 @@ type Route =
   | { name: 'generate' }
   | { name: 'practice' }
   | { name: 'technical' }
+  | { name: 'interview' }
   | { name: 'materials' }
   | { name: 'settings' }
   | { name: 'detail'; id: string }
@@ -43,6 +46,7 @@ const NAV_TABS: {
   { route: { name: 'practice' }, label: 'Practice', icon: MessagesSquare },
   { route: { name: 'generate' }, label: 'Generate', icon: Sparkles },
   { route: { name: 'technical' }, label: 'Technical', icon: Code2 },
+  { route: { name: 'interview' }, label: 'Interview', icon: UserRoundCheck },
   { route: { name: 'materials' }, label: 'Resume', icon: FileText },
   { route: { name: 'list' }, label: 'Bank', icon: Library }
 ]
@@ -89,9 +93,14 @@ function App(): React.JSX.Element {
     )
   }
 
-  const bankActive = !['generate', 'practice', 'technical', 'materials', 'settings'].includes(
-    route.name
-  )
+  const bankActive = ![
+    'generate',
+    'practice',
+    'technical',
+    'interview',
+    'materials',
+    'settings'
+  ].includes(route.name)
 
   return (
     <div className="flex min-h-screen bg-canvas text-ink">
@@ -143,6 +152,8 @@ function App(): React.JSX.Element {
         {route.name === 'practice' && <PracticeView />}
 
         {route.name === 'technical' && <TechnicalView />}
+
+        {route.name === 'interview' && <InterviewView />}
 
         {route.name === 'materials' && <MaterialsView />}
 

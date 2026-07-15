@@ -370,6 +370,52 @@ export interface TechnicalApi {
   answer: (sessionId: string, answer: string) => Promise<TechnicalAnswerResult>
 }
 
+export type InterviewPhase = 'intro' | 'exploration' | 'closing' | 'done'
+export type InterviewCoverageDimension =
+  | 'motivation'
+  | 'architecture'
+  | 'tradeoffs'
+  | 'failures'
+  | 'ownership'
+export type InterviewAction =
+  | { kind: 'ask_intro' }
+  | { kind: 'probe'; topicId: string; dimension: InterviewCoverageDimension; reason: string }
+  | { kind: 'transition'; topicId: string; callback: boolean; reason: string }
+  | { kind: 'closing' }
+  | { kind: 'done' }
+export type ExperienceLevel = 'entry' | 'mid' | 'senior'
+export interface InterviewStarStory {
+  topic: string
+  situation: string
+  task: string
+  action: string
+  result: string
+}
+export interface InterviewReport {
+  overallFeedback: string
+  strengths: string[]
+  improvementAreas: string[]
+  starStories: InterviewStarStory[]
+}
+export interface InterviewStep {
+  sessionId: string
+  utterance: string
+  action: InterviewAction
+  phase: InterviewPhase
+  done: boolean
+  report: InterviewReport | null
+}
+export interface InterviewStartInput {
+  resumeText: string
+  candidateName?: string
+  level?: ExperienceLevel
+}
+export interface InterviewApi {
+  start: (input: InterviewStartInput) => Promise<InterviewStep>
+  answer: (sessionId: string, answer: string, elapsedMs?: number) => Promise<InterviewStep>
+  report: (sessionId: string) => Promise<InterviewReport | null>
+}
+
 export interface CorpusDocSummary {
   id: string
   title: string
@@ -516,6 +562,7 @@ export interface IpcApi {
   clipboard: ClipboardApi
   practice: PracticeApi
   technical: TechnicalApi
+  interview: InterviewApi
   corpus: CorpusApi
   bank: BankApi
   backup: BackupApi

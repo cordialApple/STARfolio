@@ -59,5 +59,13 @@ export type {
   TechnicalConfig,
   TechnicalStartResult,
   TechnicalAnswerResult,
-  ResumeBullet
+  ResumeBullet,
+  ExperienceLevel,
+  InterviewPhase,
+  InterviewCoverageDimension,
+  InterviewAction,
+  InterviewStarStory,
+  InterviewReport,
+  InterviewStep,
+  InterviewStartInput
 } from '../../../preload/index.d'
