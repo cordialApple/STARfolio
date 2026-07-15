@@ -173,6 +173,13 @@ export function endTechnicalSession(sessionId: string): void {
     .run(sessionId)
 }
 
+export function deleteTechnicalSession(sessionId: string): { deleted: boolean } {
+  const changes = getDb()
+    .prepare(`DELETE FROM practice_sessions WHERE id = ? AND mode = 'technical'`)
+    .run(sessionId).changes
+  return { deleted: changes > 0 }
+}
+
 function turnExperiences(turnId: string): TurnExperienceRef[] {
   return getDb()
     .prepare(

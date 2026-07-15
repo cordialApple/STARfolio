@@ -105,7 +105,7 @@ test('technical: history lists a past session and replays its transcript with ru
   await win.getByRole('button', { name: 'History' }).click()
 
   await expect(win.getByRole('heading', { name: 'Technical history' })).toBeVisible()
-  await win.getByRole('button', { name: /the consensus protocol/ }).click()
+  await win.getByRole('button', { name: /^the consensus protocol/ }).click()
 
   await expect(win.getByRole('heading', { name: 'the consensus protocol' })).toBeVisible()
   await expect(win.getByText('Interviewer').first()).toBeVisible()
@@ -129,5 +129,24 @@ test('technical: End session marks the session Complete in history', async () =>
 
   await win.getByRole('button', { name: 'View history' }).click()
   await expect(win.getByRole('heading', { name: 'Technical history' })).toBeVisible()
-  await expect(win.getByRole('button', { name: /the sharding strategy/ })).toContainText('Complete')
+  await expect(win.getByRole('button', { name: /^the sharding strategy/ })).toContainText('Complete')
+})
+
+test('technical: a session can be deleted from history', async () => {
+  const win = await app.firstWindow()
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Technical', exact: true }).click()
+
+  await win.getByPlaceholder('e.g. the rate limiter design in my notes').fill('the cache eviction policy')
+  await win.getByRole('button', { name: 'Start technical interview' }).click()
+  await win.getByRole('button', { name: 'End session' }).click()
+
+  await win.getByRole('button', { name: 'View history' }).click()
+  await expect(win.getByRole('button', { name: /^the cache eviction policy/ })).toBeVisible()
+
+  await win.getByRole('button', { name: 'Delete session on the cache eviction policy' }).click()
+  await win.getByRole('button', { name: 'Delete', exact: true }).click()
+
+  await expect(win.getByRole('button', { name: /^the cache eviction policy/ })).toHaveCount(0)
 })

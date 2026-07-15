@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Send, Quote, Copy, History, Inbox, Square } from 'lucide-react'
+import { Loader2, Send, Quote, Copy, History, Inbox, Square, Trash2 } from 'lucide-react'
 import {
   Badge,
   Button,
   Card,
+  Dialog,
   EmptyState,
   ErrorState,
+  IconButton,
   Input,
   Skeleton,
   Textarea,
@@ -264,8 +266,11 @@ function TechnicalHistory({
   onOpen: (id: string) => void
   onBack: () => void
 }): React.JSX.Element {
+  const toast = useToast()
   const [sessions, setSessions] = useState<TechnicalSessionSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<TechnicalSessionSummary | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -277,6 +282,22 @@ function TechnicalHistory({
       cancelled = true
     }
   }, [])
+
+  async function remove(): Promise<void> {
+    if (!pendingDelete) return
+    const id = pendingDelete.id
+    setDeleting(true)
+    try {
+      await window.api.technical.remove(id)
+      setSessions((prev) => (prev ? prev.filter((s) => s.id !== id) : prev))
+      toast('Session deleted.', 'neutral')
+      setPendingDelete(null)
+    } catch (err) {
+      toast(`Could not delete: ${(err as Error).message}`, 'danger')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -302,11 +323,11 @@ function TechnicalHistory({
       ) : (
         <ul className="space-y-2">
           {sessions.map((s) => (
-            <li key={s.id}>
+            <li key={s.id} className="flex items-stretch gap-2">
               <button
                 type="button"
                 onClick={() => onOpen(s.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-lg border border-line bg-surface p-4 text-left hover:bg-raised"
+                className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg border border-line bg-surface p-4 text-left hover:bg-raised"
               >
                 <span className="min-w-0">
                   <span className="block truncate font-semibold text-ink">{s.config.promptText}</span>
@@ -320,10 +341,33 @@ function TechnicalHistory({
                   {s.ended_at ? 'Complete' : 'In progress'}
                 </Badge>
               </button>
+              <IconButton
+                label={`Delete session on ${s.config.promptText}`}
+                className="shrink-0 self-center text-muted hover:text-danger"
+                onClick={() => setPendingDelete(s)}
+              >
+                <Trash2 className="size-4" />
+              </IconButton>
             </li>
           ))}
         </ul>
       )}
+      <Dialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title="Delete this session?"
+        description="This removes the transcript and rubric for good. This can't be undone."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="danger" loading={deleting} onClick={() => void remove()}>
+              Delete
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }

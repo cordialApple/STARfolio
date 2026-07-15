@@ -110,6 +110,7 @@ const api: IpcApi = {
     answer: (sessionId, answer) => ipcRenderer.invoke('technical:answer', { sessionId, answer }),
     get: (sessionId) => ipcRenderer.invoke('technical:get', { sessionId }),
     end: (sessionId) => ipcRenderer.invoke('technical:end', { sessionId }),
+    remove: (sessionId) => ipcRenderer.invoke('technical:delete', { sessionId }),
     list: () => ipcRenderer.invoke('technical:list')
   },
   interview: {
