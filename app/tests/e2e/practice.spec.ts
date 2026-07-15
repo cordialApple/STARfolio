@@ -124,6 +124,27 @@ test('the live session transcript can be copied to the clipboard as markdown', a
   expect(md).toContain('- STAR completeness:')
 })
 
+test('a reopened session from history can be copied to the clipboard as markdown', async () => {
+  const win = await app.firstWindow()
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+
+  await win.getByRole('button', { name: 'Practice', exact: true }).click()
+  await win.getByRole('button', { name: 'History' }).click()
+  await expect(win.getByRole('heading', { name: 'Session history' })).toBeVisible()
+
+  await win.getByRole('button', { name: /^Conflict/ }).click()
+  await expect(win.getByText('STAR completeness')).toBeVisible()
+
+  await win.getByRole('button', { name: 'Copy session' }).click()
+  await expect(win.getByText('Session copied to clipboard.')).toBeVisible()
+
+  const md = await app.evaluate(({ clipboard }) => clipboard.readText())
+  expect(md).toContain('# Mock interview — Conflict')
+  expect(md).toContain(`**Candidate:** ${STRONG}`)
+  expect(md).toContain('- STAR completeness:')
+})
+
 test('a session can be deleted from history', async () => {
   const win = await app.firstWindow()
   await win.reload()
