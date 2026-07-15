@@ -1,8 +1,17 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { initDb } from '../../src/main/db/client'
+import { initDb, getDb } from '../../src/main/db/client'
 import { createExperience } from '../../src/main/db/repositories/experiences'
 import { startPractice, answerPractice } from '../../src/main/practice'
-import { createSession, getSession, listSessions } from '../../src/main/db/repositories/practice'
+import {
+  addInterviewerTurn,
+  commitAnswer,
+  createSession,
+  getSession,
+  getTechnicalSession,
+  listSessions,
+  listTechnicalSessions
+} from '../../src/main/db/repositories/practice'
+import type { TechnicalFeedback } from '../../src/main/ai/technical'
 
 const STRONG =
   'When the deploy pipeline kept failing I took ownership, rewrote the retry logic, and cut build times from 20 minutes to 4 for the whole team.'
@@ -86,5 +95,51 @@ describe('practice orchestrator (stub)', () => {
     expect(list.map((s) => s.id)).toEqual([behavioral])
     expect(getSession(technical)).toBeNull()
     expect(getSession(behavioral)).not.toBeNull()
+  })
+
+  it('lists and reads technical sessions with rubric feedback, isolated from behavioral', async () => {
+    const { sessionId: behavioral } = await startPractice({ kind: 'genre', promptText: 'Leadership' })
+    const technical = createSession(
+      { promptText: 'the rate limiter design', discipline: 'distributed systems' },
+      'technical'
+    )
+    getDb().prepare(`INSERT INTO corpus_docs (id, title) VALUES ('d1', 'Designing Data-Intensive Applications')`).run()
+    getDb().prepare(`INSERT INTO corpus_chunks (id, doc_id, seq, text) VALUES ('ch1', 'd1', 0, 'rate limiting chapter')`).run()
+    addInterviewerTurn(technical, 'How does your limiter behave under a network partition?', ['ch1'])
+    const feedback: TechnicalFeedback = {
+      correctness: { score: 4, note: 'sound' },
+      depth: { score: 3, note: 'go deeper on failover' },
+      tradeoffs: { score: 5, note: 'weighed CP vs AP well' },
+      communication: { score: 4, note: 'clear' },
+      summary: 'solid answer'
+    }
+    commitAnswer({
+      sessionId: technical,
+      answer: 'token bucket per node, gossip the counters',
+      feedback,
+      flags: {},
+      experienceIds: [],
+      next: { kind: 'done' }
+    })
+
+    const list = listTechnicalSessions()
+    expect(list.map((s) => s.id)).toEqual([technical])
+    expect(list[0].config.discipline).toBe('distributed systems')
+    expect(list[0].question_count).toBe(1)
+    expect(list[0].answered).toBe(1)
+
+    const session = getTechnicalSession(technical)!
+    expect(session.config.promptText).toBe('the rate limiter design')
+    expect(session.turns).toHaveLength(2)
+    const interviewer = session.turns.find((t) => t.role === 'interviewer')!
+    expect(interviewer.citations).toEqual([
+      { chunkId: 'ch1', title: 'Designing Data-Intensive Applications' }
+    ])
+    const candidate = session.turns.find((t) => t.role === 'candidate')!
+    expect(candidate.citations).toEqual([])
+    expect(candidate.feedback!.tradeoffs.score).toBe(5)
+    expect(candidate.feedback!.summary).toBe('solid answer')
+
+    expect(getTechnicalSession(behavioral)).toBeNull()
   })
 })

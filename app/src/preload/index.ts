@@ -107,7 +107,9 @@ const api: IpcApi = {
   },
   technical: {
     start: (config) => ipcRenderer.invoke('technical:start', config),
-    answer: (sessionId, answer) => ipcRenderer.invoke('technical:answer', { sessionId, answer })
+    answer: (sessionId, answer) => ipcRenderer.invoke('technical:answer', { sessionId, answer }),
+    get: (sessionId) => ipcRenderer.invoke('technical:get', { sessionId }),
+    list: () => ipcRenderer.invoke('technical:list')
   },
   interview: {
     start: (input) => ipcRenderer.invoke('interview:start', input),
