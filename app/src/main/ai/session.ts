@@ -22,6 +22,7 @@ import type { ParseClient } from './roles/parse'
 import {
   commitAnswer,
   createSession,
+  deleteSession as deleteSessionRow,
   getSession as getSessionDetail,
   listSessions as listSessionRows,
   loadSession,
@@ -218,4 +219,8 @@ export function listInterviewSessions(): InterviewSessionSummary[] {
 
 export function getInterviewSession(sessionId: string): InterviewSessionDetail | null {
   return getSessionDetail(sessionId)
+}
+
+export function deleteInterviewSession(sessionId: string): { deleted: boolean } {
+  return deleteSessionRow(sessionId)
 }

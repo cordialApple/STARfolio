@@ -100,7 +100,29 @@ test('interview: a persisted session appears in history and opens a read-only de
   await win.getByRole('button', { name: 'History' }).click()
 
   await expect(win.getByText('Interview history')).toBeVisible()
-  await win.getByRole('button', { name: /Casey Historian/ }).click()
+  await win.getByRole('button', { name: /^Casey Historian/ }).click()
 
   await expect(win.getByText('Your debrief')).toBeVisible()
+})
+
+test('interview: a history entry can be deleted from the list', async () => {
+  const win = await app.firstWindow()
+
+  await win.evaluate(async (resume) => {
+    await window.api.interview.start({
+      resumeText: resume,
+      candidateName: 'Dana Deletable',
+      level: 'mid'
+    })
+  }, RESUME)
+
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Interview', exact: true }).click()
+  await win.getByRole('button', { name: 'History' }).click()
+
+  await win.getByRole('button', { name: /Delete interview with Dana Deletable/ }).click()
+  await win.getByRole('button', { name: 'Delete', exact: true }).click()
+
+  await expect(win.getByRole('button', { name: /Dana Deletable/ })).toHaveCount(0)
 })
