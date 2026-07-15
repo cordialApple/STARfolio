@@ -7,11 +7,11 @@ import {
   useState,
   type ReactNode
 } from 'react'
+import { normalizeMode, nextMode, resolveMode, type ThemeMode } from './theme-logic'
 
-export type ThemeMode = 'system' | 'light' | 'dark'
+export type { ThemeMode }
 
 const STORAGE_KEY = 'starfolio-theme'
-const MODES: ThemeMode[] = ['system', 'light', 'dark']
 const DARK_QUERY = '(prefers-color-scheme: dark)'
 
 type ThemeContextValue = {
@@ -24,8 +24,11 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 function readStored(): ThemeMode {
-  const stored = localStorage.getItem(STORAGE_KEY)
-  return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system'
+  return normalizeMode(localStorage.getItem(STORAGE_KEY))
+}
+
+function writeStored(mode: ThemeMode): void {
+  localStorage.setItem(STORAGE_KEY, mode)
 }
 
 function systemDark(): boolean {
@@ -43,21 +46,21 @@ export function ThemeProvider({ children }: { children: ReactNode }): React.JSX.
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
-  const resolved: 'light' | 'dark' = mode === 'system' ? (systemIsDark ? 'dark' : 'light') : mode
+  const resolved = resolveMode(mode, systemIsDark)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', resolved === 'dark')
   }, [resolved])
 
   const setMode = useCallback((next: ThemeMode): void => {
-    localStorage.setItem(STORAGE_KEY, next)
+    writeStored(next)
     setModeState(next)
   }, [])
 
   const cycleMode = useCallback((): void => {
     setModeState((prev) => {
-      const next = MODES[(MODES.indexOf(prev) + 1) % MODES.length]
-      localStorage.setItem(STORAGE_KEY, next)
+      const next = nextMode(prev)
+      writeStored(next)
       return next
     })
   }, [])
