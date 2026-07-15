@@ -100,6 +100,30 @@ test('mode A: scripted session — vague answer drills down, feedback scores all
   expect(persisted.linkedTitles).toContain('Deploy pipeline rewrite')
 })
 
+test('the live session transcript can be copied to the clipboard as markdown', async () => {
+  const win = await app.firstWindow()
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+
+  await win.getByRole('button', { name: 'Practice', exact: true }).click()
+  await win.getByRole('combobox').selectOption('Conflict')
+  await win.getByRole('button', { name: 'Start interview' }).click()
+
+  const box = win.getByPlaceholder(/type here/)
+  await expect(box).toBeVisible()
+  await box.fill(STRONG)
+  await win.getByRole('button', { name: 'Answer' }).click()
+  await expect(win.getByText('STAR completeness')).toBeVisible()
+
+  await win.getByRole('button', { name: 'Copy session' }).click()
+  await expect(win.getByText('Session copied to clipboard.')).toBeVisible()
+
+  const md = await app.evaluate(({ clipboard }) => clipboard.readText())
+  expect(md).toContain('# Mock interview — Conflict')
+  expect(md).toContain(`**Candidate:** ${STRONG}`)
+  expect(md).toContain('- STAR completeness:')
+})
+
 test('a session can be deleted from history', async () => {
   const win = await app.firstWindow()
   await win.reload()

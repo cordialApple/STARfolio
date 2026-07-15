@@ -10,7 +10,8 @@ import {
   Volume2,
   Check,
   Loader2,
-  Trash2
+  Trash2,
+  Copy
 } from 'lucide-react'
 import {
   Badge,
@@ -37,6 +38,7 @@ import type {
   StoryMatch
 } from '../lib/bank-types'
 import { FeedbackCard } from './FeedbackCard'
+import { practiceToMarkdown } from './practice-markdown'
 import { PushToTalk } from './PushToTalk'
 import { speak, stopSpeaking, ttsAvailable } from '../lib/tts'
 import { cn } from '../lib/cn'
@@ -218,6 +220,16 @@ export function PracticeView(): React.JSX.Element {
     }
   }
 
+  async function copy(): Promise<void> {
+    const promptText = mode === 'jd' ? jd.trim() : theme
+    try {
+      await window.api.clipboard.write(practiceToMarkdown(promptText, turns))
+      toast('Session copied to clipboard.', 'success')
+    } catch (err) {
+      toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
+
   async function endNow(): Promise<void> {
     stopSpeaking()
     if (sessionId) {
@@ -296,6 +308,12 @@ export function PracticeView(): React.JSX.Element {
                   }}
                 />
               </span>
+            )}
+            {turns.some((t) => t.role === 'candidate') && (
+              <Button size="sm" variant="secondary" onClick={() => void copy()}>
+                <Copy className="size-4" />
+                Copy session
+              </Button>
             )}
             {!ended && (
               <Button variant="ghost" size="sm" onClick={() => void endNow()}>
