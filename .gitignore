@@ -10,6 +10,7 @@ app/out/
 app/dist/
 dist/
 out/
+*.tsbuildinfo
 
 # electron-builder / native rebuild artifacts
 app/release/
