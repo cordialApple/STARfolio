@@ -4,6 +4,7 @@ interface Para {
   text: string
   bold: boolean
   bullet: boolean
+  italic: boolean
 }
 
 const CRC_TABLE = (() => {
@@ -70,29 +71,34 @@ function markdownToParas(md: string): Para[] {
     const line = raw.trimEnd()
     if (!line.trim()) continue
     const heading = line.match(/^#{1,6} /)
-    if (heading) paras.push({ text: line.slice(heading[0].length), bold: true, bullet: false })
-    else if (/^[-*] /.test(line)) paras.push({ text: line.slice(2), bold: false, bullet: true })
-    else paras.push({ text: line, bold: false, bullet: false })
+    const italic = /^_(.+)_$/.exec(line)
+    if (heading)
+      paras.push({ text: line.slice(heading[0].length), bold: true, bullet: false, italic: false })
+    else if (/^[-*] /.test(line))
+      paras.push({ text: line.slice(2), bold: false, bullet: true, italic: false })
+    else if (italic) paras.push({ text: italic[1], bold: false, bullet: false, italic: true })
+    else paras.push({ text: line, bold: false, bullet: false, italic: false })
   }
   return paras
 }
 
-function runXml(text: string, bold: boolean): string {
-  const rPr = bold ? '<w:rPr><w:b/></w:rPr>' : ''
+function runXml(text: string, bold: boolean, italic: boolean): string {
+  const props = (bold ? '<w:b/>' : '') + (italic ? '<w:i/>' : '')
+  const rPr = props ? `<w:rPr>${props}</w:rPr>` : ''
   return `<w:r>${rPr}<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`
 }
 
-function runsXml(text: string, forceBold: boolean): string {
-  if (forceBold) return runXml(text, true)
+function runsXml(text: string, forceBold: boolean, italic: boolean): string {
+  if (forceBold) return runXml(text, true, italic)
   return text
     .split('**')
-    .map((seg, i) => (seg ? runXml(seg, i % 2 === 1) : ''))
+    .map((seg, i) => (seg ? runXml(seg, i % 2 === 1, italic) : ''))
     .join('')
 }
 
 function paraXml(p: Para): string {
   const numPr = p.bullet ? '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' : ''
-  return `<w:p><w:pPr>${numPr}</w:pPr>${runsXml(p.text, p.bold)}</w:p>`
+  return `<w:p><w:pPr>${numPr}</w:pPr>${runsXml(p.text, p.bold, p.italic)}</w:p>`
 }
 
 // Minimal but valid .docx (OOXML). Headings render bold; markdown "- " lines become a

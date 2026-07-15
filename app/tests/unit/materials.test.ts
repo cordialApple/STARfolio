@@ -60,6 +60,15 @@ describe('markdownToDocx', () => {
     expect(value).toContain('Strengths')
     expect(value).not.toContain('#')
   })
+
+  it('renders whole-line _italic_ without leaking underscores', async () => {
+    const buf = markdownToDocx('_From your corpus: rate-limiter notes_')
+    const mammoth = (await import('mammoth')).default
+    const { value } = await mammoth.extractRawText({ buffer: buf })
+    expect(value).toContain('From your corpus: rate-limiter notes')
+    expect(value).not.toContain('_From')
+    expect(value.trim().endsWith('_')).toBe(false)
+  })
 })
 
 describe('extractBullets grounding', () => {
