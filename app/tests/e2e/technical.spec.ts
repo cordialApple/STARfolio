@@ -129,6 +129,9 @@ test('technical: a reopened session from history can be copied to the clipboard'
   await win.getByRole('button', { name: 'Copy session' }).click()
   await expect(win.getByText('Session copied to clipboard.')).toBeVisible()
 
+  await expect(win.getByRole('button', { name: 'Export .md' })).toBeVisible()
+  await expect(win.getByRole('button', { name: 'Export .docx' })).toBeVisible()
+
   const md = await app.evaluate(({ clipboard }) => clipboard.readText())
   expect(md).toContain('# Technical practice — the consensus protocol')
   expect(md).toContain('- Correctness:')
