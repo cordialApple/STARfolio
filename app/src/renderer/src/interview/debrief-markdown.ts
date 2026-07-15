@@ -10,6 +10,14 @@ function list(items: string[]): string {
   return items.map((i) => `- ${i}`).join('\n')
 }
 
+export function debriefFilename(detail: InterviewSessionDetail): string {
+  const slug = (detail.candidateName ?? '')
+    .toLowerCase()
+    .replace(/[^\w]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return `interview-${slug || 'anonymous'}`
+}
+
 export function debriefToMarkdown(detail: InterviewSessionDetail): string {
   const name = detail.candidateName ?? 'Anonymous candidate'
   const when = new Date(detail.startedAt + 'Z').toLocaleString()

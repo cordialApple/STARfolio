@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { debriefToMarkdown } from '../../src/renderer/src/interview/debrief-markdown'
+import {
+  debriefFilename,
+  debriefToMarkdown
+} from '../../src/renderer/src/interview/debrief-markdown'
 import type { InterviewSessionDetail } from '../../src/preload/index.d'
 
 const base: InterviewSessionDetail = {
@@ -70,5 +73,22 @@ describe('debriefToMarkdown', () => {
     expect(md).not.toContain('### Strengths')
     expect(md).toContain('### Areas to improve')
     expect(md).not.toContain('### STAR')
+  })
+})
+
+describe('debriefFilename', () => {
+  it('slugifies the candidate name', () => {
+    expect(debriefFilename(base)).toBe('interview-ada-lovelace')
+  })
+
+  it('collapses punctuation and trims dashes', () => {
+    expect(debriefFilename({ ...base, candidateName: '  Ké$ha  O’Neil! ' })).toBe(
+      'interview-k-ha-o-neil'
+    )
+  })
+
+  it('falls back to anonymous when unnamed', () => {
+    expect(debriefFilename({ ...base, candidateName: null })).toBe('interview-anonymous')
+    expect(debriefFilename({ ...base, candidateName: '!!!' })).toBe('interview-anonymous')
   })
 })
