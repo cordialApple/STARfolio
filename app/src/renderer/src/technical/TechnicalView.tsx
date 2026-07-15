@@ -1,18 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Send, Quote } from 'lucide-react'
+import { Loader2, Send, Quote, Copy } from 'lucide-react'
 import { Badge, Button, Card, Input, Textarea, useToast } from '../components'
-import type { Citation, TechnicalFeedback, TechnicalRubricDimension } from '../lib/bank-types'
+import type { Citation } from '../lib/bank-types'
+import { DIMS, technicalToMarkdown, type TechnicalEntry } from './technical-markdown'
 
-type Entry =
-  | { role: 'interviewer'; text: string; citations: Citation[] }
-  | { role: 'candidate'; text: string; feedback: TechnicalFeedback }
-
-const DIMS: { key: TechnicalRubricDimension; label: string }[] = [
-  { key: 'correctness', label: 'Correctness' },
-  { key: 'depth', label: 'Depth' },
-  { key: 'tradeoffs', label: 'Trade-offs' },
-  { key: 'communication', label: 'Communication' }
-]
+type Entry = TechnicalEntry
 
 function scoreTone(score: number): 'success' | 'warning' | 'danger' {
   return score >= 4 ? 'success' : score === 3 ? 'warning' : 'danger'
@@ -87,6 +79,15 @@ export function TechnicalView(): React.JSX.Element {
     }
   }
 
+  async function copy(): Promise<void> {
+    try {
+      await window.api.clipboard.write(technicalToMarkdown(topic.trim(), discipline.trim(), entries))
+      toast('Session copied to clipboard.', 'success')
+    } catch (err) {
+      toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
+
   if (phase === 'setup') {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
@@ -129,9 +130,17 @@ export function TechnicalView(): React.JSX.Element {
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-ink">Technical practice</h1>
-        <Button variant="ghost" onClick={() => setPhase('setup')}>
-          New session
-        </Button>
+        <div className="flex items-center gap-2">
+          {entries.some((e) => e.role === 'candidate') && (
+            <Button size="sm" variant="secondary" onClick={() => void copy()}>
+              <Copy className="size-4" />
+              Copy session
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => setPhase('setup')}>
+            New session
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-4">
