@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Sparkles, CheckCircle2, TriangleAlert, History, Inbox, Trash2 } from 'lucide-react'
+import {
+  Send,
+  Sparkles,
+  CheckCircle2,
+  TriangleAlert,
+  History,
+  Inbox,
+  Trash2,
+  Copy
+} from 'lucide-react'
 import {
   Badge,
   Button,
@@ -22,6 +31,7 @@ import type {
   InterviewSessionSummary,
   InterviewStep
 } from '../lib/bank-types'
+import { debriefToMarkdown } from './debrief-markdown'
 
 type Turn = { role: 'interviewer' | 'candidate'; text: string }
 
@@ -440,6 +450,17 @@ function HistoryList({
 function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
   const [detail, setDetail] = useState<InterviewSessionDetail | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
+
+  async function copy(): Promise<void> {
+    if (!detail) return
+    try {
+      await window.api.clipboard.write(debriefToMarkdown(detail))
+      toast('Debrief copied to clipboard.', 'success')
+    } catch (err) {
+      toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -454,13 +475,21 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <button
-        type="button"
-        onClick={onBack}
-        className="text-sm font-semibold text-muted hover:text-ink"
-      >
-        ← Back to history
-      </button>
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-sm font-semibold text-muted hover:text-ink"
+        >
+          ← Back to history
+        </button>
+        {detail && (
+          <Button size="sm" variant="secondary" onClick={() => void copy()}>
+            <Copy className="size-4" />
+            Copy debrief
+          </Button>
+        )}
+      </div>
       {error ? (
         <ErrorState description={error} />
       ) : detail === undefined ? (
