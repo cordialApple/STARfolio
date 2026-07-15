@@ -31,7 +31,13 @@ import { exportBank, importBank, backupTo } from './db/backup'
 import { getPrefs, setPrefs, staleness, prefsPatch, type Prefs } from './settings/prefs'
 import { checkForUpdate, downloadUpdate, quitAndInstall, updateStatus } from './updater'
 import { usageSummary } from './ai/usage'
-import { getSession, listSessions, endSession } from './db/repositories/practice'
+import {
+  getSession,
+  listSessions,
+  endSession,
+  getTechnicalSession,
+  listTechnicalSessions
+} from './db/repositories/practice'
 import { searchExperiences, matchBankedStory } from './search'
 import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
@@ -227,6 +233,8 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
 
   handle(ipcMain, 'technical:start', technicalConfig, (_e, config) => startTechnical(config))
   handle(ipcMain, 'technical:answer', technicalAnswerArg, (_e, arg) => answerTechnical(arg))
+  handle(ipcMain, 'technical:get', sessionArg, (_e, { sessionId }) => getTechnicalSession(sessionId))
+  ipcMain.handle('technical:list', () => listTechnicalSessions())
 
   const MAX_INTERVIEW_EXPERIENCES = 40
   // Resume the roadmap from our own confirmed bank — never trust a renderer-supplied experience list.

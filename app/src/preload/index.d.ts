@@ -365,9 +365,34 @@ export interface TechnicalAnswerResult {
   next_text: string
   citations: Citation[]
 }
+export interface TechnicalTurn {
+  id: string
+  role: TurnRole
+  content: string
+  feedback: TechnicalFeedback | null
+  citations: Citation[]
+  created_at: string
+}
+export interface TechnicalSession {
+  id: string
+  config: TechnicalConfig
+  started_at: string
+  ended_at: string | null
+  turns: TechnicalTurn[]
+}
+export interface TechnicalSessionSummary {
+  id: string
+  config: TechnicalConfig
+  started_at: string
+  ended_at: string | null
+  question_count: number
+  answered: number
+}
 export interface TechnicalApi {
   start: (config: TechnicalConfig) => Promise<TechnicalStartResult>
   answer: (sessionId: string, answer: string) => Promise<TechnicalAnswerResult>
+  get: (sessionId: string) => Promise<TechnicalSession | null>
+  list: () => Promise<TechnicalSessionSummary[]>
 }
 
 export type InterviewPhase = 'intro' | 'exploration' | 'closing' | 'done'

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDb } from '../client'
 import { practiceConfig, type InterviewFeedback, type PracticeConfig } from '../../ai/interview'
+import { technicalConfig, type TechnicalConfig, type TechnicalFeedback } from '../../ai/technical'
 
 export type TurnRole = 'interviewer' | 'candidate'
 export interface TurnFlags {
@@ -247,6 +248,124 @@ export function listSessions(): PracticeSessionSummary[] {
   return rows.map((r) => ({
     id: r.id,
     config: parseConfig(r.config_json),
+    started_at: r.started_at,
+    ended_at: r.ended_at,
+    question_count: r.question_count,
+    answered: r.answered
+  }))
+}
+
+export interface TurnCitation {
+  chunkId: string
+  title: string
+}
+export interface TechnicalTurn {
+  id: string
+  role: TurnRole
+  content: string
+  feedback: TechnicalFeedback | null
+  citations: TurnCitation[]
+  created_at: string
+}
+export interface TechnicalSession {
+  id: string
+  config: TechnicalConfig
+  started_at: string
+  ended_at: string | null
+  turns: TechnicalTurn[]
+}
+export interface TechnicalSessionSummary {
+  id: string
+  config: TechnicalConfig
+  started_at: string
+  ended_at: string | null
+  question_count: number
+  answered: number
+}
+
+function parseTechnicalConfig(json: string | null): TechnicalConfig {
+  try {
+    return technicalConfig.parse(JSON.parse(json ?? '{}'))
+  } catch {
+    return { promptText: 'technical practice' }
+  }
+}
+
+function parseTechnicalFeedback(json: string | null): TechnicalFeedback | null {
+  if (!json) return null
+  try {
+    return JSON.parse(json) as TechnicalFeedback
+  } catch {
+    return null
+  }
+}
+
+function turnCitations(turnId: string): TurnCitation[] {
+  return getDb()
+    .prepare(
+      `SELECT c.id AS chunkId, d.title AS title FROM practice_turn_corpus_chunks ptc
+       JOIN corpus_chunks c ON c.id = ptc.chunk_id
+       JOIN corpus_docs d ON d.id = c.doc_id WHERE ptc.turn_id = ? ORDER BY d.title`
+    )
+    .all(turnId) as TurnCitation[]
+}
+
+export function getTechnicalSession(sessionId: string): TechnicalSession | null {
+  const s = getDb()
+    .prepare(`SELECT id, config_json, started_at, ended_at FROM practice_sessions WHERE id = ? AND mode = 'technical'`)
+    .get(sessionId) as
+    | { id: string; config_json: string | null; started_at: string; ended_at: string | null }
+    | undefined
+  if (!s) return null
+
+  const rows = getDb()
+    .prepare(
+      `SELECT id, role, content, feedback_json, created_at
+       FROM practice_turns WHERE session_id = ? ORDER BY created_at, rowid`
+    )
+    .all(sessionId) as {
+    id: string
+    role: TurnRole
+    content: string
+    feedback_json: string | null
+    created_at: string
+  }[]
+
+  return {
+    id: s.id,
+    config: parseTechnicalConfig(s.config_json),
+    started_at: s.started_at,
+    ended_at: s.ended_at,
+    turns: rows.map((r) => ({
+      id: r.id,
+      role: r.role,
+      content: r.content,
+      feedback: parseTechnicalFeedback(r.feedback_json),
+      citations: r.role === 'interviewer' ? turnCitations(r.id) : [],
+      created_at: r.created_at
+    }))
+  }
+}
+
+export function listTechnicalSessions(): TechnicalSessionSummary[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT s.id, s.config_json, s.started_at, s.ended_at,
+              (SELECT count(*) FROM practice_turns t WHERE t.session_id = s.id AND t.role = 'interviewer') AS question_count,
+              (SELECT count(*) FROM practice_turns t WHERE t.session_id = s.id AND t.role = 'candidate') AS answered
+       FROM practice_sessions s WHERE s.mode = 'technical' ORDER BY s.started_at DESC, s.rowid DESC LIMIT 200`
+    )
+    .all() as {
+    id: string
+    config_json: string | null
+    started_at: string
+    ended_at: string | null
+    question_count: number
+    answered: number
+  }[]
+  return rows.map((r) => ({
+    id: r.id,
+    config: parseTechnicalConfig(r.config_json),
     started_at: r.started_at,
     ended_at: r.ended_at,
     question_count: r.question_count,
