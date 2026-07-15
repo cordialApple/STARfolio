@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { initDb } from '../../src/main/db/client'
 import { createExperience } from '../../src/main/db/repositories/experiences'
 import { startPractice, answerPractice } from '../../src/main/practice'
-import { getSession, listSessions } from '../../src/main/db/repositories/practice'
+import { createSession, getSession, listSessions } from '../../src/main/db/repositories/practice'
 
 const STRONG =
   'When the deploy pipeline kept failing I took ownership, rewrote the retry logic, and cut build times from 20 minutes to 4 for the whole team.'
@@ -76,5 +76,15 @@ describe('practice orchestrator (stub)', () => {
     const list = listSessions()
     expect(list[0].ended_at).not.toBeNull()
     await expect(answerPractice({ sessionId, answer: STRONG })).rejects.toThrow(/ended/)
+  })
+
+  it('keeps technical sessions out of the behavioral history and get', async () => {
+    const { sessionId: behavioral } = await startPractice({ kind: 'genre', promptText: 'Leadership' })
+    const technical = createSession({ promptText: 'the rate limiter design' }, 'technical')
+
+    const list = listSessions()
+    expect(list.map((s) => s.id)).toEqual([behavioral])
+    expect(getSession(technical)).toBeNull()
+    expect(getSession(behavioral)).not.toBeNull()
   })
 })

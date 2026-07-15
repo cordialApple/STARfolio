@@ -191,7 +191,7 @@ function parseFlags(json: string | null): TurnFlags | null {
 
 export function getSession(sessionId: string): PracticeSession | null {
   const s = getDb()
-    .prepare('SELECT id, config_json, started_at, ended_at FROM practice_sessions WHERE id = ?')
+    .prepare(`SELECT id, config_json, started_at, ended_at FROM practice_sessions WHERE id = ? AND mode = 'behavioral'`)
     .get(sessionId) as
     | { id: string; config_json: string | null; started_at: string; ended_at: string | null }
     | undefined
@@ -234,7 +234,7 @@ export function listSessions(): PracticeSessionSummary[] {
       `SELECT s.id, s.config_json, s.started_at, s.ended_at,
               (SELECT count(*) FROM practice_turns t WHERE t.session_id = s.id AND t.role = 'interviewer') AS question_count,
               (SELECT count(*) FROM practice_turns t WHERE t.session_id = s.id AND t.role = 'candidate') AS answered
-       FROM practice_sessions s ORDER BY s.started_at DESC, s.rowid DESC LIMIT 200`
+       FROM practice_sessions s WHERE s.mode = 'behavioral' ORDER BY s.started_at DESC, s.rowid DESC LIMIT 200`
     )
     .all() as {
     id: string
