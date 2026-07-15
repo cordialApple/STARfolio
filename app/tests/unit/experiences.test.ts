@@ -8,6 +8,7 @@ import {
   listExperiences,
   listSkills,
   listTags,
+  toFtsMatchQuery,
   type ExperienceInput
 } from '../../src/main/db/repositories/experiences'
 
@@ -232,5 +233,29 @@ describe('deleteExperience', () => {
 
   it('reports deleted=false for a missing id', () => {
     expect(deleteExperience('nope')).toEqual({ deleted: false })
+  })
+})
+
+describe('toFtsMatchQuery', () => {
+  it('returns null when there is nothing to match on', () => {
+    expect(toFtsMatchQuery('')).toBeNull()
+    expect(toFtsMatchQuery('   ')).toBeNull()
+    expect(toFtsMatchQuery('!!! *** --- ::')).toBeNull()
+  })
+
+  it('prefix-wildcards the last (or only) token', () => {
+    expect(toFtsMatchQuery('redis')).toBe('"redis"*')
+    expect(toFtsMatchQuery('cache invalidation')).toBe('"cache" "invalidation"*')
+  })
+
+  it('collapses FTS operators and quotes into literal quoted terms', () => {
+    expect(toFtsMatchQuery('foo" OR "bar')).toBe('"foo" "OR" "bar"*')
+    expect(toFtsMatchQuery('rate-limiter')).toBe('"rate" "limiter"*')
+    expect(toFtsMatchQuery('status:done NEAR')).toBe('"status" "done" "NEAR"*')
+  })
+
+  it('keeps Unicode letters and digits, splitting on punctuation', () => {
+    expect(toFtsMatchQuery('café 3d')).toBe('"café" "3d"*')
+    expect(toFtsMatchQuery('C++')).toBe('"C"*')
   })
 })
