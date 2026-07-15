@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   practiceToMarkdown,
+  practiceFilename,
   type PracticeEntry
 } from '../../src/renderer/src/practice/practice-markdown'
 import type { InterviewFeedback } from '../../src/preload/index.d'
@@ -43,5 +44,15 @@ describe('practiceToMarkdown', () => {
     expect(md).toContain('**Candidate:** We disagreed on scope.')
     expect(md).not.toContain('/5 —')
     expect(md).not.toContain('Drew on')
+  })
+})
+
+describe('practiceFilename', () => {
+  it('slugifies the prompt into a practice- prefixed name', () => {
+    expect(practiceFilename('Conflict resolution')).toBe('practice-conflict-resolution')
+  })
+
+  it('falls back to practice-session when the prompt slugifies to empty', () => {
+    expect(practiceFilename('   ')).toBe('practice-session')
   })
 })
