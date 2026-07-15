@@ -17,7 +17,8 @@ import {
   answerInterview,
   getInterviewReport,
   listInterviewSessions,
-  getInterviewSession
+  getInterviewSession,
+  deleteInterviewSession
 } from './ai/session'
 import { practiceConfig } from './ai/interview'
 import { technicalConfig } from './ai/technical'
@@ -250,6 +251,9 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   handle(ipcMain, 'interview:report', sessionArg, (_e, { sessionId }) => getInterviewReport(sessionId))
   ipcMain.handle('interview:list', () => listInterviewSessions())
   handle(ipcMain, 'interview:get', sessionArg, (_e, { sessionId }) => getInterviewSession(sessionId))
+  handle(ipcMain, 'interview:delete', sessionArg, (_e, { sessionId }) =>
+    deleteInterviewSession(sessionId)
+  )
 
   const disciplineOpt = z.string().trim().max(80).optional()
   const corpusFilesArg = z.object({

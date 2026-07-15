@@ -171,6 +171,16 @@ export function getSession(sessionId: string): InterviewSessionDetail | null {
   }
 }
 
+export function deleteSession(sessionId: string): { deleted: boolean } {
+  const db = getDb()
+  let changes = 0
+  db.transaction(() => {
+    db.prepare('DELETE FROM interview_turns WHERE session_id = ?').run(sessionId)
+    changes = db.prepare('DELETE FROM interview_sessions WHERE id = ?').run(sessionId).changes
+  })()
+  return { deleted: changes > 0 }
+}
+
 export function listSessions(): InterviewSessionSummary[] {
   const rows = getDb()
     .prepare(

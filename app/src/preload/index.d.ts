@@ -439,6 +439,7 @@ export interface InterviewApi {
   report: (sessionId: string) => Promise<InterviewReport | null>
   list: () => Promise<InterviewSessionSummary[]>
   get: (sessionId: string) => Promise<InterviewSessionDetail | null>
+  remove: (sessionId: string) => Promise<{ deleted: boolean }>
 }
 
 export interface CorpusDocSummary {

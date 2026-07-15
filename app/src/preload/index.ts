@@ -115,7 +115,8 @@ const api: IpcApi = {
       ipcRenderer.invoke('interview:answer', { sessionId, answer, elapsedMs }),
     report: (sessionId) => ipcRenderer.invoke('interview:report', { sessionId }),
     list: () => ipcRenderer.invoke('interview:list'),
-    get: (sessionId) => ipcRenderer.invoke('interview:get', { sessionId })
+    get: (sessionId) => ipcRenderer.invoke('interview:get', { sessionId }),
+    remove: (sessionId) => ipcRenderer.invoke('interview:delete', { sessionId })
   },
   corpus: {
     addFiles: (paths, discipline) => ipcRenderer.invoke('corpus:addFiles', { paths, discipline }),

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Sparkles, CheckCircle2, TriangleAlert, History, Inbox } from 'lucide-react'
+import { Send, Sparkles, CheckCircle2, TriangleAlert, History, Inbox, Trash2 } from 'lucide-react'
 import {
   Badge,
   Button,
   Card,
+  Dialog,
   EmptyState,
   ErrorState,
+  IconButton,
   Input,
   Select,
   Skeleton,
@@ -328,8 +330,11 @@ function HistoryList({
   onOpen: (id: string) => void
   onBack: () => void
 }): React.JSX.Element {
+  const toast = useToast()
   const [sessions, setSessions] = useState<InterviewSessionSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<InterviewSessionSummary | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -341,6 +346,22 @@ function HistoryList({
       cancelled = true
     }
   }, [])
+
+  async function remove(): Promise<void> {
+    if (!pendingDelete) return
+    const id = pendingDelete.id
+    setDeleting(true)
+    try {
+      await window.api.interview.remove(id)
+      setSessions((prev) => (prev ? prev.filter((s) => s.id !== id) : prev))
+      toast('Interview deleted.', 'neutral')
+      setPendingDelete(null)
+    } catch (err) {
+      toast(`Could not delete: ${(err as Error).message}`, 'danger')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -366,11 +387,11 @@ function HistoryList({
       ) : (
         <ul className="space-y-2">
           {sessions.map((s) => (
-            <li key={s.id}>
+            <li key={s.id} className="flex items-stretch gap-2">
               <button
                 type="button"
                 onClick={() => onOpen(s.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-lg border border-line bg-surface p-4 text-left hover:bg-raised"
+                className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg border border-line bg-surface p-4 text-left hover:bg-raised"
               >
                 <span className="min-w-0">
                   <span className="block truncate font-semibold text-ink">
@@ -385,10 +406,33 @@ function HistoryList({
                   {s.phase === 'done' ? 'Complete' : 'In progress'}
                 </Badge>
               </button>
+              <IconButton
+                label={`Delete interview with ${s.candidateName ?? 'anonymous candidate'}`}
+                className="shrink-0 self-center text-muted hover:text-danger"
+                onClick={() => setPendingDelete(s)}
+              >
+                <Trash2 className="size-4" />
+              </IconButton>
             </li>
           ))}
         </ul>
       )}
+      <Dialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title="Delete this interview?"
+        description="This removes the transcript and debrief for good. This can't be undone."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="danger" loading={deleting} onClick={() => void remove()}>
+              Delete
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }

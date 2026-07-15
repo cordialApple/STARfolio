@@ -8,7 +8,8 @@ import {
   answerInterview,
   getInterviewReport,
   listInterviewSessions,
-  getInterviewSession
+  getInterviewSession,
+  deleteInterviewSession
 } from '../../src/main/ai/session'
 
 const detailed =
@@ -101,6 +102,30 @@ describe('interview persistence', () => {
     expect(detail.endedAt).not.toBeNull()
     expect(detail.transcript.filter((t) => t.speaker === 'candidate').length).toBeGreaterThan(0)
     expect(detail.transcript[detail.transcript.length - 1].speaker).toBe('interviewer')
+  })
+
+  it('deletes a session and cascades its turns out of history', async () => {
+    const start = await startInterview({
+      resumeText: 'ignored',
+      experiences: [{ id: 'a', title: 'Ingestion pipeline', summary: 'led the migration' }],
+      candidateName: 'Deletable',
+      budgetMs: 1000,
+      closingReserveMs: 500
+    })
+    await answerInterview({ sessionId: start.sessionId, answer: detailed, elapsedMs: 0 })
+    expect(listInterviewSessions()).toHaveLength(1)
+
+    expect(deleteInterviewSession(start.sessionId)).toEqual({ deleted: true })
+
+    expect(listInterviewSessions()).toHaveLength(0)
+    expect(getInterviewSession(start.sessionId)).toBeNull()
+    expect(() => getInterviewReport(start.sessionId)).toThrow('not found')
+    const turns = getDb()
+      .prepare('SELECT count(*) AS n FROM interview_turns WHERE session_id = ?')
+      .get(start.sessionId) as { n: number }
+    expect(turns.n).toBe(0)
+
+    expect(deleteInterviewSession(start.sessionId)).toEqual({ deleted: false })
   })
 
   it('rejects answering a session that already ended after a restart', async () => {
