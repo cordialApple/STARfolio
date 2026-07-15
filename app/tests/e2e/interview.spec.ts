@@ -74,3 +74,33 @@ test('interview: the tab shows a resume setup form', async () => {
   await expect(win.getByText('Set up your interview')).toBeVisible()
   await expect(win.getByRole('button', { name: 'Start interview' })).toBeVisible()
 })
+
+test('interview: a persisted session appears in history and opens a read-only debrief', async () => {
+  const win = await app.firstWindow()
+
+  await win.evaluate(async (resume) => {
+    const start = await window.api.interview.start({
+      resumeText: resume,
+      candidateName: 'Casey Historian',
+      level: 'senior'
+    })
+    let step = start
+    for (let i = 0; i < 10 && !step.done; i++) {
+      step = await window.api.interview.answer(
+        step.sessionId,
+        'I designed a token-bucket limiter with atomic Lua refill and a local fallback during partitions.',
+        29 * 60 * 1000
+      )
+    }
+  }, RESUME)
+
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Interview', exact: true }).click()
+  await win.getByRole('button', { name: 'History' }).click()
+
+  await expect(win.getByText('Interview history')).toBeVisible()
+  await win.getByRole('button', { name: /Casey Historian/ }).click()
+
+  await expect(win.getByText('Your debrief')).toBeVisible()
+})
