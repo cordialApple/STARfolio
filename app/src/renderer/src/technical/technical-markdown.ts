@@ -11,6 +11,14 @@ export const DIMS: { key: TechnicalRubricDimension; label: string }[] = [
   { key: 'communication', label: 'Communication' }
 ]
 
+export function technicalFilename(topic: string): string {
+  const slug = topic
+    .toLowerCase()
+    .replace(/[^\w]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return `technical-${slug || 'session'}`
+}
+
 export function technicalToMarkdown(
   topic: string,
   discipline: string | undefined,

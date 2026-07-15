@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Send, Quote, Copy, History, Inbox, Square, Trash2 } from 'lucide-react'
+import { Loader2, Send, Quote, Copy, History, Inbox, Square, Trash2, Download } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -19,7 +19,12 @@ import type {
   TechnicalSession,
   TechnicalSessionSummary
 } from '../lib/bank-types'
-import { DIMS, technicalToMarkdown, type TechnicalEntry } from './technical-markdown'
+import {
+  DIMS,
+  technicalToMarkdown,
+  technicalFilename,
+  type TechnicalEntry
+} from './technical-markdown'
 
 type Entry = TechnicalEntry
 type Phase = 'setup' | 'live' | 'history' | 'transcript'
@@ -375,6 +380,7 @@ function TechnicalHistory({
 function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
   const [session, setSession] = useState<TechnicalSession | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<'md' | 'docx' | null>(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -388,20 +394,39 @@ function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void })
     }
   }, [id])
 
-  async function copy(): Promise<void> {
-    if (!session) return
-    const entries: TechnicalEntry[] = session.turns.map((t) =>
+  function markdown(s: TechnicalSession): string {
+    const entries: TechnicalEntry[] = s.turns.map((t) =>
       t.role === 'interviewer'
         ? { role: 'interviewer', text: t.content, citations: t.citations }
         : { role: 'candidate', text: t.content, feedback: t.feedback! }
     )
+    return technicalToMarkdown(s.config.promptText, s.config.discipline, entries)
+  }
+
+  async function copy(): Promise<void> {
+    if (!session) return
     try {
-      await window.api.clipboard.write(
-        technicalToMarkdown(session.config.promptText, session.config.discipline, entries)
-      )
+      await window.api.clipboard.write(markdown(session))
       toast('Session copied to clipboard.', 'success')
     } catch (err) {
       toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
+
+  async function exportAs(format: 'md' | 'docx'): Promise<void> {
+    if (!session) return
+    setBusy(format)
+    try {
+      const res = await window.api.materials.export(
+        markdown(session),
+        format,
+        technicalFilename(session.config.promptText)
+      )
+      if (res.saved) toast(`Saved to ${res.path}`, 'success')
+    } catch (err) {
+      toast(`Could not export: ${(err as Error).message}`, 'danger')
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -418,10 +443,30 @@ function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void })
           ← Back to history
         </button>
         {hasAnswer && (
-          <Button size="sm" variant="secondary" onClick={() => void copy()}>
-            <Copy className="size-4" />
-            Copy session
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => void copy()}>
+              <Copy className="size-4" />
+              Copy session
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void exportAs('md')}
+              loading={busy === 'md'}
+            >
+              <Download className="size-4" />
+              Export .md
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void exportAs('docx')}
+              loading={busy === 'docx'}
+            >
+              <Download className="size-4" />
+              Export .docx
+            </Button>
+          </div>
         )}
       </div>
       {error ? (

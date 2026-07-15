@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   technicalToMarkdown,
+  technicalFilename,
   type TechnicalEntry
 } from '../../src/renderer/src/technical/technical-markdown'
 import type { TechnicalFeedback } from '../../src/preload/index.d'
@@ -42,5 +43,15 @@ describe('technicalToMarkdown', () => {
     expect(md).not.toContain('**Discipline:**')
     expect(md).not.toContain('From your corpus')
     expect(md).toContain('**Interviewer:** What eviction policy?')
+  })
+})
+
+describe('technicalFilename', () => {
+  it('slugifies the topic into a technical- prefixed name', () => {
+    expect(technicalFilename('the consensus protocol')).toBe('technical-the-consensus-protocol')
+  })
+
+  it('falls back to technical-session when the topic slugifies to empty', () => {
+    expect(technicalFilename('   ')).toBe('technical-session')
   })
 })
