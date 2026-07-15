@@ -451,6 +451,7 @@ function HistoryList({
 function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
   const [detail, setDetail] = useState<InterviewSessionDetail | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<'md' | 'docx' | null>(null)
   const toast = useToast()
 
   async function copy(): Promise<void> {
@@ -463,17 +464,20 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
     }
   }
 
-  async function save(): Promise<void> {
+  async function exportAs(format: 'md' | 'docx'): Promise<void> {
     if (!detail) return
+    setBusy(format)
     try {
       const res = await window.api.materials.export(
         debriefToMarkdown(detail),
-        'md',
+        format,
         debriefFilename(detail)
       )
       if (res.saved) toast(`Saved to ${res.path}`, 'success')
     } catch (err) {
       toast(`Could not export: ${(err as Error).message}`, 'danger')
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -504,9 +508,23 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
               <Copy className="size-4" />
               Copy debrief
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => void save()}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void exportAs('md')}
+              loading={busy === 'md'}
+            >
               <Download className="size-4" />
-              Export
+              Export .md
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void exportAs('docx')}
+              loading={busy === 'docx'}
+            >
+              <Download className="size-4" />
+              Export .docx
             </Button>
           </div>
         )}
