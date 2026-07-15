@@ -86,3 +86,31 @@ test('technical: a live session can copy its transcript once an answer is scored
   await win.getByRole('button', { name: 'Copy session' }).click()
   await expect(win.getByText('Session copied to clipboard.')).toBeVisible()
 })
+
+test('technical: history lists a past session and replays its transcript with rubric', async () => {
+  const win = await app.firstWindow()
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Technical', exact: true }).click()
+
+  await win.getByPlaceholder('e.g. the rate limiter design in my notes').fill('the consensus protocol')
+  await win.getByRole('button', { name: 'Start technical interview' }).click()
+  await win.getByPlaceholder('Answer the question…').fill(
+    'Raft with a leader lease; reads served from the leader, writes replicated to a quorum.'
+  )
+  await win.getByRole('button', { name: 'Answer' }).click()
+  await expect(win.getByText('/5').first()).toBeVisible()
+
+  await win.getByRole('button', { name: 'New session' }).click()
+  await win.getByRole('button', { name: 'History' }).click()
+
+  await expect(win.getByRole('heading', { name: 'Technical history' })).toBeVisible()
+  await win.getByRole('button', { name: /the consensus protocol/ }).click()
+
+  await expect(win.getByRole('heading', { name: 'the consensus protocol' })).toBeVisible()
+  await expect(win.getByText('Interviewer').first()).toBeVisible()
+  await expect(win.getByText('/5').first()).toBeVisible()
+
+  await win.getByRole('button', { name: '← Back to history' }).click()
+  await expect(win.getByRole('heading', { name: 'Technical history' })).toBeVisible()
+})
