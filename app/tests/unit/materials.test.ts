@@ -52,6 +52,14 @@ describe('markdownToDocx', () => {
     expect(value).toContain('Interviewer: How do you handle conflict?')
     expect(value).not.toContain('**')
   })
+
+  it('strips h3 heading markers (### Strengths) without leaking hashes', async () => {
+    const buf = markdownToDocx('### Strengths\n- Clear communicator')
+    const mammoth = (await import('mammoth')).default
+    const { value } = await mammoth.extractRawText({ buffer: buf })
+    expect(value).toContain('Strengths')
+    expect(value).not.toContain('#')
+  })
 })
 
 describe('extractBullets grounding', () => {
