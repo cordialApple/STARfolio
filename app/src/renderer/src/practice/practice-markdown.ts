@@ -11,6 +11,14 @@ export const DIMS: { key: RubricDimension; label: string }[] = [
   { key: 'length', label: 'Length' }
 ]
 
+export function practiceFilename(promptText: string): string {
+  const slug = promptText
+    .toLowerCase()
+    .replace(/[^\w]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return `practice-${slug || 'session'}`
+}
+
 export function practiceToMarkdown(promptText: string, entries: PracticeEntry[]): string {
   const out: string[] = [`# Mock interview — ${promptText}`]
 

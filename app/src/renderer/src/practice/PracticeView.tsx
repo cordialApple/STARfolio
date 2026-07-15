@@ -11,7 +11,8 @@ import {
   Check,
   Loader2,
   Trash2,
-  Copy
+  Copy,
+  Download
 } from 'lucide-react'
 import {
   Badge,
@@ -38,7 +39,7 @@ import type {
   StoryMatch
 } from '../lib/bank-types'
 import { FeedbackCard } from './FeedbackCard'
-import { practiceToMarkdown, type PracticeEntry } from './practice-markdown'
+import { practiceToMarkdown, practiceFilename, type PracticeEntry } from './practice-markdown'
 import { PushToTalk } from './PushToTalk'
 import { speak, stopSpeaking, ttsAvailable } from '../lib/tts'
 import { cn } from '../lib/cn'
@@ -605,6 +606,7 @@ function HistoryList({
 function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
   const [session, setSession] = useState<PracticeSession | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<'md' | 'docx' | null>(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -618,9 +620,8 @@ function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.J
     }
   }, [id])
 
-  async function copy(): Promise<void> {
-    if (!session) return
-    const entries: PracticeEntry[] = session.turns.map((t) =>
+  function markdown(s: PracticeSession): string {
+    const entries: PracticeEntry[] = s.turns.map((t) =>
       t.role === 'interviewer'
         ? { role: 'interviewer', text: t.content }
         : {
@@ -630,11 +631,33 @@ function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.J
             used: t.experiences
           }
     )
+    return practiceToMarkdown(s.config.promptText, entries)
+  }
+
+  async function copy(): Promise<void> {
+    if (!session) return
     try {
-      await window.api.clipboard.write(practiceToMarkdown(session.config.promptText, entries))
+      await window.api.clipboard.write(markdown(session))
       toast('Session copied to clipboard.', 'success')
     } catch (err) {
       toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
+
+  async function exportAs(format: 'md' | 'docx'): Promise<void> {
+    if (!session) return
+    setBusy(format)
+    try {
+      const res = await window.api.materials.export(
+        markdown(session),
+        format,
+        practiceFilename(session.config.promptText)
+      )
+      if (res.saved) toast(`Saved to ${res.path}`, 'success')
+    } catch (err) {
+      toast(`Could not export: ${(err as Error).message}`, 'danger')
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -651,10 +674,30 @@ function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.J
           ← Back to history
         </button>
         {hasAnswer && (
-          <Button size="sm" variant="secondary" onClick={() => void copy()}>
-            <Copy className="size-4" />
-            Copy session
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => void copy()}>
+              <Copy className="size-4" />
+              Copy session
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void exportAs('md')}
+              loading={busy === 'md'}
+            >
+              <Download className="size-4" />
+              Export .md
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void exportAs('docx')}
+              loading={busy === 'docx'}
+            >
+              <Download className="size-4" />
+              Export .docx
+            </Button>
+          </div>
         )}
       </div>
       {error ? (
