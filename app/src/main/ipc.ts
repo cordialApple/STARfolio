@@ -12,6 +12,7 @@ import { streamStory, storyConfig } from './ai/story'
 import { saveStory, getStory, listStories, storySaveInput } from './db/repositories/stories'
 import { startPractice, answerPractice, answerArg } from './practice'
 import { startTechnical, answerTechnical, technicalAnswerArg } from './technical'
+import { startInterview, answerInterview, getInterviewReport } from './ai/session'
 import { practiceConfig } from './ai/interview'
 import { technicalConfig } from './ai/technical'
 import { ingestCorpusFiles, ingestCorpusUrl } from './ingest/corpus-service'
@@ -219,6 +220,28 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
 
   handle(ipcMain, 'technical:start', technicalConfig, (_e, config) => startTechnical(config))
   handle(ipcMain, 'technical:answer', technicalAnswerArg, (_e, arg) => answerTechnical(arg))
+
+  const MAX_INTERVIEW_EXPERIENCES = 40
+  // Resume the roadmap from our own confirmed bank — never trust a renderer-supplied experience list.
+  const interviewBank = (): { id: string; title: string; summary: string }[] =>
+    listExperiences({ status: 'confirmed' })
+      .slice(0, MAX_INTERVIEW_EXPERIENCES)
+      .map((e) => ({ id: e.id, title: e.title, summary: e.snippet }))
+  const interviewStartArg = z.object({
+    resumeText: z.string().trim().min(1).max(200_000),
+    candidateName: z.string().trim().max(200).optional(),
+    level: z.enum(['entry', 'mid', 'senior']).optional()
+  })
+  const interviewAnswerArg = z.object({
+    sessionId: nonEmpty.max(64),
+    answer: z.string().trim().min(1).max(20_000),
+    elapsedMs: z.number().min(0).optional()
+  })
+  handle(ipcMain, 'interview:start', interviewStartArg, (_e, arg) =>
+    startInterview({ ...arg, experiences: interviewBank() })
+  )
+  handle(ipcMain, 'interview:answer', interviewAnswerArg, (_e, arg) => answerInterview(arg))
+  handle(ipcMain, 'interview:report', sessionArg, (_e, { sessionId }) => getInterviewReport(sessionId))
 
   const disciplineOpt = z.string().trim().max(80).optional()
   const corpusFilesArg = z.object({
