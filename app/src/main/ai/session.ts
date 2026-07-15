@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto'
 import {
   initState,
   reduce,
@@ -20,6 +19,17 @@ import {
   type TranscriptTurn
 } from './roles'
 import type { ParseClient } from './roles/parse'
+import {
+  commitAnswer,
+  createSession,
+  getSession as getSessionDetail,
+  listSessions as listSessionRows,
+  loadSession,
+  transcript as loadTranscript,
+  type InterviewSessionDetail,
+  type InterviewSessionSummary,
+  type StoredInterviewSession
+} from '../db/repositories/interview'
 
 export interface StartInterviewInput {
   resumeText: string
@@ -45,21 +55,8 @@ export interface InterviewStep {
   report: InterviewReport | null
 }
 
-interface InterviewSession {
-  id: string
-  state: InterviewState
-  lastAction: InterviewAction
-  lastUtterance: string
-  candidateName?: string
-  startedAtMs: number
-  transcript: TranscriptTurn[]
-  report: InterviewReport | null
-}
-
-const sessions = new Map<string, InterviewSession>()
-
-function requireSession(id: string): InterviewSession {
-  const session = sessions.get(id)
+function requireSession(id: string): StoredInterviewSession {
+  const session = loadSession(id)
   if (!session) throw new Error('interview session not found')
   return session
 }
@@ -83,7 +80,11 @@ function callbackNote(state: InterviewState, topicId: string): string | undefine
   return forTopic.sort((a, b) => b.value - a.value)[0].note
 }
 
-function toConversationInput(state: InterviewState, action: InterviewAction, candidateName?: string): ConversationInput {
+function toConversationInput(
+  state: InterviewState,
+  action: InterviewAction,
+  candidateName?: string
+): ConversationInput {
   const input: ConversationInput = { action, candidateName }
   if (action.kind === 'probe' || action.kind === 'transition') {
     input.topicLabel = topicById(state, action.topicId)?.label
@@ -95,7 +96,7 @@ function toConversationInput(state: InterviewState, action: InterviewAction, can
 }
 
 async function evaluationFor(
-  session: InterviewSession,
+  session: StoredInterviewSession,
   answer: string,
   client?: ParseClient
 ): Promise<AnswerEvaluation> {
@@ -115,7 +116,9 @@ async function evaluationFor(
   )
 }
 
-function toStep(session: InterviewSession): InterviewStep {
+function toStep(
+  session: Pick<StoredInterviewSession, 'id' | 'lastUtterance' | 'lastAction' | 'state' | 'report'>
+): InterviewStep {
   return {
     sessionId: session.id,
     utterance: session.lastUtterance,
@@ -126,8 +129,14 @@ function toStep(session: InterviewSession): InterviewStep {
   }
 }
 
-export async function startInterview(input: StartInterviewInput, client?: ParseClient): Promise<InterviewStep> {
-  const roadmap = await buildRoadmap({ resumeText: input.resumeText, experiences: input.experiences }, client)
+export async function startInterview(
+  input: StartInterviewInput,
+  client?: ParseClient
+): Promise<InterviewStep> {
+  const roadmap = await buildRoadmap(
+    { resumeText: input.resumeText, experiences: input.experiences },
+    client
+  )
   const state = reduce(
     initState(roadmap, {
       budgetMs: input.budgetMs,
@@ -137,28 +146,29 @@ export async function startInterview(input: StartInterviewInput, client?: ParseC
     { type: 'start' }
   )
   const action = selectAction(state)
-  const utterance = await composeUtterance(toConversationInput(state, action, input.candidateName), client)
-  const session: InterviewSession = {
-    id: randomUUID(),
+  const utterance = await composeUtterance(
+    toConversationInput(state, action, input.candidateName),
+    client
+  )
+  const id = createSession({
+    candidateName: input.candidateName ?? null,
+    level: state.candidate.level,
     state,
     lastAction: action,
     lastUtterance: utterance,
-    candidateName: input.candidateName,
-    startedAtMs: Date.now(),
-    transcript: [{ speaker: 'interviewer', text: utterance }],
-    report: null
-  }
-  sessions.set(session.id, session)
-  return toStep(session)
+    startedAtMs: Date.now()
+  })
+  return toStep({ id, lastUtterance: utterance, lastAction: action, state, report: null })
 }
 
-export async function answerInterview(input: AnswerInterviewInput, client?: ParseClient): Promise<InterviewStep> {
+export async function answerInterview(
+  input: AnswerInterviewInput,
+  client?: ParseClient
+): Promise<InterviewStep> {
   const session = requireSession(input.sessionId)
   if (session.state.phase === 'done') throw new Error('this interview has ended')
   const answer = input.answer.trim()
   if (!answer) throw new Error('an answer is required')
-
-  session.transcript.push({ speaker: 'candidate', text: answer })
 
   const elapsedMs = input.elapsedMs ?? Date.now() - session.startedAtMs
   const evaluation = await evaluationFor(session, answer, client)
@@ -169,22 +179,43 @@ export async function answerInterview(input: AnswerInterviewInput, client?: Pars
   // next turn advances to done instead of asking to close twice.
   if (action.kind === 'closing') state = { ...state, closingAsked: true }
 
-  const utterance = await composeUtterance(toConversationInput(state, action, session.candidateName), client)
+  const utterance = await composeUtterance(
+    toConversationInput(state, action, session.candidateName ?? undefined),
+    client
+  )
 
-  session.state = state
-  session.lastAction = action
-  session.lastUtterance = utterance
-  session.transcript.push({ speaker: 'interviewer', text: utterance })
-
+  let report: InterviewReport | null = session.report
   if (state.phase === 'done') {
-    session.report = await summarizeInterview(
-      { transcript: session.transcript, roadmap: state.roadmap, candidate: state.candidate },
+    const transcript: TranscriptTurn[] = [
+      ...loadTranscript(session.id),
+      { speaker: 'candidate', text: answer },
+      { speaker: 'interviewer', text: utterance }
+    ]
+    report = await summarizeInterview(
+      { transcript, roadmap: state.roadmap, candidate: state.candidate },
       client
     )
   }
-  return toStep(session)
+
+  commitAnswer({
+    sessionId: session.id,
+    answer,
+    state,
+    lastAction: action,
+    lastUtterance: utterance,
+    report
+  })
+  return toStep({ id: session.id, lastUtterance: utterance, lastAction: action, state, report })
 }
 
 export function getInterviewReport(sessionId: string): InterviewReport | null {
   return requireSession(sessionId).report
+}
+
+export function listInterviewSessions(): InterviewSessionSummary[] {
+  return listSessionRows()
+}
+
+export function getInterviewSession(sessionId: string): InterviewSessionDetail | null {
+  return getSessionDetail(sessionId)
 }

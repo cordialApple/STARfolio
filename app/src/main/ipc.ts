@@ -12,7 +12,13 @@ import { streamStory, storyConfig } from './ai/story'
 import { saveStory, getStory, listStories, storySaveInput } from './db/repositories/stories'
 import { startPractice, answerPractice, answerArg } from './practice'
 import { startTechnical, answerTechnical, technicalAnswerArg } from './technical'
-import { startInterview, answerInterview, getInterviewReport } from './ai/session'
+import {
+  startInterview,
+  answerInterview,
+  getInterviewReport,
+  listInterviewSessions,
+  getInterviewSession
+} from './ai/session'
 import { practiceConfig } from './ai/interview'
 import { technicalConfig } from './ai/technical'
 import { ingestCorpusFiles, ingestCorpusUrl } from './ingest/corpus-service'
@@ -242,6 +248,8 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   )
   handle(ipcMain, 'interview:answer', interviewAnswerArg, (_e, arg) => answerInterview(arg))
   handle(ipcMain, 'interview:report', sessionArg, (_e, { sessionId }) => getInterviewReport(sessionId))
+  ipcMain.handle('interview:list', () => listInterviewSessions())
+  handle(ipcMain, 'interview:get', sessionArg, (_e, { sessionId }) => getInterviewSession(sessionId))
 
   const disciplineOpt = z.string().trim().max(80).optional()
   const corpusFilesArg = z.object({
