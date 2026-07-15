@@ -109,6 +109,12 @@ const api: IpcApi = {
     start: (config) => ipcRenderer.invoke('technical:start', config),
     answer: (sessionId, answer) => ipcRenderer.invoke('technical:answer', { sessionId, answer })
   },
+  interview: {
+    start: (input) => ipcRenderer.invoke('interview:start', input),
+    answer: (sessionId, answer, elapsedMs) =>
+      ipcRenderer.invoke('interview:answer', { sessionId, answer, elapsedMs }),
+    report: (sessionId) => ipcRenderer.invoke('interview:report', { sessionId })
+  },
   corpus: {
     addFiles: (paths, discipline) => ipcRenderer.invoke('corpus:addFiles', { paths, discipline }),
     addUrl: (url, discipline) => ipcRenderer.invoke('corpus:addUrl', { url, discipline }),
