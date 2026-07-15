@@ -335,6 +335,7 @@ export interface PracticeApi {
   start: (config: PracticeConfig) => Promise<PracticeStartResult>
   answer: (sessionId: string, answer: string) => Promise<PracticeAnswerResult>
   end: (sessionId: string) => Promise<void>
+  remove: (sessionId: string) => Promise<{ deleted: boolean }>
   get: (sessionId: string) => Promise<PracticeSession | null>
   list: () => Promise<PracticeSessionSummary[]>
 }

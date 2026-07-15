@@ -35,6 +35,7 @@ import {
   getSession,
   listSessions,
   endSession,
+  deleteSession,
   getTechnicalSession,
   listTechnicalSessions,
   endTechnicalSession,
@@ -230,6 +231,7 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   handle(ipcMain, 'practice:start', practiceConfig, (_e, config) => startPractice(config))
   handle(ipcMain, 'practice:answer', answerArg, (_e, arg) => answerPractice(arg))
   handle(ipcMain, 'practice:end', sessionArg, (_e, { sessionId }) => endSession(sessionId))
+  handle(ipcMain, 'practice:delete', sessionArg, (_e, { sessionId }) => deleteSession(sessionId))
   handle(ipcMain, 'practice:get', sessionArg, (_e, { sessionId }) => getSession(sessionId))
   ipcMain.handle('practice:list', () => listSessions())
 

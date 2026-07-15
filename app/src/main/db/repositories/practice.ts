@@ -164,6 +164,13 @@ export function endSession(sessionId: string): void {
     .run(sessionId)
 }
 
+export function deleteSession(sessionId: string): { deleted: boolean } {
+  const changes = getDb()
+    .prepare(`DELETE FROM practice_sessions WHERE id = ? AND mode = 'behavioral'`)
+    .run(sessionId).changes
+  return { deleted: changes > 0 }
+}
+
 export function endTechnicalSession(sessionId: string): void {
   getDb()
     .prepare(
