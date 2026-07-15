@@ -66,3 +66,23 @@ test('technical: the tab shows a start form', async () => {
   await expect(win.getByText('Start a session')).toBeVisible()
   await expect(win.getByRole('button', { name: 'Start technical interview' })).toBeVisible()
 })
+
+test('technical: a live session can copy its transcript once an answer is scored', async () => {
+  const win = await app.firstWindow()
+  await win.reload()
+  await win.waitForLoadState('domcontentloaded')
+  await win.getByRole('button', { name: 'Technical', exact: true }).click()
+
+  await win.getByPlaceholder('e.g. the rate limiter design in my notes').fill('the rate limiter design')
+  await win.getByRole('button', { name: 'Start technical interview' }).click()
+
+  await expect(win.getByRole('button', { name: 'Copy session' })).toHaveCount(0)
+
+  await win.getByPlaceholder('Answer the question…').fill(
+    'A token bucket in Redis with an atomic Lua refill and a local fallback during partitions.'
+  )
+  await win.getByRole('button', { name: 'Answer' }).click()
+
+  await win.getByRole('button', { name: 'Copy session' }).click()
+  await expect(win.getByText('Session copied to clipboard.')).toBeVisible()
+})
