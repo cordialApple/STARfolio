@@ -8,6 +8,7 @@ import type { CorpusHit } from '../../src/main/search'
 import { initDb, getDb } from '../../src/main/db/client'
 import { createCorpusDoc, insertChunks, deleteCorpusDoc } from '../../src/main/db/repositories/corpus'
 import { startTechnical, answerTechnical } from '../../src/main/technical'
+import { endTechnicalSession } from '../../src/main/db/repositories/practice'
 
 const CHUNKS: CorpusHit[] = [
   { chunkId: 'c1', text: 'raft consensus and leader election', docId: 'd1', title: 'Consensus', similarity: 0.9 },
@@ -82,6 +83,22 @@ describe('answerTechnical empty-corpus guard', () => {
     // The invariant holds by construction: no non-terminal question ships without a citation.
     if (res.next_kind !== 'done') expect(res.citations.length).toBeGreaterThanOrEqual(1)
     else expect(res.citations).toEqual([])
+  })
+
+  it('refuses to answer after the session is ended early', async () => {
+    const db = getDb()
+    const docId = createCorpusDoc(db, 'Design', 'systems', null)
+    const ids = insertChunks(db, docId, ['a token bucket rate limiter design in redis'])
+    const v = new Float32Array(384)
+    v[0] = 1
+    db.prepare('INSERT OR REPLACE INTO vec_corpus (chunk_id, embedding) VALUES (?, ?)').run(ids[0], v)
+
+    const start = await startTechnical({ promptText: 'rate limiter', discipline: 'systems' })
+    endTechnicalSession(start.sessionId)
+
+    await expect(
+      answerTechnical({ sessionId: start.sessionId, answer: 'token bucket in redis with atomic refills' })
+    ).rejects.toThrow(/ended/)
   })
 })
 
