@@ -38,7 +38,7 @@ import type {
   StoryMatch
 } from '../lib/bank-types'
 import { FeedbackCard } from './FeedbackCard'
-import { practiceToMarkdown } from './practice-markdown'
+import { practiceToMarkdown, type PracticeEntry } from './practice-markdown'
 import { PushToTalk } from './PushToTalk'
 import { speak, stopSpeaking, ttsAvailable } from '../lib/tts'
 import { cn } from '../lib/cn'
@@ -605,6 +605,7 @@ function HistoryList({
 function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
   const [session, setSession] = useState<PracticeSession | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
 
   useEffect(() => {
     let cancelled = false
@@ -617,15 +618,45 @@ function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.J
     }
   }, [id])
 
+  async function copy(): Promise<void> {
+    if (!session) return
+    const entries: PracticeEntry[] = session.turns.map((t) =>
+      t.role === 'interviewer'
+        ? { role: 'interviewer', text: t.content }
+        : {
+            role: 'candidate',
+            text: t.content,
+            feedback: t.feedback ?? undefined,
+            used: t.experiences
+          }
+    )
+    try {
+      await window.api.clipboard.write(practiceToMarkdown(session.config.promptText, entries))
+      toast('Session copied to clipboard.', 'success')
+    } catch (err) {
+      toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
+
+  const hasAnswer = !!session && session.turns.some((t) => t.role === 'candidate')
+
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <button
-        type="button"
-        onClick={onBack}
-        className="text-sm font-semibold text-muted hover:text-ink"
-      >
-        ← Back to history
-      </button>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-sm font-semibold text-muted hover:text-ink"
+        >
+          ← Back to history
+        </button>
+        {hasAnswer && (
+          <Button size="sm" variant="secondary" onClick={() => void copy()}>
+            <Copy className="size-4" />
+            Copy session
+          </Button>
+        )}
+      </div>
       {error ? (
         <ErrorState description={error} />
       ) : session === undefined ? (
