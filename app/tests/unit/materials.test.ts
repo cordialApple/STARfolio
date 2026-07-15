@@ -44,6 +44,14 @@ describe('markdownToDocx', () => {
     expect(value).toContain('Cut deploy time by 80%')
     expect(value).toContain('Led a team of five')
   })
+
+  it('renders inline **bold** as bold runs without leaking asterisks', async () => {
+    const buf = markdownToDocx('**Interviewer:** How do you handle conflict?')
+    const mammoth = (await import('mammoth')).default
+    const { value } = await mammoth.extractRawText({ buffer: buf })
+    expect(value).toContain('Interviewer: How do you handle conflict?')
+    expect(value).not.toContain('**')
+  })
 })
 
 describe('extractBullets grounding', () => {
