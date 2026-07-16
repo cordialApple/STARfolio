@@ -8,7 +8,9 @@ import {
   Inbox,
   Trash2,
   Copy,
-  Download
+  Download,
+  Mic,
+  Loader2
 } from 'lucide-react'
 import {
   Badge,
@@ -30,8 +32,12 @@ import type {
   InterviewReport,
   InterviewSessionDetail,
   InterviewSessionSummary,
-  InterviewStep
+  InterviewStep,
+  WhisperModelInfo,
+  WhisperModelName
 } from '../lib/bank-types'
+import { PushToTalk } from '../practice/PushToTalk'
+import { cn } from '../lib/cn'
 import { debriefToMarkdown, debriefFilename } from './debrief-markdown'
 
 type Turn = { role: 'interviewer' | 'candidate'; text: string }
@@ -42,6 +48,8 @@ const PHASE_LABEL: Record<InterviewPhase, string> = {
   closing: 'Wrapping up',
   done: 'Complete'
 }
+
+const PHASE_STEPS: InterviewPhase[] = ['intro', 'exploration', 'closing']
 
 const LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: 'entry', label: 'Entry level' },
@@ -68,13 +76,23 @@ export function InterviewView(): React.JSX.Element {
   const [answer, setAnswer] = useState('')
   const [report, setReport] = useState<InterviewReport | null>(null)
   const [busy, setBusy] = useState(false)
+  const [voiceModel, setVoiceModel] = useState<WhisperModelName>('base.en')
+  const [models, setModels] = useState<WhisperModelInfo[]>([])
   const startedAt = useRef(0)
   const toast = useToast()
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    void window.api.voice.models().then(setModels)
+    void window.api.prefs.get().then((p) => setVoiceModel(p.voiceModel))
+    return window.api.voice.onModelStatus(setModels)
+  }, [])
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [turns, report])
+  }, [turns, report, busy])
+
+  const voiceReady = models.find((m) => m.name === voiceModel)?.downloaded ?? false
 
   function apply(step: InterviewStep): void {
     setSessionId(step.sessionId)
@@ -204,33 +222,29 @@ export function InterviewView(): React.JSX.Element {
     )
   }
 
+  const awaitingQuestion = busy && turns.length > 0 && turns[turns.length - 1].role === 'candidate'
+  const lastInterviewerIdx = turns.reduce((acc, t, i) => (t.role === 'interviewer' ? i : acc), -1)
+
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h1 className="text-lg font-bold text-ink">Mock interview</h1>
-          <Badge tone={phase === 'done' ? 'success' : 'neutral'}>{PHASE_LABEL[phase]}</Badge>
-        </div>
+        <h1 className="text-lg font-bold text-ink">Mock interview</h1>
         <Button variant="ghost" onClick={reset}>
           New interview
         </Button>
       </div>
 
+      <PhaseSteps phase={phase} />
+
       <div className="space-y-4">
         {turns.map((t, i) =>
           t.role === 'interviewer' ? (
-            <div key={i} className="rounded-lg border border-line bg-raised p-4">
-              <p className="whitespace-pre-wrap text-sm font-semibold text-ink">{t.text}</p>
-            </div>
+            <InterviewerBubble key={i} text={t.text} animate={i === lastInterviewerIdx} />
           ) : (
-            <p
-              key={i}
-              className="ml-8 whitespace-pre-wrap rounded-lg bg-canvas px-4 py-3 text-sm text-ink"
-            >
-              {t.text}
-            </p>
+            <CandidateBubble key={i} text={t.text} />
           )
         )}
+        {awaitingQuestion && <ThinkingBubble />}
         {report && <ReportCard report={report} />}
         <div ref={endRef} />
       </div>
@@ -240,23 +254,125 @@ export function InterviewView(): React.JSX.Element {
           That wraps the interview. Review your debrief above, or start a fresh one.
         </div>
       ) : (
-        <div className="flex items-end gap-2">
-          <Textarea
-            rows={3}
-            placeholder="Type your answer…"
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit()
-            }}
-          />
-          <Button onClick={() => void submit()} loading={busy} disabled={!answer.trim()}>
-            <Send className="size-4" />
-            Answer
-          </Button>
+        <div className="space-y-2">
+          {voiceReady ? (
+            <PushToTalk
+              model={voiceModel}
+              disabled={busy}
+              onTranscript={(t) => setAnswer((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
+              onError={(m) => toast(m, 'danger')}
+            />
+          ) : (
+            <p className="text-xs text-muted">
+              Want to speak your answers? Download a voice model in Settings → Voice.
+            </p>
+          )}
+          <div className="flex items-end gap-2">
+            <Textarea
+              rows={3}
+              placeholder="Speak with the mic above, or type here…"
+              value={answer}
+              disabled={busy}
+              onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit()
+              }}
+            />
+            <Button onClick={() => void submit()} loading={busy} disabled={busy || !answer.trim()}>
+              <Send className="size-4" />
+              Answer
+            </Button>
+          </div>
+          <span className="text-xs text-faint">⌘/Ctrl + Enter to send</span>
         </div>
       )}
     </div>
+  )
+}
+
+function PhaseSteps({ phase }: { phase: InterviewPhase }): React.JSX.Element {
+  const activeIdx = phase === 'done' ? PHASE_STEPS.length : PHASE_STEPS.indexOf(phase)
+  return (
+    <ol className="flex items-center gap-2">
+      {PHASE_STEPS.map((p, i) => {
+        const done = i < activeIdx
+        const active = i === activeIdx
+        return (
+          <li key={p} className="flex flex-1 items-center gap-2">
+            <span
+              className={cn(
+                'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                done && 'bg-brand-strong text-on-brand',
+                active && 'border-2 border-brand-strong text-fg-brand',
+                !done && !active && 'border border-line text-faint'
+              )}
+            >
+              {done ? <CheckCircle2 className="size-3.5" /> : i + 1}
+            </span>
+            <span
+              className={cn(
+                'text-xs font-medium',
+                active ? 'text-ink' : done ? 'text-muted' : 'text-faint'
+              )}
+            >
+              {PHASE_LABEL[p]}
+            </span>
+            {i < PHASE_STEPS.length - 1 && (
+              <span className={cn('h-px flex-1', done ? 'bg-brand-strong' : 'bg-line')} />
+            )}
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+function InterviewerBubble({
+  text,
+  animate
+}: {
+  text: string
+  animate: boolean
+}): React.JSX.Element {
+  const [shown, setShown] = useState(animate ? '' : text)
+  useEffect(() => {
+    if (!animate) {
+      setShown(text)
+      return
+    }
+    setShown('')
+    let i = 0
+    const timer = setInterval(() => {
+      i += 2
+      setShown(text.slice(0, i))
+      if (i >= text.length) clearInterval(timer)
+    }, 16)
+    return () => clearInterval(timer)
+  }, [text, animate])
+
+  return (
+    <div className="rounded-lg border border-line bg-raised p-4">
+      <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-brand">
+        <Mic className="size-3.5" />
+        Interviewer
+      </div>
+      <p className="whitespace-pre-wrap text-sm font-semibold text-ink">{shown}</p>
+    </div>
+  )
+}
+
+function ThinkingBubble(): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-line bg-raised p-4 text-sm text-muted">
+      <Loader2 className="size-4 animate-spin" />
+      The interviewer is thinking…
+    </div>
+  )
+}
+
+function CandidateBubble({ text }: { text: string }): React.JSX.Element {
+  return (
+    <p className="ml-8 whitespace-pre-wrap rounded-lg bg-canvas px-4 py-3 text-sm text-ink">{text}</p>
   )
 }
 
@@ -558,12 +674,7 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
                   <p className="whitespace-pre-wrap text-sm font-semibold text-ink">{t.text}</p>
                 </div>
               ) : (
-                <p
-                  key={i}
-                  className="ml-8 whitespace-pre-wrap rounded-lg bg-canvas px-4 py-3 text-sm text-ink"
-                >
-                  {t.text}
-                </p>
+                <CandidateBubble key={i} text={t.text} />
               )
             )}
           </div>
