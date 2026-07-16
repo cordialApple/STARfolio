@@ -47,6 +47,11 @@ import { SAMPLE_RESUME } from './sample-resume'
 
 type Turn = { role: 'interviewer' | 'candidate'; text: string }
 
+function wordCount(text: string): number {
+  const trimmed = text.trim()
+  return trimmed ? trimmed.split(/\s+/).length : 0
+}
+
 const PHASE_LABEL: Record<InterviewPhase, string> = {
   intro: 'Warm-up',
   exploration: 'Deep dive',
@@ -346,7 +351,14 @@ export function InterviewView(): React.JSX.Element {
               Answer
             </Button>
           </div>
-          <span className="text-xs text-faint">⌘/Ctrl + Enter to send</span>
+          <div className="flex items-center justify-between text-xs text-faint">
+            <span>⌘/Ctrl + Enter to send</span>
+            {answer.trim() && (
+              <span className="tabular-nums">
+                {wordCount(answer)} {wordCount(answer) === 1 ? 'word' : 'words'}
+              </span>
+            )}
+          </div>
         </div>
       )}
     </div>
