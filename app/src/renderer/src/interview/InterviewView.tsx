@@ -705,6 +705,13 @@ function HistoryList({
           </Select>
         </div>
       )}
+      {sessions !== null && sessions.length > 0 && (
+        <p className="text-xs text-muted">
+          {visible.length === sessions.length
+            ? `${sessions.length} ${sessions.length === 1 ? 'interview' : 'interviews'}`
+            : `${visible.length} of ${sessions.length} interviews`}
+        </p>
+      )}
       {error ? (
         <ErrorState description={error} />
       ) : sessions === null ? (
