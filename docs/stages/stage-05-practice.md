@@ -2,7 +2,7 @@
 
 Part of the [build plan](../build-plan.md) · Context to load: [ai-layer](../architecture/ai-layer.md) · [data-model](../architecture/data-model.md)
 
-Goal: the interviewer engine, transport-agnostic so voice drops in next stage. Built on the Stage 1 design system: composes existing primitives, ships each screen's empty/loading/error/keyboard states, and honors the a11y + reduced-motion floor.
+Goal: the interviewer engine, transport-agnostic so voice drops in next stage — text now, push-to-talk voice in [Stage 6](stage-06-voice.md), hands-free streaming with auto turn-taking in [Stage 6b](stage-06b-streaming-voice.md) — all the same turn interface. Built on the Stage 1 design system: composes existing primitives, ships each screen's empty/loading/error/keyboard states, and honors the a11y + reduced-motion floor.
 
 - [x] 5.1 Interviewer engine (Sonnet + cached system prompt/rubric): question selection from genre/JD/bank coverage; asks "tell me about a time…"; session state machine (question → answer → feedback → follow-up | next) with a defined long-session context policy (rolling summary of old turns, trimmed cache-prefix-compatibly).
 - [x] 5.2 Feedback rubric: STAR completeness, specificity, measurable result, length; delivered after each answer.
