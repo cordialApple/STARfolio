@@ -513,6 +513,15 @@ function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element 
     }
   }
 
+  async function copyAllStories(): Promise<void> {
+    try {
+      await window.api.clipboard.write(report.starStories.map(starStoryToText).join('\n\n'))
+      toast('All STAR stories copied to clipboard.', 'success')
+    } catch (err) {
+      toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
+
   return (
     <Card title="Your debrief">
       <div className="space-y-5">
@@ -532,7 +541,15 @@ function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element 
 
         {report.starStories.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-ink">STAR stories from your answers</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-ink">STAR stories from your answers</h3>
+              {report.starStories.length > 1 && (
+                <Button variant="ghost" size="sm" onClick={() => void copyAllStories()}>
+                  <Copy className="size-3.5" />
+                  Copy all
+                </Button>
+              )}
+            </div>
             {report.starStories.map((story, i) => (
               <div key={i} className="rounded-lg border border-line p-3">
                 <div className="mb-2 flex items-start justify-between gap-2">
