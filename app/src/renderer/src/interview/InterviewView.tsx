@@ -12,7 +12,9 @@ import {
   Mic,
   Loader2,
   Upload,
-  Search
+  Search,
+  Clock,
+  MessageSquare
 } from 'lucide-react'
 import {
   Badge,
@@ -279,7 +281,14 @@ export function InterviewView(): React.JSX.Element {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-ink">Mock interview</h1>
+        <div>
+          <h1 className="text-lg font-bold text-ink">Mock interview</h1>
+          <LiveMeta
+            startedAt={startedAt.current}
+            running={phase !== 'done'}
+            answered={turns.filter((t) => t.role === 'candidate').length}
+          />
+        </div>
         <Button variant="ghost" onClick={reset}>
           New interview
         </Button>
@@ -337,6 +346,38 @@ export function InterviewView(): React.JSX.Element {
           <span className="text-xs text-faint">⌘/Ctrl + Enter to send</span>
         </div>
       )}
+    </div>
+  )
+}
+
+function LiveMeta({
+  startedAt,
+  running,
+  answered
+}: {
+  startedAt: number
+  running: boolean
+  answered: number
+}): React.JSX.Element {
+  const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt))
+  useEffect(() => {
+    if (!running) return
+    const t = setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000)
+    return () => clearInterval(t)
+  }, [startedAt, running])
+  const total = Math.floor(elapsed / 1000)
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  return (
+    <div className="mt-0.5 flex items-center gap-3 text-xs text-muted">
+      <span className="flex items-center gap-1 tabular-nums">
+        <Clock className="size-3.5" />
+        {mins}:{String(secs).padStart(2, '0')}
+      </span>
+      <span className="flex items-center gap-1">
+        <MessageSquare className="size-3.5" />
+        {answered} {answered === 1 ? 'answer' : 'answers'}
+      </span>
     </div>
   )
 }
