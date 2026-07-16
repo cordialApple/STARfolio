@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { IpcApi, ModelStatus, WhisperModelInfo, UpdateStatus, VoiceUtterance } from './index.d'
+import type {
+  IpcApi,
+  ModelStatus,
+  WhisperModelInfo,
+  UpdateStatus,
+  VoiceUtterance,
+  TranscriptEvent
+} from './index.d'
 
 const api: IpcApi = {
   ping: () => ipcRenderer.invoke('ping'),
@@ -32,6 +39,11 @@ const api: IpcApi = {
       const handler = (_: Electron.IpcRendererEvent, event: VoiceUtterance): void => cb(event)
       ipcRenderer.on('voice:utterance', handler)
       return () => ipcRenderer.removeListener('voice:utterance', handler)
+    },
+    onPartial: (cb) => {
+      const handler = (_: Electron.IpcRendererEvent, event: TranscriptEvent): void => cb(event)
+      ipcRenderer.on('voice:partial', handler)
+      return () => ipcRenderer.removeListener('voice:partial', handler)
     }
   },
   ai: {

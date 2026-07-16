@@ -5,6 +5,12 @@ export interface PartialTranscript {
   stableUpTo: number
 }
 
+export interface TranscriptEvent {
+  text: string
+  stableUpTo: number
+  isFinal: boolean
+}
+
 export type VadEvent = 'utteranceStart' | 'utteranceEnd'
 
 export interface VadConfig {

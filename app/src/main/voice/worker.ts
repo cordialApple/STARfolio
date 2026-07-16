@@ -6,12 +6,19 @@ interface TranscribeRequest {
   pcm: number[]
   modelPath: string
 }
+interface TranscribeSamplesRequest {
+  type: 'transcribeSamples'
+  id: string
+  samples: Float32Array
+  modelPath: string
+}
+type WorkerRequest = TranscribeRequest | TranscribeSamplesRequest
 type TranscribeResponse =
   | { id: string; ok: true; text: string }
   | { id: string; ok: false; error: string }
 
 interface ParentPort {
-  on(event: 'message', listener: (e: { data: TranscribeRequest }) => void): void
+  on(event: 'message', listener: (e: { data: WorkerRequest }) => void): void
   postMessage(message: TranscribeResponse): void
 }
 
@@ -35,11 +42,12 @@ function int16ToFloat32(pcm: number[]): Float32Array {
 
 parentPort.on('message', (e) => {
   const msg = e.data
-  if (msg.type !== 'transcribe') return
+  if (msg.type !== 'transcribe' && msg.type !== 'transcribeSamples') return
   void (async () => {
     try {
       const whisper = getWhisper(msg.modelPath)
-      const task = await whisper.transcribe(int16ToFloat32(msg.pcm), {
+      const audio = msg.type === 'transcribe' ? int16ToFloat32(msg.pcm) : msg.samples
+      const task = await whisper.transcribe(audio, {
         language: 'en',
         n_threads: 4
       })

@@ -17,12 +17,17 @@ export interface FrameIngest {
   dropped: number
 }
 
+export type FrameObserver = (frame: Float32Array, events: VadEvent[]) => void
+
 export class FrameSource {
   private readonly vad: EnergyVad
   private readonly ring: SampleRingBuffer
   private readonly frameSamples: number
 
-  constructor(config: FrameSourceConfig = defaultFrameSourceConfig()) {
+  constructor(
+    config: FrameSourceConfig = defaultFrameSourceConfig(),
+    private readonly observer?: FrameObserver
+  ) {
     this.vad = new EnergyVad(config.vad)
     this.ring = new SampleRingBuffer(config.ring)
     this.frameSamples = config.vad.frameSamples
@@ -32,7 +37,10 @@ export class FrameSource {
     const { dropped } = this.ring.push(samples)
     const events: VadEvent[] = []
     while (this.ring.length >= this.frameSamples) {
-      events.push(...this.vad.process(this.ring.read(this.frameSamples)))
+      const frame = this.ring.read(this.frameSamples)
+      const frameEvents = this.vad.process(frame)
+      this.observer?.(frame, frameEvents)
+      events.push(...frameEvents)
     }
     return { events, dropped }
   }
