@@ -64,6 +64,15 @@ describe('replayFetch', () => {
       /No AI fixture for this request at .*re-record with STARFOLIO_AI_RECORD_DIR/
     )
   })
+
+  it('hashes non-string request inputs via toString', async () => {
+    const dir = scratch()
+    writeFileSync(
+      join(dir, `${keyFor(URL)}.json`),
+      JSON.stringify({ status: 200, headers: {}, body: 'url-input' })
+    )
+    expect(await (await replayFetch(dir)(new globalThis.URL(URL))).text()).toBe('url-input')
+  })
 })
 
 describe('resolveAiFetch', () => {
