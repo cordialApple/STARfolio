@@ -43,6 +43,7 @@ import type {
 import { PushToTalk } from '../practice/PushToTalk'
 import { cn } from '../lib/cn'
 import { debriefToMarkdown, debriefFilename } from './debrief-markdown'
+import { SAMPLE_RESUME } from './sample-resume'
 
 type Turn = { role: 'interviewer' | 'candidate'; text: string }
 
@@ -205,14 +206,16 @@ export function InterviewView(): React.JSX.Element {
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-muted">Resume</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => resumeFileRef.current?.click()}
-                >
-                  <Upload className="size-4" />
-                  Load file
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => setResumeText(SAMPLE_RESUME)}>
+                    <Sparkles className="size-4" />
+                    Try a sample
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => resumeFileRef.current?.click()}>
+                    <Upload className="size-4" />
+                    Load file
+                  </Button>
+                </div>
               </div>
               <input
                 ref={resumeFileRef}
