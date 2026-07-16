@@ -11,7 +11,8 @@ import {
   Download,
   Mic,
   Loader2,
-  Upload
+  Upload,
+  Search
 } from 'lucide-react'
 import {
   Badge,
@@ -512,6 +513,8 @@ function HistoryList({
   const [error, setError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<InterviewSessionSummary | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'done' | 'active'>('all')
 
   useEffect(() => {
     let cancelled = false
@@ -523,6 +526,15 @@ function HistoryList({
       cancelled = true
     }
   }, [])
+
+  const needle = query.trim().toLowerCase()
+  const visible = (sessions ?? []).filter((s) => {
+    const name = (s.candidateName ?? 'Anonymous candidate').toLowerCase()
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'done' ? s.phase === 'done' : s.phase !== 'done')
+    return matchesStatus && name.includes(needle)
+  })
 
   async function remove(): Promise<void> {
     if (!pendingDelete) return
@@ -548,6 +560,28 @@ function HistoryList({
           New interview
         </Button>
       </div>
+      {sessions !== null && sessions.length > 0 && (
+        <div className="flex gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
+            <Input
+              className="pl-9"
+              placeholder="Search by name…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <Select
+            className="w-40 shrink-0"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+          >
+            <option value="all">All</option>
+            <option value="done">Complete</option>
+            <option value="active">In progress</option>
+          </Select>
+        </div>
+      )}
       {error ? (
         <ErrorState description={error} />
       ) : sessions === null ? (
@@ -561,9 +595,11 @@ function HistoryList({
           title="No interviews yet"
           description="Run a mock interview and it'll show up here."
         />
+      ) : visible.length === 0 ? (
+        <EmptyState icon={Inbox} title="No matches" description="No interviews match your search." />
       ) : (
         <ul className="space-y-2">
-          {sessions.map((s) => (
+          {visible.map((s) => (
             <li key={s.id} className="flex items-stretch gap-2">
               <button
                 type="button"
