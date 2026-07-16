@@ -468,7 +468,28 @@ function CandidateBubble({ text }: { text: string }): React.JSX.Element {
   )
 }
 
+function starStoryToText(story: InterviewReport['starStories'][number]): string {
+  const rows: [string, string][] = [
+    ['Situation', story.situation],
+    ['Task', story.task],
+    ['Action', story.action],
+    ['Result', story.result]
+  ]
+  return [story.topic, ...rows.filter(([, v]) => v.trim()).map(([k, v]) => `${k}: ${v}`)].join('\n')
+}
+
 function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element {
+  const toast = useToast()
+
+  async function copyStory(story: InterviewReport['starStories'][number]): Promise<void> {
+    try {
+      await window.api.clipboard.write(starStoryToText(story))
+      toast('STAR story copied to clipboard.', 'success')
+    } catch (err) {
+      toast(`Could not copy: ${(err as Error).message}`, 'danger')
+    }
+  }
+
   return (
     <Card title="Your debrief">
       <div className="space-y-5">
@@ -491,7 +512,16 @@ function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element 
             <h3 className="text-sm font-semibold text-ink">STAR stories from your answers</h3>
             {report.starStories.map((story, i) => (
               <div key={i} className="rounded-lg border border-line p-3">
-                <p className="mb-2 text-sm font-semibold text-ink">{story.topic}</p>
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-ink">{story.topic}</p>
+                  <IconButton
+                    label={`Copy STAR story: ${story.topic}`}
+                    className="shrink-0 text-muted hover:text-ink"
+                    onClick={() => void copyStory(story)}
+                  >
+                    <Copy className="size-4" />
+                  </IconButton>
+                </div>
                 <dl className="space-y-1 text-sm">
                   <StarRow label="Situation" value={story.situation} />
                   <StarRow label="Task" value={story.task} />
