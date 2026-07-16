@@ -21,12 +21,21 @@ export interface WhisperModelInfo {
   downloaded: boolean
   status: ModelStatus
 }
+export type VoiceUtteranceKind = 'utteranceStart' | 'utteranceEnd'
+export interface VoiceUtterance {
+  kind: VoiceUtteranceKind
+  dropped: number
+}
 export interface VoiceApi {
   transcribe: (pcm: number[], model?: string) => Promise<string>
   models: () => Promise<WhisperModelInfo[]>
   downloadModel: (model: WhisperModelName) => Promise<WhisperModelInfo[]>
   deleteModel: (model: WhisperModelName) => Promise<WhisperModelInfo[]>
   onModelStatus: (cb: (models: WhisperModelInfo[]) => void) => () => void
+  streamStart: () => void
+  streamFrames: (frames: Float32Array) => void
+  streamStop: () => void
+  onUtterance: (cb: (event: VoiceUtterance) => void) => () => void
 }
 
 export interface AiApi {
