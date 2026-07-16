@@ -218,7 +218,14 @@ export function InterviewView(): React.JSX.Element {
           <div className="space-y-4">
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-muted">Resume</span>
+                <span className="text-sm font-semibold text-muted">
+                  Resume
+                  {resumeText.trim() && (
+                    <span className="ml-2 font-normal tabular-nums text-faint">
+                      {wordCount(resumeText)} {wordCount(resumeText) === 1 ? 'word' : 'words'}
+                    </span>
+                  )}
+                </span>
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="sm" onClick={() => setResumeText(SAMPLE_RESUME)}>
                     <Sparkles className="size-4" />
