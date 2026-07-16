@@ -243,6 +243,12 @@ export function InterviewView(): React.JSX.Element {
                     <Upload className="size-4" />
                     Load file
                   </Button>
+                  {resumeText.trim() && (
+                    <Button variant="ghost" size="sm" onClick={() => setResumeText('')}>
+                      <X className="size-4" />
+                      Clear
+                    </Button>
+                  )}
                 </div>
               </div>
               <input
