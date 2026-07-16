@@ -53,6 +53,14 @@ function wordCount(text: string): number {
   return trimmed ? trimmed.split(/\s+/).length : 0
 }
 
+function formatDuration(startedAt: string, endedAt: string): string {
+  const secs = Math.max(
+    0,
+    Math.round((new Date(endedAt + 'Z').getTime() - new Date(startedAt + 'Z').getTime()) / 1000)
+  )
+  return secs < 60 ? `${secs} sec` : `${Math.round(secs / 60)} min`
+}
+
 const PHASE_LABEL: Record<InterviewPhase, string> = {
   intro: 'Warm-up',
   exploration: 'Deep dive',
@@ -769,6 +777,7 @@ function HistoryList({
                   <span className="text-xs text-muted">
                     {new Date(s.startedAt + 'Z').toLocaleString()} · {LEVEL_LABEL[s.level]} ·{' '}
                     {s.turnCount} {s.turnCount === 1 ? 'turn' : 'turns'}
+                    {s.endedAt && ` · ${formatDuration(s.startedAt, s.endedAt)}`}
                   </span>
                 </span>
                 <Badge tone={s.phase === 'done' ? 'success' : 'warning'}>
