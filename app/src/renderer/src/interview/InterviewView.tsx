@@ -15,7 +15,10 @@ import {
   Search,
   X,
   Clock,
-  MessageSquare
+  MessageSquare,
+  BarChart3,
+  TrendingUp,
+  CalendarDays
 } from 'lucide-react'
 import {
   Badge,
@@ -52,12 +55,19 @@ function wordCount(text: string): number {
   return trimmed ? trimmed.split(/\s+/).length : 0
 }
 
-function formatDuration(startedAt: string, endedAt: string): string {
-  const secs = Math.max(
+function durationSecs(startedAt: string, endedAt: string): number {
+  return Math.max(
     0,
     Math.round((new Date(endedAt + 'Z').getTime() - new Date(startedAt + 'Z').getTime()) / 1000)
   )
+}
+
+function formatSecs(secs: number): string {
   return secs < 60 ? `${secs} sec` : `${Math.round(secs / 60)} min`
+}
+
+function formatDuration(startedAt: string, endedAt: string): string {
+  return formatSecs(durationSecs(startedAt, endedAt))
 }
 
 const PHASE_LABEL: Record<InterviewPhase, string> = {
@@ -70,7 +80,7 @@ const PHASE_LABEL: Record<InterviewPhase, string> = {
 const PHASE_STEPS: InterviewPhase[] = ['intro', 'exploration', 'closing']
 
 export function InterviewView(): React.JSX.Element {
-  const [stage, setStage] = useState<'setup' | 'live' | 'history' | 'debrief'>('setup')
+  const [stage, setStage] = useState<'setup' | 'live' | 'history' | 'debrief' | 'insights'>('setup')
   const [debriefId, setDebriefId] = useState<string | null>(null)
   const [resumeText, setResumeText] = useState('')
   const [candidateName, setCandidateName] = useState('')
@@ -191,6 +201,8 @@ export function InterviewView(): React.JSX.Element {
   if (stage === 'debrief' && debriefId)
     return <Debrief id={debriefId} onBack={() => setStage('history')} />
 
+  if (stage === 'insights') return <InsightsView onBack={() => setStage('setup')} />
+
   if (stage === 'setup') {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
@@ -202,10 +214,16 @@ export function InterviewView(): React.JSX.Element {
               projects the way a real one would — and debriefs you at the end.
             </p>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => setStage('history')}>
-            <History className="size-4" />
-            History
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button variant="secondary" size="sm" onClick={() => setStage('insights')}>
+              <BarChart3 className="size-4" />
+              Progress
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setStage('history')}>
+              <History className="size-4" />
+              History
+            </Button>
+          </div>
         </div>
 
         <Card title="Set up your interview">
@@ -613,6 +631,139 @@ function StarRow({ label, value }: { label: string; value: string }): React.JSX.
     <div className="flex gap-2">
       <dt className="w-20 shrink-0 font-semibold text-muted">{label}</dt>
       <dd className="text-ink">{value}</dd>
+    </div>
+  )
+}
+
+type ThemeCount = { label: string; count: number }
+
+function topThemes(details: (InterviewSessionDetail | null)[]): ThemeCount[] {
+  const tally = new Map<string, ThemeCount>()
+  for (const d of details) {
+    for (const area of d?.report?.improvementAreas ?? []) {
+      const key = area.trim().toLowerCase()
+      if (!key) continue
+      const hit = tally.get(key)
+      if (hit) hit.count += 1
+      else tally.set(key, { label: area.trim(), count: 1 })
+    }
+  }
+  return [...tally.values()].sort((a, b) => b.count - a.count).slice(0, 6)
+}
+
+function InsightsView({ onBack }: { onBack: () => void }): React.JSX.Element {
+  const [sessions, setSessions] = useState<InterviewSessionSummary[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [themes, setThemes] = useState<ThemeCount[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.interview
+      .list()
+      .then((s) => !cancelled && setSessions(s))
+      .catch((e) => !cancelled && setError((e as Error).message))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!sessions) return
+    const done = sessions.filter((s) => s.phase === 'done')
+    if (done.length === 0) {
+      setThemes([])
+      return
+    }
+    let cancelled = false
+    void Promise.all(done.map((s) => window.api.interview.get(s.id)))
+      .then((details) => !cancelled && setThemes(topThemes(details)))
+      .catch(() => !cancelled && setThemes([]))
+    return () => {
+      cancelled = true
+    }
+  }, [sessions])
+
+  const total = sessions?.length ?? 0
+  const completed = sessions?.filter((s) => s.phase === 'done').length ?? 0
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+  const thisWeek =
+    sessions?.filter((s) => new Date(s.startedAt + 'Z').getTime() >= weekAgo).length ?? 0
+  const durations = (sessions ?? []).flatMap((s) =>
+    s.endedAt ? [durationSecs(s.startedAt, s.endedAt)] : []
+  )
+  const avgLength = durations.length
+    ? formatSecs(Math.round(durations.reduce((a, b) => a + b, 0) / durations.length))
+    : '—'
+
+  const stats = [
+    { label: 'Interviews', value: String(total), icon: BarChart3 },
+    { label: 'Completed', value: String(completed), icon: CheckCircle2 },
+    { label: 'This week', value: String(thisWeek), icon: CalendarDays },
+    { label: 'Avg length', value: avgLength, icon: Clock }
+  ]
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-ink">Your progress</h1>
+        <Button variant="secondary" size="sm" onClick={onBack}>
+          New interview
+        </Button>
+      </div>
+      {error ? (
+        <ErrorState description={error} />
+      ) : sessions === null ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      ) : sessions.length === 0 ? (
+        <EmptyState
+          icon={BarChart3}
+          title="No progress yet"
+          description="Run a mock interview and your stats will show up here."
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            {stats.map((s) => (
+              <div key={s.label} className="rounded-lg border border-line bg-surface p-4">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+                  <s.icon className="size-4" />
+                  {s.label}
+                </div>
+                <div className="mt-1 text-2xl font-bold tabular-nums text-ink">{s.value}</div>
+              </div>
+            ))}
+          </div>
+          <Card title="Recurring themes to work on">
+            {themes === null ? (
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-full" />
+                <Skeleton className="h-6 w-2/3" />
+              </div>
+            ) : themes.length === 0 ? (
+              <p className="text-sm text-muted">
+                Finish an interview to see the feedback themes that come up most.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {themes.map((t) => (
+                  <li key={t.label} className="flex items-start justify-between gap-3">
+                    <span className="flex min-w-0 items-start gap-2 text-sm text-ink">
+                      <TrendingUp className="mt-0.5 size-4 shrink-0 text-muted" />
+                      {t.label}
+                    </span>
+                    {t.count > 1 && <Badge tone="neutral">×{t.count}</Badge>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </>
+      )}
     </div>
   )
 }
