@@ -35,6 +35,8 @@ const api: IpcApi = {
     streamStart: () => ipcRenderer.send('voice:streamStart'),
     streamFrames: (frames) => ipcRenderer.send('voice:frames', frames),
     streamStop: () => ipcRenderer.send('voice:streamStop'),
+    ttsStart: () => ipcRenderer.send('voice:ttsStart'),
+    ttsEnd: () => ipcRenderer.send('voice:ttsEnd'),
     onUtterance: (cb) => {
       const handler = (_: Electron.IpcRendererEvent, event: VoiceUtterance): void => cb(event)
       ipcRenderer.on('voice:utterance', handler)
