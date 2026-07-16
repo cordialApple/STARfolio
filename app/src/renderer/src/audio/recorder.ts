@@ -8,6 +8,20 @@ export interface Recording {
 
 export interface RecordOptions {
   onLevel?: (level: number) => void
+  onFrames?: (frames: Float32Array) => void
+  batchSamples?: number
+}
+
+const DEFAULT_BATCH_SAMPLES = 4000
+
+function concatFloat32(chunks: Float32Array[], total: number): Float32Array {
+  const out = new Float32Array(total)
+  let offset = 0
+  for (const c of chunks) {
+    out.set(c, offset)
+    offset += c.length
+  }
+  return out
 }
 
 function rms(frame: Float32Array): number {
@@ -42,11 +56,23 @@ export async function startRecording(opts: RecordOptions = {}): Promise<Recordin
     const source = ctx.createMediaStreamSource(stream)
     const node = new AudioWorkletNode(ctx, 'pcm-processor')
     const chunks: Float32Array[] = []
+    const batchSamples = opts.batchSamples ?? DEFAULT_BATCH_SAMPLES
+    let batch: Float32Array[] = []
+    let batchLen = 0
     // Worklet posts ~125 frames/sec; meter every 4th (~30 Hz) to avoid a React state update per frame.
     let frame = 0
     node.port.onmessage = (e: MessageEvent<Float32Array>) => {
       chunks.push(e.data)
       if (opts.onLevel && frame++ % 4 === 0) opts.onLevel(rms(e.data))
+      if (opts.onFrames) {
+        batch.push(e.data)
+        batchLen += e.data.length
+        if (batchLen >= batchSamples) {
+          opts.onFrames(concatFloat32(batch, batchLen))
+          batch = []
+          batchLen = 0
+        }
+      }
     }
     source.connect(node)
     const audioCtx = ctx
@@ -57,6 +83,7 @@ export async function startRecording(opts: RecordOptions = {}): Promise<Recordin
         node.disconnect()
         stream.getTracks().forEach((t) => t.stop())
         await audioCtx.close()
+        if (opts.onFrames && batchLen > 0) opts.onFrames(concatFloat32(batch, batchLen))
         return floatChunksToInt16(chunks)
       }
     }

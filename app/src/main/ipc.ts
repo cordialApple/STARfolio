@@ -46,6 +46,7 @@ import { enqueueEmbed, kickEmbedDrain } from './embed/queue'
 import { dbSelfTest } from './db/client'
 import { embedSelfTest, getModelStatus } from './embed'
 import { transcribe } from './voice'
+import { registerVoiceStream } from './voice/stream'
 import { whisperModels, ensureWhisperModel, deleteWhisperModel, WHISPER_MODELS } from './voice/model'
 import {
   experienceInput,
@@ -124,6 +125,7 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
     deleteWhisperModel(model)
     return whisperModels()
   })
+  registerVoiceStream(ipcMain)
 
   ipcMain.handle('ai:hasKey', () => hasSecret('anthropic_api_key'))
   ipcMain.handle('ai:deleteKey', () => deleteSecret('anthropic_api_key'))
