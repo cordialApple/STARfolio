@@ -43,7 +43,7 @@ import type {
 } from '../lib/bank-types'
 import { PushToTalk } from '../practice/PushToTalk'
 import { cn } from '../lib/cn'
-import { debriefToMarkdown, debriefFilename } from './debrief-markdown'
+import { debriefToMarkdown, debriefFilename, reportToMarkdown } from './debrief-markdown'
 import { SAMPLE_RESUME } from './sample-resume'
 
 type Turn = { role: 'interviewer' | 'candidate'; text: string }
@@ -512,26 +512,29 @@ function starStoryToText(story: InterviewReport['starStories'][number]): string 
 function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element {
   const toast = useToast()
 
-  async function copyStory(story: InterviewReport['starStories'][number]): Promise<void> {
+  async function copy(text: string, label: string): Promise<void> {
     try {
-      await window.api.clipboard.write(starStoryToText(story))
-      toast('STAR story copied to clipboard.', 'success')
-    } catch (err) {
-      toast(`Could not copy: ${(err as Error).message}`, 'danger')
-    }
-  }
-
-  async function copyAllStories(): Promise<void> {
-    try {
-      await window.api.clipboard.write(report.starStories.map(starStoryToText).join('\n\n'))
-      toast('All STAR stories copied to clipboard.', 'success')
+      await window.api.clipboard.write(text)
+      toast(`${label} copied to clipboard.`, 'success')
     } catch (err) {
       toast(`Could not copy: ${(err as Error).message}`, 'danger')
     }
   }
 
   return (
-    <Card title="Your debrief">
+    <Card
+      title="Your debrief"
+      action={
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void copy(reportToMarkdown(report), 'Feedback')}
+        >
+          <Copy className="size-3.5" />
+          Copy feedback
+        </Button>
+      }
+    >
       <div className="space-y-5">
         <p className="text-sm text-ink">{report.overallFeedback}</p>
 
@@ -552,7 +555,13 @@ function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element 
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-ink">STAR stories from your answers</h3>
               {report.starStories.length > 1 && (
-                <Button variant="ghost" size="sm" onClick={() => void copyAllStories()}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    void copy(report.starStories.map(starStoryToText).join('\n\n'), 'All STAR stories')
+                  }
+                >
                   <Copy className="size-3.5" />
                   Copy all
                 </Button>
@@ -565,7 +574,7 @@ function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element 
                   <IconButton
                     label={`Copy STAR story: ${story.topic}`}
                     className="shrink-0 text-muted hover:text-ink"
-                    onClick={() => void copyStory(story)}
+                    onClick={() => void copy(starStoryToText(story), 'STAR story')}
                   >
                     <Copy className="size-4" />
                   </IconButton>

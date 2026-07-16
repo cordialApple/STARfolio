@@ -1,4 +1,4 @@
-import type { InterviewSessionDetail } from '../lib/bank-types'
+import type { InterviewReport, InterviewSessionDetail } from '../lib/bank-types'
 
 const LEVEL_LABEL: Record<InterviewSessionDetail['level'], string> = {
   entry: 'Entry level',
@@ -18,6 +18,24 @@ export function debriefFilename(detail: InterviewSessionDetail): string {
   return `interview-${slug || 'anonymous'}`
 }
 
+export function reportToMarkdown(report: InterviewReport): string {
+  const out: string[] = [report.overallFeedback]
+  if (report.strengths.length > 0) out.push('', '### Strengths', list(report.strengths))
+  if (report.improvementAreas.length > 0)
+    out.push('', '### Areas to improve', list(report.improvementAreas))
+  for (const s of report.starStories) {
+    out.push(
+      '',
+      `### STAR — ${s.topic}`,
+      `- **Situation:** ${s.situation}`,
+      `- **Task:** ${s.task}`,
+      `- **Action:** ${s.action}`,
+      `- **Result:** ${s.result}`
+    )
+  }
+  return out.join('\n')
+}
+
 export function debriefToMarkdown(detail: InterviewSessionDetail): string {
   const name = detail.candidateName ?? 'Anonymous candidate'
   const when = new Date(detail.startedAt + 'Z').toLocaleString()
@@ -34,22 +52,8 @@ export function debriefToMarkdown(detail: InterviewSessionDetail): string {
     }
   }
 
-  const report = detail.report
-  if (report) {
-    out.push('', '## Debrief', '', report.overallFeedback)
-    if (report.strengths.length > 0) out.push('', '### Strengths', list(report.strengths))
-    if (report.improvementAreas.length > 0)
-      out.push('', '### Areas to improve', list(report.improvementAreas))
-    for (const s of report.starStories) {
-      out.push(
-        '',
-        `### STAR — ${s.topic}`,
-        `- **Situation:** ${s.situation}`,
-        `- **Task:** ${s.task}`,
-        `- **Action:** ${s.action}`,
-        `- **Result:** ${s.result}`
-      )
-    }
+  if (detail.report) {
+    out.push('', '## Debrief', '', reportToMarkdown(detail.report))
   }
 
   return out.join('\n')
