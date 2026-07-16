@@ -34,5 +34,7 @@ export function registerVoiceStream(ipcMain: IpcMain): void {
   ipcMain.on('voice:frames', (e, frames: Float32Array) => {
     sessions.get(e.sender.id)?.pushFrames(frames)
   })
+  ipcMain.on('voice:ttsStart', (e) => sessions.get(e.sender.id)?.onTtsStart())
+  ipcMain.on('voice:ttsEnd', (e) => sessions.get(e.sender.id)?.onTtsEnd())
   ipcMain.on('voice:streamStop', (e) => close(e.sender.id))
 }

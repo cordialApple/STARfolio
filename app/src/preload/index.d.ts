@@ -40,6 +40,8 @@ export interface VoiceApi {
   streamStart: () => void
   streamFrames: (frames: Float32Array) => void
   streamStop: () => void
+  ttsStart: () => void
+  ttsEnd: () => void
   onUtterance: (cb: (event: VoiceUtterance) => void) => () => void
   onPartial: (cb: (event: TranscriptEvent) => void) => () => void
 }
