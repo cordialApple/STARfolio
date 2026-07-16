@@ -32,7 +32,6 @@ import {
   useToast
 } from '../components'
 import type {
-  ExperienceLevel,
   InterviewPhase,
   InterviewReport,
   InterviewSessionDetail,
@@ -70,24 +69,11 @@ const PHASE_LABEL: Record<InterviewPhase, string> = {
 
 const PHASE_STEPS: InterviewPhase[] = ['intro', 'exploration', 'closing']
 
-const LEVELS: { value: ExperienceLevel; label: string }[] = [
-  { value: 'entry', label: 'Entry level' },
-  { value: 'mid', label: 'Mid level' },
-  { value: 'senior', label: 'Senior' }
-]
-
-const LEVEL_LABEL: Record<ExperienceLevel, string> = {
-  entry: 'Entry level',
-  mid: 'Mid level',
-  senior: 'Senior'
-}
-
 export function InterviewView(): React.JSX.Element {
   const [stage, setStage] = useState<'setup' | 'live' | 'history' | 'debrief'>('setup')
   const [debriefId, setDebriefId] = useState<string | null>(null)
   const [resumeText, setResumeText] = useState('')
   const [candidateName, setCandidateName] = useState('')
-  const [level, setLevel] = useState<ExperienceLevel>('mid')
 
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [phase, setPhase] = useState<InterviewPhase>('intro')
@@ -137,7 +123,7 @@ export function InterviewView(): React.JSX.Element {
       const step = await window.api.interview.start({
         resumeText: text,
         candidateName: candidateName.trim() || undefined,
-        level
+        level: 'entry'
       })
       startedAt.current = Date.now()
       setTurns([])
@@ -282,26 +268,14 @@ export function InterviewView(): React.JSX.Element {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <label className="space-y-1 block">
-                <span className="text-sm font-semibold text-muted">Your name (optional)</span>
-                <Input
-                  placeholder="e.g. Alex"
-                  value={candidateName}
-                  onChange={(e) => setCandidateName(e.target.value)}
-                />
-              </label>
-              <label className="space-y-1 block">
-                <span className="text-sm font-semibold text-muted">Target level</span>
-                <Select value={level} onChange={(e) => setLevel(e.target.value as ExperienceLevel)}>
-                  {LEVELS.map((l) => (
-                    <option key={l.value} value={l.value}>
-                      {l.label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            </div>
+            <label className="space-y-1 block">
+              <span className="text-sm font-semibold text-muted">Your name (optional)</span>
+              <Input
+                placeholder="e.g. Alex"
+                value={candidateName}
+                onChange={(e) => setCandidateName(e.target.value)}
+              />
+            </label>
             <Button onClick={() => void start()} loading={busy} disabled={!resumeText.trim()}>
               <Sparkles className="size-4" />
               Start interview
@@ -781,8 +755,8 @@ function HistoryList({
                     {s.candidateName ?? 'Anonymous candidate'}
                   </span>
                   <span className="text-xs text-muted">
-                    {new Date(s.startedAt + 'Z').toLocaleString()} · {LEVEL_LABEL[s.level]} ·{' '}
-                    {s.turnCount} {s.turnCount === 1 ? 'turn' : 'turns'}
+                    {new Date(s.startedAt + 'Z').toLocaleString()} · {s.turnCount}{' '}
+                    {s.turnCount === 1 ? 'turn' : 'turns'}
                     {s.endedAt && ` · ${formatDuration(s.startedAt, s.endedAt)}`}
                   </span>
                 </span>
@@ -922,7 +896,7 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
             </Badge>
           </div>
           <p className="text-sm text-muted">
-            {new Date(detail.startedAt + 'Z').toLocaleString()} · {LEVEL_LABEL[detail.level]}
+            {new Date(detail.startedAt + 'Z').toLocaleString()}
           </p>
           <div className="space-y-4">
             {detail.transcript.map((t, i) =>

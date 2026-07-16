@@ -36,7 +36,6 @@ describe('debriefToMarkdown', () => {
   it('serializes name, transcript, and full report', () => {
     const md = debriefToMarkdown(base)
     expect(md).toContain('# Interview debrief — Ada Lovelace')
-    expect(md).toContain('Senior')
     expect(md).toContain('**Interviewer:** Tell me about the pipeline.')
     expect(md).toContain('**Candidate:** I led the migration to Kafka.')
     expect(md).toContain('## Debrief')
