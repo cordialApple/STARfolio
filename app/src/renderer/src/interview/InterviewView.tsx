@@ -10,7 +10,8 @@ import {
   Copy,
   Download,
   Mic,
-  Loader2
+  Loader2,
+  Upload
 } from 'lucide-react'
 import {
   Badge,
@@ -78,6 +79,8 @@ export function InterviewView(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [voiceModel, setVoiceModel] = useState<WhisperModelName>('base.en')
   const [models, setModels] = useState<WhisperModelInfo[]>([])
+  const [dragOver, setDragOver] = useState(false)
+  const resumeFileRef = useRef<HTMLInputElement>(null)
   const startedAt = useRef(0)
   const toast = useToast()
   const endRef = useRef<HTMLDivElement>(null)
@@ -141,6 +144,19 @@ export function InterviewView(): React.JSX.Element {
     }
   }
 
+  async function loadResumeFile(file: File | undefined): Promise<void> {
+    if (!file) return
+    if (!/\.(txt|md|markdown)$/i.test(file.name) && !file.type.startsWith('text/')) {
+      toast('Pick a .txt or .md file', 'danger')
+      return
+    }
+    try {
+      setResumeText(await file.text())
+    } catch (err) {
+      toast((err as Error).message, 'danger')
+    }
+  }
+
   function reset(): void {
     setStage('setup')
     setSessionId(null)
@@ -183,15 +199,49 @@ export function InterviewView(): React.JSX.Element {
 
         <Card title="Set up your interview">
           <div className="space-y-4">
-            <label className="space-y-1 block">
-              <span className="text-sm font-semibold text-muted">Resume</span>
-              <Textarea
-                rows={10}
-                placeholder="Paste your resume text here…"
-                value={resumeText}
-                onChange={(e) => setResumeText(e.target.value)}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-muted">Resume</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => resumeFileRef.current?.click()}
+                >
+                  <Upload className="size-4" />
+                  Load file
+                </Button>
+              </div>
+              <input
+                ref={resumeFileRef}
+                type="file"
+                accept=".txt,.md,.markdown,text/*"
+                className="hidden"
+                onChange={(e) => {
+                  void loadResumeFile(e.target.files?.[0])
+                  e.target.value = ''
+                }}
               />
-            </label>
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setDragOver(true)
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setDragOver(false)
+                  void loadResumeFile(e.dataTransfer.files?.[0])
+                }}
+                className={cn('rounded-lg', dragOver && 'ring-2 ring-brand-strong')}
+              >
+                <Textarea
+                  rows={10}
+                  placeholder="Paste your resume, or drop a .txt/.md file here…"
+                  value={resumeText}
+                  onChange={(e) => setResumeText(e.target.value)}
+                />
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <label className="space-y-1 block">
                 <span className="text-sm font-semibold text-muted">Your name (optional)</span>
