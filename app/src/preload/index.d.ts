@@ -26,6 +26,11 @@ export interface VoiceUtterance {
   kind: VoiceUtteranceKind
   dropped: number
 }
+export interface TranscriptEvent {
+  text: string
+  stableUpTo: number
+  isFinal: boolean
+}
 export interface VoiceApi {
   transcribe: (pcm: number[], model?: string) => Promise<string>
   models: () => Promise<WhisperModelInfo[]>
@@ -36,6 +41,7 @@ export interface VoiceApi {
   streamFrames: (frames: Float32Array) => void
   streamStop: () => void
   onUtterance: (cb: (event: VoiceUtterance) => void) => () => void
+  onPartial: (cb: (event: TranscriptEvent) => void) => () => void
 }
 
 export interface AiApi {

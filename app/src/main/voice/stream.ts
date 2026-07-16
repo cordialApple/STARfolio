@@ -1,5 +1,6 @@
 import type { IpcMain, WebContents } from 'electron'
-import { VoiceStreamSession } from './streaming'
+import { VoiceStreamSession, defaultFrameSourceConfig } from './streaming'
+import { transcribeSamples } from './index'
 
 const sessions = new Map<number, VoiceStreamSession>()
 
@@ -7,9 +8,18 @@ function open(sender: WebContents): void {
   sessions.get(sender.id)?.close()
   sessions.set(
     sender.id,
-    new VoiceStreamSession((event) => {
-      if (!sender.isDestroyed()) sender.send('voice:utterance', event)
-    })
+    new VoiceStreamSession(
+      (event) => {
+        if (!sender.isDestroyed()) sender.send('voice:utterance', event)
+      },
+      defaultFrameSourceConfig(),
+      {
+        decode: (samples) => transcribeSamples(samples),
+        onTranscript: (event) => {
+          if (!sender.isDestroyed()) sender.send('voice:partial', event)
+        }
+      }
+    )
   )
   sender.once('destroyed', () => close(sender.id))
 }

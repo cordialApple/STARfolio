@@ -36,21 +36,36 @@ function ensureWorker(): UtilityProcess {
 
 // Deterministic offline transcript for e2e/CI — no model download, no worker. The push-to-talk
 // UI flow (record → transcript → edit → send) is what's under test, not whisper's accuracy.
-function stubTranscript(pcm: number[]): string {
-  const seconds = (pcm.length / 16000).toFixed(1)
+function stubTranscript(sampleCount: number): string {
+  const seconds = (sampleCount / 16000).toFixed(1)
   return `This is a stub transcript of a ${seconds} second recording.`
 }
 
-export async function transcribe(pcm: number[], model?: string): Promise<string> {
-  if (process.env.STARFOLIO_WHISPER_STUB === '1') return stubTranscript(pcm)
+async function resolveModelPath(model?: string): Promise<string> {
   const modelName = model ?? process.env.STARFOLIO_WHISPER_MODEL ?? 'base.en'
-  const modelPath = await ensureWhisperModel(modelName)
+  return ensureWhisperModel(modelName)
+}
+
+function dispatch(
+  modelPath: string,
+  payload: { type: 'transcribe'; pcm: number[] } | { type: 'transcribeSamples'; samples: Float32Array }
+): Promise<string> {
   const worker = ensureWorker()
   const id = randomUUID()
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject })
-    worker.postMessage({ type: 'transcribe', id, pcm, modelPath })
+    worker.postMessage({ ...payload, id, modelPath })
   })
+}
+
+export async function transcribe(pcm: number[], model?: string): Promise<string> {
+  if (process.env.STARFOLIO_WHISPER_STUB === '1') return stubTranscript(pcm.length)
+  return dispatch(await resolveModelPath(model), { type: 'transcribe', pcm })
+}
+
+export async function transcribeSamples(samples: Float32Array, model?: string): Promise<string> {
+  if (process.env.STARFOLIO_WHISPER_STUB === '1') return stubTranscript(samples.length)
+  return dispatch(await resolveModelPath(model), { type: 'transcribeSamples', samples })
 }
 
 export function stopWhisperWorker(): void {
