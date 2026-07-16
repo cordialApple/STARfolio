@@ -1,11 +1,5 @@
 import type { InterviewReport, InterviewSessionDetail } from '../lib/bank-types'
 
-const LEVEL_LABEL: Record<InterviewSessionDetail['level'], string> = {
-  entry: 'Entry level',
-  mid: 'Mid level',
-  senior: 'Senior'
-}
-
 function list(items: string[]): string {
   return items.map((i) => `- ${i}`).join('\n')
 }
@@ -39,11 +33,7 @@ export function reportToMarkdown(report: InterviewReport): string {
 export function debriefToMarkdown(detail: InterviewSessionDetail): string {
   const name = detail.candidateName ?? 'Anonymous candidate'
   const when = new Date(detail.startedAt + 'Z').toLocaleString()
-  const out: string[] = [
-    `# Interview debrief — ${name}`,
-    '',
-    `${when} · ${LEVEL_LABEL[detail.level]}`
-  ]
+  const out: string[] = [`# Interview debrief — ${name}`, '', when]
 
   if (detail.transcript.length > 0) {
     out.push('', '## Transcript')
