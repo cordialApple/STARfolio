@@ -528,10 +528,10 @@ function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element 
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => void copy(reportToMarkdown(report), 'Debrief')}
+          onClick={() => void copy(reportToMarkdown(report), 'Feedback')}
         >
           <Copy className="size-3.5" />
-          Copy debrief
+          Copy feedback
         </Button>
       }
     >
