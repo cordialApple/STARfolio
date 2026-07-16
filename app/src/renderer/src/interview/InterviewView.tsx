@@ -609,6 +609,7 @@ function HistoryList({
   const [deleting, setDeleting] = useState(false)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'done' | 'active'>('all')
+  const [sort, setSort] = useState<'newest' | 'oldest'>('newest')
 
   useEffect(() => {
     let cancelled = false
@@ -629,6 +630,9 @@ function HistoryList({
       (statusFilter === 'done' ? s.phase === 'done' : s.phase !== 'done')
     return matchesStatus && name.includes(needle)
   })
+  visible.sort((a, b) =>
+    sort === 'newest' ? b.startedAt.localeCompare(a.startedAt) : a.startedAt.localeCompare(b.startedAt)
+  )
 
   async function remove(): Promise<void> {
     if (!pendingDelete) return
@@ -673,6 +677,14 @@ function HistoryList({
             <option value="all">All</option>
             <option value="done">Complete</option>
             <option value="active">In progress</option>
+          </Select>
+          <Select
+            className="w-36 shrink-0"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+          >
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
           </Select>
         </div>
       )}
