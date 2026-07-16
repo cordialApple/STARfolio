@@ -90,6 +90,7 @@ export function InterviewView(): React.JSX.Element {
   const [models, setModels] = useState<WhisperModelInfo[]>([])
   const [dragOver, setDragOver] = useState(false)
   const resumeFileRef = useRef<HTMLInputElement>(null)
+  const answerRef = useRef<HTMLTextAreaElement>(null)
   const startedAt = useRef(0)
   const toast = useToast()
   const endRef = useRef<HTMLDivElement>(null)
@@ -103,6 +104,12 @@ export function InterviewView(): React.JSX.Element {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [turns, report, busy])
+
+  useEffect(() => {
+    if (phase !== 'intro' && phase !== 'done' && !busy && turns.at(-1)?.role === 'interviewer') {
+      answerRef.current?.focus()
+    }
+  }, [turns, busy, phase])
 
   const voiceReady = models.find((m) => m.name === voiceModel)?.downloaded ?? false
 
@@ -337,6 +344,7 @@ export function InterviewView(): React.JSX.Element {
           )}
           <div className="flex items-end gap-2">
             <Textarea
+              ref={answerRef}
               rows={3}
               placeholder="Speak with the mic above, or type here…"
               value={answer}
