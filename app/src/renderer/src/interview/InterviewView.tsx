@@ -10,6 +10,7 @@ import {
   Copy,
   Download,
   Mic,
+  MicOff,
   Loader2,
   Upload,
   Search,
@@ -44,6 +45,9 @@ import type {
   WhisperModelName
 } from '../lib/bank-types'
 import { PushToTalk } from '../practice/PushToTalk'
+import { useStreamingVoice, type UseStreamingVoice } from '../voice/useStreamingVoice'
+import { splitTranscript } from '../voice/transcript'
+import type { TurnMode } from '../voice/turn-controller'
 import { cn } from '../lib/cn'
 import { debriefToMarkdown, debriefFilename, reportToMarkdown } from './debrief-markdown'
 import { SAMPLE_RESUME } from './sample-resume'
@@ -92,6 +96,7 @@ export function InterviewView(): React.JSX.Element {
   const [report, setReport] = useState<InterviewReport | null>(null)
   const [busy, setBusy] = useState(false)
   const [voiceModel, setVoiceModel] = useState<WhisperModelName>('base.en')
+  const [voiceMode, setVoiceMode] = useState<TurnMode>('auto')
   const [models, setModels] = useState<WhisperModelInfo[]>([])
   const [dragOver, setDragOver] = useState(false)
   const resumeFileRef = useRef<HTMLInputElement>(null)
@@ -117,6 +122,23 @@ export function InterviewView(): React.JSX.Element {
   }, [turns, busy, phase])
 
   const voiceReady = models.find((m) => m.name === voiceModel)?.downloaded ?? false
+
+  const stream = useStreamingVoice((text) => void submit(text), !busy)
+  const { error: voiceError, clearError: clearVoiceError, listening: voiceListening, stop: stopVoice } = stream
+
+  useEffect(() => {
+    if (voiceError) {
+      toast(voiceError, 'danger')
+      clearVoiceError()
+    }
+  }, [voiceError, clearVoiceError, toast])
+
+  const autoVoiceOpen =
+    voiceReady && voiceMode === 'auto' && stage === 'live' && phase !== 'done'
+
+  useEffect(() => {
+    if (!autoVoiceOpen && voiceListening) void stopVoice()
+  }, [autoVoiceOpen, voiceListening, stopVoice])
 
   function apply(step: InterviewStep): void {
     setSessionId(step.sessionId)
@@ -147,18 +169,18 @@ export function InterviewView(): React.JSX.Element {
     }
   }
 
-  async function submit(): Promise<void> {
-    const text = answer.trim()
-    if (!text || !sessionId) return
+  async function submit(override?: string): Promise<void> {
+    const text = (override ?? answer).trim()
+    if (!text || !sessionId || busy) return
     setBusy(true)
-    setAnswer('')
+    if (override === undefined) setAnswer('')
     setTurns((prev) => [...prev, { role: 'candidate', text }])
     try {
       const step = await window.api.interview.answer(sessionId, text, Date.now() - startedAt.current)
       apply(step)
     } catch (err) {
       toast((err as Error).message, 'danger')
-      setAnswer(text)
+      if (override === undefined) setAnswer(text)
       setTurns((prev) => prev.slice(0, -1))
     } finally {
       setBusy(false)
@@ -345,12 +367,19 @@ export function InterviewView(): React.JSX.Element {
       ) : (
         <div className="space-y-2">
           {voiceReady ? (
-            <PushToTalk
-              model={voiceModel}
-              disabled={busy}
-              onTranscript={(t) => setAnswer((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
-              onError={(m) => toast(m, 'danger')}
-            />
+            <div className="space-y-2">
+              <VoiceModeToggle mode={voiceMode} disabled={busy} onChange={setVoiceMode} />
+              {voiceMode === 'auto' ? (
+                <AutoVoice stream={stream} disabled={busy} />
+              ) : (
+                <PushToTalk
+                  model={voiceModel}
+                  disabled={busy}
+                  onTranscript={(t) => setAnswer((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
+                  onError={(m) => toast(m, 'danger')}
+                />
+              )}
+            </div>
           ) : (
             <p className="text-xs text-muted">
               Want to speak your answers? Download a voice model in Settings → Voice.
@@ -502,6 +531,98 @@ function ThinkingBubble(): React.JSX.Element {
 function CandidateBubble({ text }: { text: string }): React.JSX.Element {
   return (
     <p className="ml-8 whitespace-pre-wrap rounded-lg bg-canvas px-4 py-3 text-sm text-ink">{text}</p>
+  )
+}
+
+const VOICE_MODES: { value: TurnMode; label: string }[] = [
+  { value: 'auto', label: 'Hands-free' },
+  { value: 'ptt', label: 'Push-to-talk' }
+]
+
+function VoiceModeToggle({
+  mode,
+  disabled,
+  onChange
+}: {
+  mode: TurnMode
+  disabled?: boolean
+  onChange: (mode: TurnMode) => void
+}): React.JSX.Element {
+  return (
+    <div className="inline-flex rounded-pill border border-line p-0.5" role="radiogroup">
+      {VOICE_MODES.map((m) => (
+        <button
+          key={m.value}
+          type="button"
+          role="radio"
+          aria-checked={mode === m.value}
+          disabled={disabled}
+          onClick={() => onChange(m.value)}
+          className={cn(
+            'rounded-pill px-3 py-1 text-xs transition-colors',
+            mode === m.value ? 'bg-brand-strong text-on-brand' : 'text-muted hover:text-ink',
+            disabled && 'pointer-events-none opacity-50'
+          )}
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function AutoVoice({
+  stream,
+  disabled
+}: {
+  stream: UseStreamingVoice
+  disabled?: boolean
+}): React.JSX.Element {
+  const { stable, tail } = splitTranscript(stream.partial)
+  const status = stream.starting
+    ? 'Starting…'
+    : !stream.listening
+      ? 'Tap the mic to go hands-free'
+      : stream.utteranceActive
+        ? 'Listening…'
+        : 'Ready — just start speaking'
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={disabled || stream.starting}
+          onClick={() => void (stream.listening ? stream.stop() : stream.start())}
+          aria-label={stream.listening ? 'Stop listening' : 'Start listening'}
+          className={cn(
+            'inline-flex size-12 shrink-0 items-center justify-center rounded-full transition-colors',
+            stream.listening
+              ? 'bg-danger-strong text-on-brand'
+              : 'bg-brand-strong text-on-brand hover:brightness-95',
+            (disabled || stream.starting) && 'pointer-events-none opacity-50'
+          )}
+        >
+          {stream.starting ? (
+            <Loader2 className="size-5 animate-spin" />
+          ) : stream.listening ? (
+            <MicOff className="size-5" />
+          ) : (
+            <Mic className="size-5" />
+          )}
+        </button>
+        <span className="text-xs text-muted">{status}</span>
+      </div>
+      {stream.listening && (stable || tail) && (
+        <p
+          aria-live="polite"
+          className="rounded-lg border border-line bg-raised px-4 py-3 text-sm text-ink"
+        >
+          {stable}
+          {tail && <span className="text-muted">{tail}</span>}
+        </p>
+      )}
+    </div>
   )
 }
 
