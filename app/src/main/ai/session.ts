@@ -15,10 +15,12 @@ import {
   summarizeInterview,
   type ArchitectExperience,
   type ConversationInput,
+  type EvaluatorInput,
   type InterviewReport,
   type TranscriptTurn
 } from './roles'
 import type { ParseClient } from './roles/parse'
+import { steeringSignalFor } from './steering'
 import {
   commitAnswer,
   createSession,
@@ -62,6 +64,10 @@ function requireSession(id: string): StoredInterviewSession {
   return session
 }
 
+// A background steering signal counts for the turn only if committed within ~one
+// Sonnet cadence window; older signals belong to a prior turn and are ignored.
+const STEERING_MAX_AGE_MS = 20_000
+
 const EMPTY_EVALUATION: AnswerEvaluation = {
   topicId: null,
   coverageDeltas: {},
@@ -96,25 +102,28 @@ function toConversationInput(
   return input
 }
 
+function evaluatorInputFor(session: StoredInterviewSession, answer: string): EvaluatorInput | null {
+  const action = session.lastAction
+  if (action.kind !== 'probe' && action.kind !== 'transition') return null
+  const topic = topicById(session.state, action.topicId)
+  return {
+    topicId: action.topicId,
+    topicLabel: topic?.label ?? action.topicId,
+    question: session.lastUtterance,
+    answer,
+    level: session.state.candidate.level,
+    turn: session.state.turnCount
+  }
+}
+
 async function evaluationFor(
   session: StoredInterviewSession,
   answer: string,
   client?: ParseClient
 ): Promise<AnswerEvaluation> {
-  const action = session.lastAction
-  if (action.kind !== 'probe' && action.kind !== 'transition') return EMPTY_EVALUATION
-  const topic = topicById(session.state, action.topicId)
-  return evaluateAnswer(
-    {
-      topicId: action.topicId,
-      topicLabel: topic?.label ?? action.topicId,
-      question: session.lastUtterance,
-      answer,
-      level: session.state.candidate.level,
-      turn: session.state.turnCount
-    },
-    client
-  )
+  const input = evaluatorInputFor(session, answer)
+  if (!input) return EMPTY_EVALUATION
+  return evaluateAnswer(input, client)
 }
 
 function toStep(
@@ -171,8 +180,11 @@ export async function answerInterview(
   const answer = input.answer.trim()
   if (!answer) throw new Error('an answer is required')
 
-  const elapsedMs = input.elapsedMs ?? Date.now() - session.startedAtMs
-  const evaluation = await evaluationFor(session, answer, client)
+  const now = Date.now()
+  const elapsedMs = input.elapsedMs ?? now - session.startedAtMs
+  const evaluation =
+    steeringSignalFor(session.id, now, STEERING_MAX_AGE_MS)?.evaluation ??
+    (await evaluationFor(session, answer, client))
   let state = reduce(session.state, { type: 'answer', elapsedMs, evaluation })
 
   const action = selectAction(state)
