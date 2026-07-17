@@ -95,6 +95,8 @@ export function InterviewView(): React.JSX.Element {
   const [answer, setAnswer] = useState('')
   const [report, setReport] = useState<InterviewReport | null>(null)
   const [busy, setBusy] = useState(false)
+  const [streaming, setStreaming] = useState<string | null>(null)
+  const activeRequestId = useRef<string | null>(null)
   const [voiceModel, setVoiceModel] = useState<WhisperModelName>('base.en')
   const [voiceMode, setVoiceMode] = useState<TurnMode>('auto')
   const [models, setModels] = useState<WhisperModelInfo[]>([])
@@ -113,7 +115,21 @@ export function InterviewView(): React.JSX.Element {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [turns, report, busy])
+  }, [turns, report, busy, streaming])
+
+  useEffect(() => {
+    const offToken = window.api.ai.onToken((requestId, token) => {
+      if (requestId !== activeRequestId.current) return
+      setStreaming((prev) => (prev ?? '') + token)
+    })
+    const offDone = window.api.ai.onDone((requestId) => {
+      if (requestId === activeRequestId.current) activeRequestId.current = null
+    })
+    return () => {
+      offToken()
+      offDone()
+    }
+  }, [])
 
   useEffect(() => {
     if (phase !== 'intro' && phase !== 'done' && !busy && turns.at(-1)?.role === 'interviewer') {
@@ -151,20 +167,27 @@ export function InterviewView(): React.JSX.Element {
     const text = resumeText.trim()
     if (!text) return
     setBusy(true)
+    const requestId = crypto.randomUUID()
+    activeRequestId.current = requestId
+    setStreaming(null)
     try {
       const step = await window.api.interview.start({
         resumeText: text,
         candidateName: candidateName.trim() || undefined,
-        level: 'entry'
+        level: 'entry',
+        requestId
       })
       startedAt.current = Date.now()
       setTurns([])
       setReport(null)
       apply(step)
+      setStreaming(null)
       setStage('live')
     } catch (err) {
       toast((err as Error).message, 'danger')
+      setStreaming(null)
     } finally {
+      activeRequestId.current = null
       setBusy(false)
     }
   }
@@ -173,16 +196,27 @@ export function InterviewView(): React.JSX.Element {
     const text = (override ?? answer).trim()
     if (!text || !sessionId || busy) return
     setBusy(true)
+    const requestId = crypto.randomUUID()
+    activeRequestId.current = requestId
+    setStreaming(null)
     if (override === undefined) setAnswer('')
     setTurns((prev) => [...prev, { role: 'candidate', text }])
     try {
-      const step = await window.api.interview.answer(sessionId, text, Date.now() - startedAt.current)
+      const step = await window.api.interview.answer(
+        sessionId,
+        text,
+        Date.now() - startedAt.current,
+        requestId
+      )
       apply(step)
+      setStreaming(null)
     } catch (err) {
       toast((err as Error).message, 'danger')
       if (override === undefined) setAnswer(text)
       setTurns((prev) => prev.slice(0, -1))
+      setStreaming(null)
     } finally {
+      activeRequestId.current = null
       setBusy(false)
     }
   }
@@ -326,8 +360,7 @@ export function InterviewView(): React.JSX.Element {
     )
   }
 
-  const awaitingQuestion = busy && turns.length > 0 && turns[turns.length - 1].role === 'candidate'
-  const lastInterviewerIdx = turns.reduce((acc, t, i) => (t.role === 'interviewer' ? i : acc), -1)
+  const awaitingQuestion = busy && streaming === null && turns.at(-1)?.role === 'candidate'
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -350,11 +383,12 @@ export function InterviewView(): React.JSX.Element {
       <div className="space-y-4">
         {turns.map((t, i) =>
           t.role === 'interviewer' ? (
-            <InterviewerBubble key={i} text={t.text} animate={i === lastInterviewerIdx} />
+            <InterviewerBubble key={i} text={t.text} />
           ) : (
             <CandidateBubble key={i} text={t.text} />
           )
         )}
+        {streaming !== null && <InterviewerBubble text={streaming} />}
         {awaitingQuestion && <ThinkingBubble />}
         {report && <ReportCard report={report} />}
         <div ref={endRef} />
@@ -485,36 +519,14 @@ function PhaseSteps({ phase }: { phase: InterviewPhase }): React.JSX.Element {
   )
 }
 
-function InterviewerBubble({
-  text,
-  animate
-}: {
-  text: string
-  animate: boolean
-}): React.JSX.Element {
-  const [shown, setShown] = useState(animate ? '' : text)
-  useEffect(() => {
-    if (!animate) {
-      setShown(text)
-      return
-    }
-    setShown('')
-    let i = 0
-    const timer = setInterval(() => {
-      i += 2
-      setShown(text.slice(0, i))
-      if (i >= text.length) clearInterval(timer)
-    }, 16)
-    return () => clearInterval(timer)
-  }, [text, animate])
-
+function InterviewerBubble({ text }: { text: string }): React.JSX.Element {
   return (
     <div className="rounded-lg border border-line bg-raised p-4">
       <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-brand">
         <Mic className="size-3.5" />
         Interviewer
       </div>
-      <p className="whitespace-pre-wrap text-sm font-semibold text-ink">{shown}</p>
+      <p className="whitespace-pre-wrap text-sm font-semibold text-ink">{text}</p>
     </div>
   )
 }
