@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
-import { getSecret } from '../settings/secrets'
-import { anthropicTransport, stubTransport, type AiTransport } from './transport'
+import { type AiTransport } from './transport'
+import { resolveTransport } from './resolve-transport'
 import { MODELS } from './models'
 import { logUsage } from './usage'
 
@@ -12,13 +12,6 @@ export interface StreamJob {
   model: string
   maxTokens?: number
   feature: string
-}
-
-function resolveTransport(): AiTransport {
-  if (process.env.STARFOLIO_AI_STUB === '1') return stubTransport()
-  const apiKey = getSecret('anthropic_api_key')
-  if (!apiKey) throw new Error('No Anthropic API key configured')
-  return anthropicTransport(apiKey)
 }
 
 export function startStream(job: StreamJob, requestId: string, sender: WebContents): void {

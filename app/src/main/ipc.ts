@@ -1,5 +1,14 @@
 import { z } from 'zod'
-import { app, clipboard, dialog, shell, BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import {
+  app,
+  clipboard,
+  dialog,
+  shell,
+  BrowserWindow,
+  type IpcMain,
+  type IpcMainInvokeEvent,
+  type WebContents
+} from 'electron'
 import { setSecret, hasSecret, deleteSecret, getSecret } from './settings/secrets'
 import { startChat, cancelStream } from './ai/client'
 import { extractStar, extractResumeStar, extractEvidenceStar, extractEntities } from './ai/extract'
@@ -21,6 +30,8 @@ import {
   deleteInterviewSession
 } from './ai/session'
 import { practiceConfig } from './ai/interview'
+import { partialToDelta } from './ai/utterance'
+import type { UtteranceStreamSink } from './ai/session'
 import { technicalConfig } from './ai/technical'
 import { ingestCorpusFiles, ingestCorpusUrl } from './ingest/corpus-service'
 import { listCorpusDocs, deleteCorpusDoc, corpusDisciplines } from './db/repositories/corpus'
@@ -90,6 +101,19 @@ function handle<S extends z.ZodTypeAny, R>(
 
 export interface IpcHooks {
   onPrefsChange?: (prefs: Prefs) => void
+}
+
+function utteranceSink(sender: WebContents, requestId?: string): UtteranceStreamSink | undefined {
+  if (!requestId) return undefined
+  const send = (channel: string, ...args: unknown[]): void => {
+    if (!sender.isDestroyed()) sender.send(channel, requestId, ...args)
+  }
+  return {
+    onPartial: partialToDelta(
+      (delta) => send('ai:token', delta),
+      () => send('ai:done')
+    )
+  }
 }
 
 export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): void {
@@ -255,17 +279,25 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   const interviewStartArg = z.object({
     resumeText: z.string().trim().min(1).max(200_000),
     candidateName: z.string().trim().max(200).optional(),
-    level: z.enum(['entry', 'mid', 'senior']).optional()
+    level: z.enum(['entry', 'mid', 'senior']).optional(),
+    requestId: nonEmpty.max(64).optional()
   })
   const interviewAnswerArg = z.object({
     sessionId: nonEmpty.max(64),
     answer: z.string().trim().min(1).max(20_000),
-    elapsedMs: z.number().min(0).optional()
+    elapsedMs: z.number().min(0).optional(),
+    requestId: nonEmpty.max(64).optional()
   })
-  handle(ipcMain, 'interview:start', interviewStartArg, (_e, arg) =>
-    startInterview({ ...arg, experiences: interviewBank() })
+  handle(ipcMain, 'interview:start', interviewStartArg, (event, { requestId, ...arg }) =>
+    startInterview(
+      { ...arg, experiences: interviewBank() },
+      undefined,
+      utteranceSink(event.sender, requestId)
+    )
   )
-  handle(ipcMain, 'interview:answer', interviewAnswerArg, (_e, arg) => answerInterview(arg))
+  handle(ipcMain, 'interview:answer', interviewAnswerArg, (event, { requestId, ...arg }) =>
+    answerInterview(arg, undefined, utteranceSink(event.sender, requestId))
+  )
   handle(ipcMain, 'interview:report', sessionArg, (_e, { sessionId }) => getInterviewReport(sessionId))
   ipcMain.handle('interview:list', () => listInterviewSessions())
   handle(ipcMain, 'interview:get', sessionArg, (_e, { sessionId }) => getInterviewSession(sessionId))
