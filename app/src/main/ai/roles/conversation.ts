@@ -7,6 +7,7 @@ import {
   UtteranceStream,
   intervalStallTimer,
   STALL_TIMEOUT_MS,
+  FIRST_TOKEN_TIMEOUT_MS,
   type StallTimer,
   type UtterancePartial
 } from '../utterance'
@@ -88,10 +89,20 @@ export async function composeUtteranceStream(
     else deps.signal.addEventListener('abort', () => controller.abort(), { once: true })
   }
   const timer = deps.stallTimer ?? intervalStallTimer()
+  const openedAtMs = clock()
+  let neverStarted = false
   let stalled = false
   let failure: string | undefined
   timer.start(() => {
-    if (!controller.signal.aborted && stream.idleMs(clock()) >= STALL_TIMEOUT_MS) {
+    if (controller.signal.aborted) return
+    if (!stream.hasStarted) {
+      if (clock() - openedAtMs >= FIRST_TOKEN_TIMEOUT_MS) {
+        neverStarted = true
+        controller.abort()
+      }
+      return
+    }
+    if (stream.idleMs(clock()) >= STALL_TIMEOUT_MS) {
       stalled = true
       controller.abort()
     }
@@ -122,6 +133,7 @@ export async function composeUtteranceStream(
   } finally {
     timer.stop()
   }
+  if (neverStarted) throw new Error('The interviewer never started composing a reply')
   if (stalled) throw new Error('The interviewer stalled while composing a reply')
   if (controller.signal.aborted) throw new Error('composeUtteranceStream aborted')
   if (failure) throw new Error(failure)
