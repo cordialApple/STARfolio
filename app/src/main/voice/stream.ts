@@ -1,10 +1,21 @@
 import type { IpcMain, WebContents } from 'electron'
 import { RollingTranscript, VoiceStreamSession, defaultFrameSourceConfig } from './streaming'
 import { transcribeSamples } from './index'
+import { steerFromTranscript } from '../ai/session'
+import { SteeringLoop, clearSteeringLoop, registerSteeringLoop } from '../ai/steering'
+
+const STEERING_INTERVAL_MS = 15_000
+
+interface SteeringDriver {
+  loop: SteeringLoop
+  timer: ReturnType<typeof setInterval>
+  sessionId: string
+}
 
 interface StreamEntry {
   session: VoiceStreamSession
   transcript: RollingTranscript
+  steering?: SteeringDriver
 }
 
 const sessions = new Map<number, StreamEntry>()
@@ -13,8 +24,29 @@ export function rollingTranscriptFor(senderId: number): RollingTranscript | unde
   return sessions.get(senderId)?.transcript
 }
 
-function open(sender: WebContents): void {
-  sessions.get(sender.id)?.session.close()
+function startSteering(sessionId: string, transcript: RollingTranscript): SteeringDriver {
+  const loop = new SteeringLoop({
+    view: () => ({ text: transcript.recent(STEERING_INTERVAL_MS, Date.now()).text }),
+    evaluate: (text) => steerFromTranscript(sessionId, text)
+  })
+  registerSteeringLoop(sessionId, loop)
+  // Steering is best-effort: a failed background eval must never break the mic path,
+  // and the turn still falls back to inline evaluation.
+  const timer = setInterval(() => void loop.run(Date.now()).catch(() => {}), STEERING_INTERVAL_MS)
+  return { loop, timer, sessionId }
+}
+
+function teardown(entry: StreamEntry | undefined): void {
+  if (!entry) return
+  entry.session.close()
+  if (entry.steering) {
+    clearInterval(entry.steering.timer)
+    clearSteeringLoop(entry.steering.sessionId)
+  }
+}
+
+function open(sender: WebContents, sessionId?: string): void {
+  teardown(sessions.get(sender.id))
   const transcript = new RollingTranscript()
   const session = new VoiceStreamSession(
     (event) => {
@@ -29,21 +61,29 @@ function open(sender: WebContents): void {
       }
     }
   )
-  sessions.set(sender.id, { session, transcript })
+  const entry: StreamEntry = { session, transcript }
+  if (sessionId) entry.steering = startSteering(sessionId, transcript)
+  sessions.set(sender.id, entry)
   sender.once('destroyed', () => close(sender.id))
 }
 
 function close(senderId: number): void {
-  sessions.get(senderId)?.session.close()
+  teardown(sessions.get(senderId))
   sessions.delete(senderId)
 }
 
 export function registerVoiceStream(ipcMain: IpcMain): void {
-  ipcMain.on('voice:streamStart', (e) => open(e.sender))
+  ipcMain.on('voice:streamStart', (e, sessionId?: string) =>
+    open(e.sender, typeof sessionId === 'string' ? sessionId : undefined)
+  )
   ipcMain.on('voice:frames', (e, frames: Float32Array) => {
     sessions.get(e.sender.id)?.session.pushFrames(frames)
   })
-  ipcMain.on('voice:ttsStart', (e) => sessions.get(e.sender.id)?.session.onTtsStart())
+  ipcMain.on('voice:ttsStart', (e) => {
+    const entry = sessions.get(e.sender.id)
+    entry?.session.onTtsStart()
+    entry?.steering?.loop.reset()
+  })
   ipcMain.on('voice:ttsEnd', (e) => sessions.get(e.sender.id)?.session.onTtsEnd())
   ipcMain.on('voice:streamStop', (e) => close(e.sender.id))
 }

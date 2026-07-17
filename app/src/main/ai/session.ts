@@ -126,6 +126,18 @@ async function evaluationFor(
   return evaluateAnswer(input, client)
 }
 
+export async function steerFromTranscript(
+  sessionId: string,
+  text: string,
+  client?: ParseClient
+): Promise<AnswerEvaluation> {
+  const answer = text.trim()
+  if (!answer) return EMPTY_EVALUATION
+  const session = loadSession(sessionId)
+  if (!session || session.state.phase === 'done') return EMPTY_EVALUATION
+  return evaluationFor(session, answer, client)
+}
+
 function toStep(
   session: Pick<StoredInterviewSession, 'id' | 'lastUtterance' | 'lastAction' | 'state' | 'report'>
 ): InterviewStep {

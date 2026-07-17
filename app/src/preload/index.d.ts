@@ -37,7 +37,7 @@ export interface VoiceApi {
   downloadModel: (model: WhisperModelName) => Promise<WhisperModelInfo[]>
   deleteModel: (model: WhisperModelName) => Promise<WhisperModelInfo[]>
   onModelStatus: (cb: (models: WhisperModelInfo[]) => void) => () => void
-  streamStart: () => void
+  streamStart: (sessionId?: string) => void
   streamFrames: (frames: Float32Array) => void
   streamStop: () => void
   ttsStart: () => void

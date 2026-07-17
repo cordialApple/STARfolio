@@ -123,7 +123,7 @@ export function InterviewView(): React.JSX.Element {
 
   const voiceReady = models.find((m) => m.name === voiceModel)?.downloaded ?? false
 
-  const stream = useStreamingVoice((text) => void submit(text), !busy)
+  const stream = useStreamingVoice((text) => void submit(text), !busy, sessionId)
   const { error: voiceError, clearError: clearVoiceError, listening: voiceListening, stop: stopVoice } = stream
 
   useEffect(() => {

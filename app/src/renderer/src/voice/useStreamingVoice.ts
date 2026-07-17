@@ -18,7 +18,8 @@ export interface UseStreamingVoice {
 
 export function useStreamingVoice(
   submit: (text: string) => void,
-  ready: boolean
+  ready: boolean,
+  sessionId?: string | null
 ): UseStreamingVoice {
   const [listening, setListening] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -29,6 +30,8 @@ export function useStreamingVoice(
   const recRef = useRef<Recording | null>(null)
   const submitRef = useRef(submit)
   submitRef.current = submit
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
 
   const controllerRef = useRef<TurnController | null>(null)
   if (!controllerRef.current) {
@@ -56,7 +59,7 @@ export function useStreamingVoice(
     setError(null)
     controllerRef.current?.reset()
     try {
-      window.api.voice.streamStart()
+      window.api.voice.streamStart(sessionIdRef.current ?? undefined)
       recRef.current = await startRecording({
         onFrames: (frames) => window.api.voice.streamFrames(frames),
         batchSamples: STREAM_BATCH_SAMPLES

@@ -32,7 +32,7 @@ const api: IpcApi = {
       ipcRenderer.on('voice:modelStatus', handler)
       return () => ipcRenderer.removeListener('voice:modelStatus', handler)
     },
-    streamStart: () => ipcRenderer.send('voice:streamStart'),
+    streamStart: (sessionId) => ipcRenderer.send('voice:streamStart', sessionId),
     streamFrames: (frames) => ipcRenderer.send('voice:frames', frames),
     streamStop: () => ipcRenderer.send('voice:streamStop'),
     ttsStart: () => ipcRenderer.send('voice:ttsStart'),
