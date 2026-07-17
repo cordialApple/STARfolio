@@ -212,6 +212,64 @@ describe('composeUtteranceStream', () => {
     ).rejects.toThrow('composeUtteranceStream aborted')
   })
 
+  it('reports a stall even when the transport then reports an error (stall wins over failure)', async () => {
+    const clock = { t: 0 }
+    const timer = manualTimer()
+    const stallThenError: AiTransport = {
+      async stream(_req, signal, cb): Promise<void> {
+        cb.onToken('Half a')
+        clock.t += STALL_TIMEOUT_MS + 1
+        timer.fire()
+        if (signal.aborted) cb.onError('socket hang up')
+      }
+    }
+    await expect(
+      composeUtteranceStream(askIntro, {
+        transport: stallThenError,
+        stallTimer: timer,
+        now: () => clock.t
+      })
+    ).rejects.toThrow('stalled')
+  })
+
+  it('reports a caller abort even when the transport then reports an error (abort wins over failure)', async () => {
+    const ac = new AbortController()
+    const timer = manualTimer()
+    const abortThenError: AiTransport = {
+      async stream(_req, signal, cb): Promise<void> {
+        cb.onToken('Half')
+        ac.abort()
+        if (signal.aborted) cb.onError('socket hang up')
+      }
+    }
+    await expect(
+      composeUtteranceStream(askIntro, {
+        transport: abortThenError,
+        stallTimer: timer,
+        signal: ac.signal
+      })
+    ).rejects.toThrow('composeUtteranceStream aborted')
+  })
+
+  it('reports a never-started error even when the transport then reports an error (TTFT wins over failure)', async () => {
+    const clock = { t: 0 }
+    const timer = manualTimer()
+    const silentThenError: AiTransport = {
+      async stream(_req, signal, cb): Promise<void> {
+        clock.t += FIRST_TOKEN_TIMEOUT_MS + 1
+        timer.fire()
+        if (signal.aborted) cb.onError('socket hang up')
+      }
+    }
+    await expect(
+      composeUtteranceStream(askIntro, {
+        transport: silentThenError,
+        stallTimer: timer,
+        now: () => clock.t
+      })
+    ).rejects.toThrow('never started')
+  })
+
   it('honors the STARFOLIO_AI_STUB path without touching the transport', async () => {
     vi.stubEnv('STARFOLIO_AI_STUB', '1')
     const partials: UtterancePartial[] = []
