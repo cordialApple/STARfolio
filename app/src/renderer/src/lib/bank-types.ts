@@ -43,6 +43,8 @@ export type {
   TurnExperienceRef,
   WhisperModelInfo,
   WhisperModelName,
+  TranscriptEvent,
+  VoiceUtterance,
   StoryMatch,
   IngestResult,
   EvidenceKind,
