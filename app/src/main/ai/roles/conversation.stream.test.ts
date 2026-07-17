@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { stubTransport, type AiTransport, type StreamUsage } from '../transport'
 import { composeUtteranceStream, type ConversationInput } from './conversation'
-import { STALL_TIMEOUT_MS, type StallTimer, type UtterancePartial } from '../utterance'
+import {
+  FIRST_TOKEN_TIMEOUT_MS,
+  STALL_TIMEOUT_MS,
+  type StallTimer,
+  type UtterancePartial
+} from '../utterance'
 
 const USAGE: StreamUsage = { in: 1, out: 1, cacheRead: 0 }
 const askIntro: ConversationInput = { action: { kind: 'ask_intro' } }
@@ -121,6 +126,50 @@ describe('composeUtteranceStream', () => {
       })
     ).rejects.toThrow('stalled')
     expect(partials.at(-1)?.done).toBe(false)
+  })
+
+  it('aborts and rejects when no first token arrives before the TTFT deadline', async () => {
+    const clock = { t: 0 }
+    const timer = manualTimer()
+    const partials: UtterancePartial[] = []
+    const silentTransport: AiTransport = {
+      async stream(_req, signal, cb): Promise<void> {
+        clock.t += FIRST_TOKEN_TIMEOUT_MS + 1
+        timer.fire()
+        if (signal.aborted) return
+        cb.onToken('too late')
+        cb.onDone(USAGE)
+      }
+    }
+    await expect(
+      composeUtteranceStream(askIntro, {
+        transport: silentTransport,
+        stallTimer: timer,
+        now: () => clock.t,
+        onPartial: (p) => partials.push(p)
+      })
+    ).rejects.toThrow('never started')
+    expect(partials).toEqual([])
+  })
+
+  it('does not trip the TTFT guard when the first token arrives before the deadline', async () => {
+    const clock = { t: 0 }
+    const timer = manualTimer()
+    const promptTransport: AiTransport = {
+      async stream(_req, _signal, cb): Promise<void> {
+        clock.t += FIRST_TOKEN_TIMEOUT_MS - 1
+        cb.onToken('Right ')
+        timer.fire()
+        cb.onToken('on time.')
+        cb.onDone(USAGE)
+      }
+    }
+    const out = await composeUtteranceStream(askIntro, {
+      transport: promptTransport,
+      stallTimer: timer,
+      now: () => clock.t
+    })
+    expect(out).toBe('Right on time.')
   })
 
   it('does not stall a live stream whose idle stays under the threshold', async () => {

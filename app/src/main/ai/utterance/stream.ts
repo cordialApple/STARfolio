@@ -46,6 +46,10 @@ export class UtteranceStream {
     return this.sealed
   }
 
+  get hasStarted(): boolean {
+    return this.started
+  }
+
   // ms since the last token (0 before the first). Lets a driver time out a stream
   // that started then stalled, leaving the candidate on a half-finished question.
   idleMs(now: number): number {

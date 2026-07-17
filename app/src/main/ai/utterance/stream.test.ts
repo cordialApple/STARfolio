@@ -67,6 +67,17 @@ describe('UtteranceStream', () => {
     expect(s.idleMs(1_600)).toBe(100)
   })
 
+  it('reports hasStarted only after the first real token', () => {
+    const s = new UtteranceStream()
+    expect(s.hasStarted).toBe(false)
+    s.push('')
+    expect(s.hasStarted).toBe(false)
+    s.push('Hi')
+    expect(s.hasStarted).toBe(true)
+    s.reset()
+    expect(s.hasStarted).toBe(false)
+  })
+
   it('reset clears buffer, sealed, and timing', () => {
     const clock = fixedClock(500)
     const s = new UtteranceStream({ now: clock.now })
