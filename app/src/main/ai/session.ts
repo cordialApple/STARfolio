@@ -20,7 +20,7 @@ import {
   type TranscriptTurn
 } from './roles'
 import type { ParseClient } from './roles/parse'
-import { steeringSignalFor } from './steering'
+import { STEERING_MAX_AGE_MS, steeringSignalFor } from './steering'
 import {
   commitAnswer,
   createSession,
@@ -63,10 +63,6 @@ function requireSession(id: string): StoredInterviewSession {
   if (!session) throw new Error('interview session not found')
   return session
 }
-
-// A background steering signal counts for the turn only if committed within ~one
-// Sonnet cadence window; older signals belong to a prior turn and are ignored.
-const STEERING_MAX_AGE_MS = 20_000
 
 const EMPTY_EVALUATION: AnswerEvaluation = {
   topicId: null,

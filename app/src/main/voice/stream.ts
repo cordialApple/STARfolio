@@ -2,9 +2,13 @@ import type { IpcMain, WebContents } from 'electron'
 import { RollingTranscript, VoiceStreamSession, defaultFrameSourceConfig } from './streaming'
 import { transcribeSamples } from './index'
 import { steerFromTranscript } from '../ai/session'
-import { SteeringLoop, clearSteeringLoop, registerSteeringLoop } from '../ai/steering'
-
-const STEERING_INTERVAL_MS = 15_000
+import {
+  STEERING_CADENCE_MS,
+  STEERING_WINDOW_MS,
+  SteeringLoop,
+  clearSteeringLoop,
+  registerSteeringLoop
+} from '../ai/steering'
 
 interface SteeringDriver {
   loop: SteeringLoop
@@ -26,13 +30,13 @@ export function rollingTranscriptFor(senderId: number): RollingTranscript | unde
 
 function startSteering(sessionId: string, transcript: RollingTranscript): SteeringDriver {
   const loop = new SteeringLoop({
-    view: () => ({ text: transcript.recent(STEERING_INTERVAL_MS, Date.now()).text }),
+    view: () => ({ text: transcript.recent(STEERING_WINDOW_MS, Date.now()).text }),
     evaluate: (text) => steerFromTranscript(sessionId, text)
   })
   registerSteeringLoop(sessionId, loop)
   // Steering is best-effort: a failed background eval must never break the mic path,
   // and the turn still falls back to inline evaluation.
-  const timer = setInterval(() => void loop.run(Date.now()).catch(() => {}), STEERING_INTERVAL_MS)
+  const timer = setInterval(() => void loop.run(Date.now()).catch(() => {}), STEERING_CADENCE_MS)
   return { loop, timer, sessionId }
 }
 
