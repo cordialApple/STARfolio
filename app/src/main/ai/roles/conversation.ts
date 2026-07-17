@@ -3,7 +3,13 @@ import { MODELS } from '../models'
 import { getParseClient, parseStructured, type ParseClient } from './parse'
 import type { InterviewAction } from '../roadmap'
 import type { AiTransport } from '../transport'
-import { UtteranceStream, type UtterancePartial } from '../utterance'
+import {
+  UtteranceStream,
+  intervalStallTimer,
+  STALL_TIMEOUT_MS,
+  type StallTimer,
+  type UtterancePartial
+} from '../utterance'
 import { logUsage } from '../usage'
 
 export interface ConversationInput {
@@ -62,6 +68,7 @@ export interface ComposeStreamDeps {
   signal?: AbortSignal
   onPartial?: (partial: UtterancePartial) => void
   now?: () => number
+  stallTimer?: StallTimer
 }
 
 export async function composeUtteranceStream(
@@ -73,32 +80,50 @@ export async function composeUtteranceStream(
     deps.onPartial?.({ text: line, done: true })
     return line
   }
-  const stream = new UtteranceStream({ now: deps.now })
-  const signal = deps.signal ?? new AbortController().signal
+  const clock = deps.now ?? Date.now
+  const stream = new UtteranceStream({ now: clock })
+  const controller = new AbortController()
+  if (deps.signal) {
+    if (deps.signal.aborted) controller.abort()
+    else deps.signal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
+  const timer = deps.stallTimer ?? intervalStallTimer()
+  let stalled = false
   let failure: string | undefined
-  await deps.transport.stream(
-    {
-      model: MODELS.conversation,
-      prompt: userText(input),
-      system: CONVERSATION_SYSTEM,
-      maxTokens: 512
-    },
-    signal,
-    {
-      onToken: (t) => {
-        const partial = stream.push(t)
-        deps.onPartial?.(partial)
-      },
-      onDone: (usage) => {
-        logUsage(MODELS.conversation, usage, 'conversation')
-        deps.onPartial?.(stream.finish())
-      },
-      onError: (msg) => {
-        failure = msg
-      }
+  timer.start(() => {
+    if (!controller.signal.aborted && stream.idleMs(clock()) >= STALL_TIMEOUT_MS) {
+      stalled = true
+      controller.abort()
     }
-  )
-  if (signal.aborted) throw new Error('composeUtteranceStream aborted')
+  })
+  try {
+    await deps.transport.stream(
+      {
+        model: MODELS.conversation,
+        prompt: userText(input),
+        system: CONVERSATION_SYSTEM,
+        maxTokens: 512
+      },
+      controller.signal,
+      {
+        onToken: (t) => {
+          const partial = stream.push(t)
+          deps.onPartial?.(partial)
+        },
+        onDone: (usage) => {
+          logUsage(MODELS.conversation, usage, 'conversation')
+          deps.onPartial?.(stream.finish())
+        },
+        onError: (msg) => {
+          failure = msg
+        }
+      }
+    )
+  } finally {
+    timer.stop()
+  }
+  if (stalled) throw new Error('The interviewer stalled while composing a reply')
+  if (controller.signal.aborted) throw new Error('composeUtteranceStream aborted')
   if (failure) throw new Error(failure)
   const text = stream.text()
   if (!text) throw new Error('The model produced an empty utterance')
