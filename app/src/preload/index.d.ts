@@ -454,6 +454,7 @@ export interface InterviewStartInput {
   resumeText: string
   candidateName?: string
   level?: ExperienceLevel
+  requestId?: string
 }
 export interface InterviewTranscriptTurn {
   speaker: 'interviewer' | 'candidate'
@@ -480,7 +481,12 @@ export interface InterviewSessionDetail {
 }
 export interface InterviewApi {
   start: (input: InterviewStartInput) => Promise<InterviewStep>
-  answer: (sessionId: string, answer: string, elapsedMs?: number) => Promise<InterviewStep>
+  answer: (
+    sessionId: string,
+    answer: string,
+    elapsedMs?: number,
+    requestId?: string
+  ) => Promise<InterviewStep>
   report: (sessionId: string) => Promise<InterviewReport | null>
   list: () => Promise<InterviewSessionSummary[]>
   get: (sessionId: string) => Promise<InterviewSessionDetail | null>

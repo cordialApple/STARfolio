@@ -138,8 +138,8 @@ const api: IpcApi = {
   },
   interview: {
     start: (input) => ipcRenderer.invoke('interview:start', input),
-    answer: (sessionId, answer, elapsedMs) =>
-      ipcRenderer.invoke('interview:answer', { sessionId, answer, elapsedMs }),
+    answer: (sessionId, answer, elapsedMs, requestId) =>
+      ipcRenderer.invoke('interview:answer', { sessionId, answer, elapsedMs, requestId }),
     report: (sessionId) => ipcRenderer.invoke('interview:report', { sessionId }),
     list: () => ipcRenderer.invoke('interview:list'),
     get: (sessionId) => ipcRenderer.invoke('interview:get', { sessionId }),

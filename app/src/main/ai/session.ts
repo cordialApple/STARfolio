@@ -10,7 +10,7 @@ import {
 } from './roadmap'
 import {
   buildRoadmap,
-  composeUtterance,
+  composeUtteranceStream,
   evaluateAnswer,
   summarizeInterview,
   type ArchitectExperience,
@@ -20,6 +20,9 @@ import {
   type TranscriptTurn
 } from './roles'
 import type { ParseClient } from './roles/parse'
+import { resolveTransport } from './resolve-transport'
+import type { AiTransport } from './transport'
+import type { UtterancePartial } from './utterance'
 import { STEERING_MAX_AGE_MS, steeringSignalFor } from './steering'
 import {
   commitAnswer,
@@ -47,6 +50,22 @@ export interface AnswerInterviewInput {
   sessionId: string
   answer: string
   elapsedMs?: number
+}
+
+export interface UtteranceStreamSink {
+  transport?: AiTransport
+  signal?: AbortSignal
+  onPartial?: (partial: UtterancePartial) => void
+}
+
+function composeStream(
+  input: ConversationInput,
+  sink?: UtteranceStreamSink
+): Promise<string> {
+  return composeUtteranceStream(input, {
+    ...sink,
+    transport: sink?.transport ?? resolveTransport()
+  })
 }
 
 export interface InterviewStep {
@@ -149,7 +168,8 @@ function toStep(
 
 export async function startInterview(
   input: StartInterviewInput,
-  client?: ParseClient
+  client?: ParseClient,
+  sink?: UtteranceStreamSink
 ): Promise<InterviewStep> {
   const roadmap = await buildRoadmap(
     { resumeText: input.resumeText, experiences: input.experiences },
@@ -164,9 +184,9 @@ export async function startInterview(
     { type: 'start' }
   )
   const action = selectAction(state)
-  const utterance = await composeUtterance(
+  const utterance = await composeStream(
     toConversationInput(state, action, input.candidateName),
-    client
+    sink
   )
   const id = createSession({
     candidateName: input.candidateName ?? null,
@@ -181,7 +201,8 @@ export async function startInterview(
 
 export async function answerInterview(
   input: AnswerInterviewInput,
-  client?: ParseClient
+  client?: ParseClient,
+  sink?: UtteranceStreamSink
 ): Promise<InterviewStep> {
   const session = requireSession(input.sessionId)
   if (session.state.phase === 'done') throw new Error('this interview has ended')
@@ -200,9 +221,9 @@ export async function answerInterview(
   // next turn advances to done instead of asking to close twice.
   if (action.kind === 'closing') state = { ...state, closingAsked: true }
 
-  const utterance = await composeUtterance(
+  const utterance = await composeStream(
     toConversationInput(state, action, session.candidateName ?? undefined),
-    client
+    sink
   )
 
   let report: InterviewReport | null = session.report
