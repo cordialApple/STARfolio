@@ -2,6 +2,9 @@ import { z } from 'zod'
 import { MODELS } from '../models'
 import { getParseClient, parseStructured, type ParseClient } from './parse'
 import type { InterviewAction } from '../roadmap'
+import type { AiTransport } from '../transport'
+import { UtteranceStream, type UtterancePartial } from '../utterance'
+import { logUsage } from '../usage'
 
 export interface ConversationInput {
   action: InterviewAction
@@ -52,6 +55,54 @@ export async function composeUtterance(input: ConversationInput, client?: ParseC
     maxTokens: 512
   })
   return out.text.trim()
+}
+
+export interface ComposeStreamDeps {
+  transport: AiTransport
+  signal?: AbortSignal
+  onPartial?: (partial: UtterancePartial) => void
+  now?: () => number
+}
+
+export async function composeUtteranceStream(
+  input: ConversationInput,
+  deps: ComposeStreamDeps
+): Promise<string> {
+  if (process.env.STARFOLIO_AI_STUB === '1') {
+    const line = stubUtterance(input)
+    deps.onPartial?.({ text: line, done: true })
+    return line
+  }
+  const stream = new UtteranceStream({ now: deps.now })
+  const signal = deps.signal ?? new AbortController().signal
+  let failure: string | undefined
+  await deps.transport.stream(
+    {
+      model: MODELS.conversation,
+      prompt: userText(input),
+      system: CONVERSATION_SYSTEM,
+      maxTokens: 512
+    },
+    signal,
+    {
+      onToken: (t) => {
+        const partial = stream.push(t)
+        deps.onPartial?.(partial)
+      },
+      onDone: (usage) => {
+        logUsage(MODELS.conversation, usage, 'conversation')
+        deps.onPartial?.(stream.finish())
+      },
+      onError: (msg) => {
+        failure = msg
+      }
+    }
+  )
+  if (signal.aborted) throw new Error('composeUtteranceStream aborted')
+  if (failure) throw new Error(failure)
+  const text = stream.text()
+  if (!text) throw new Error('The model produced an empty utterance')
+  return text
 }
 
 // Deterministic engine for CI/e2e — one templated line per action kind.
