@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { stubTransport, type AiTransport, type StreamUsage } from '../transport'
 import { composeUtteranceStream, type ConversationInput } from './conversation'
-import type { UtterancePartial } from '../utterance'
+import { STALL_TIMEOUT_MS, type StallTimer, type UtterancePartial } from '../utterance'
 
 const USAGE: StreamUsage = { in: 1, out: 1, cacheRead: 0 }
 const askIntro: ConversationInput = { action: { kind: 'ask_intro' } }
@@ -23,6 +23,15 @@ function failingTransport(message: string): AiTransport {
     async stream(_req, _signal, cb): Promise<void> {
       cb.onError(message)
     }
+  }
+}
+
+function manualTimer(): StallTimer & { fire: () => void } {
+  let onCheck: (() => void) | undefined
+  return {
+    start: (cb) => (onCheck = cb),
+    stop: () => (onCheck = undefined),
+    fire: () => onCheck?.()
   }
 }
 
@@ -88,6 +97,70 @@ describe('composeUtteranceStream', () => {
         signal: ac.signal
       })
     ).rejects.toThrow('aborted')
+  })
+
+  it('aborts and rejects with a stall error when the stream idles past the threshold', async () => {
+    const clock = { t: 0 }
+    const timer = manualTimer()
+    const partials: UtterancePartial[] = []
+    const stallingTransport: AiTransport = {
+      async stream(_req, signal, cb): Promise<void> {
+        cb.onToken('Half a question')
+        clock.t += STALL_TIMEOUT_MS + 1
+        timer.fire()
+        if (signal.aborted) return
+        cb.onDone(USAGE)
+      }
+    }
+    await expect(
+      composeUtteranceStream(askIntro, {
+        transport: stallingTransport,
+        stallTimer: timer,
+        now: () => clock.t,
+        onPartial: (p) => partials.push(p)
+      })
+    ).rejects.toThrow('stalled')
+    expect(partials.at(-1)?.done).toBe(false)
+  })
+
+  it('does not stall a live stream whose idle stays under the threshold', async () => {
+    const clock = { t: 0 }
+    const timer = manualTimer()
+    const liveTransport: AiTransport = {
+      async stream(_req, _signal, cb): Promise<void> {
+        cb.onToken('Tell ')
+        clock.t += 100
+        timer.fire()
+        cb.onToken('me more.')
+        cb.onDone(USAGE)
+      }
+    }
+    const out = await composeUtteranceStream(askIntro, {
+      transport: liveTransport,
+      stallTimer: timer,
+      now: () => clock.t
+    })
+    expect(out).toBe('Tell me more.')
+  })
+
+  it('surfaces a caller abort as an abort error, distinct from a stall', async () => {
+    const ac = new AbortController()
+    const timer = manualTimer()
+    const cancelTransport: AiTransport = {
+      async stream(_req, signal, cb): Promise<void> {
+        cb.onToken('Half')
+        ac.abort()
+        if (signal.aborted) return
+        cb.onDone(USAGE)
+      }
+    }
+    await expect(
+      composeUtteranceStream(askIntro, {
+        transport: cancelTransport,
+        stallTimer: timer,
+        signal: ac.signal
+      })
+    ).rejects.toThrow('composeUtteranceStream aborted')
   })
 
   it('honors the STARFOLIO_AI_STUB path without touching the transport', async () => {
