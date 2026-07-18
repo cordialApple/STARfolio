@@ -1,3 +1,4 @@
+import { slugify } from '../lib/format'
 import type { Citation, TechnicalFeedback, TechnicalRubricDimension } from '../lib/bank-types'
 
 export type TechnicalEntry =
@@ -12,11 +13,7 @@ export const DIMS: { key: TechnicalRubricDimension; label: string }[] = [
 ]
 
 export function technicalFilename(topic: string): string {
-  const slug = topic
-    .toLowerCase()
-    .replace(/[^\w]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return `technical-${slug || 'session'}`
+  return `technical-${slugify(topic) || 'session'}`
 }
 
 export function technicalToMarkdown(

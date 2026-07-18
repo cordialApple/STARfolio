@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { micErrorMessage } from './mic-error'
+import { BLOCKED_MIC_MESSAGE, micErrorMessage } from './mic-error'
 
-const BLOCKED =
-  'Microphone access was blocked. Enable it in Windows Settings › Privacy › Microphone, then retry.'
+describe('BLOCKED_MIC_MESSAGE', () => {
+  it('pins the exact privacy copy shared across mic entry points', () => {
+    expect(BLOCKED_MIC_MESSAGE).toBe(
+      'Microphone access was blocked. Enable it in Windows Settings › Privacy › Microphone, then retry.'
+    )
+  })
+})
 
 function named(name: string, message = ''): Error {
   const e = new Error(message)
@@ -12,7 +17,7 @@ function named(name: string, message = ''): Error {
 
 describe('micErrorMessage', () => {
   it('maps a NotAllowedError to the privacy guidance, ignoring its message', () => {
-    expect(micErrorMessage(named('NotAllowedError', 'Permission denied'))).toBe(BLOCKED)
+    expect(micErrorMessage(named('NotAllowedError', 'Permission denied'))).toBe(BLOCKED_MIC_MESSAGE)
   })
 
   it('wraps any other Error message in the generic prefix', () => {
@@ -32,6 +37,6 @@ describe('micErrorMessage', () => {
   })
 
   it('treats a bare NotAllowedError name on a plain Error as blocked', () => {
-    expect(micErrorMessage(named('NotAllowedError'))).toBe(BLOCKED)
+    expect(micErrorMessage(named('NotAllowedError'))).toBe(BLOCKED_MIC_MESSAGE)
   })
 })
