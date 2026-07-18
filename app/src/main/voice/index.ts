@@ -2,6 +2,7 @@ import { utilityProcess, type UtilityProcess } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { ensureWhisperModel } from './model'
+import { isWhisperStub } from './whisper-stub'
 
 interface TranscribeResponse {
   id: string
@@ -59,12 +60,12 @@ function dispatch(
 }
 
 export async function transcribe(pcm: number[], model?: string): Promise<string> {
-  if (process.env.STARFOLIO_WHISPER_STUB === '1') return stubTranscript(pcm.length)
+  if (isWhisperStub()) return stubTranscript(pcm.length)
   return dispatch(await resolveModelPath(model), { type: 'transcribe', pcm })
 }
 
 export async function transcribeSamples(samples: Float32Array, model?: string): Promise<string> {
-  if (process.env.STARFOLIO_WHISPER_STUB === '1') return stubTranscript(samples.length)
+  if (isWhisperStub()) return stubTranscript(samples.length)
   return dispatch(await resolveModelPath(model), { type: 'transcribeSamples', samples })
 }
 
