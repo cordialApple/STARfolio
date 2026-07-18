@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import { getInterviewClient, parseWith, type InterviewClient } from './interview'
+import { INTERVIEW_PARSE_MESSAGES } from './interview'
+import { MODELS } from './models'
+import { getParseClient, parseStructured, type ParseClient } from './roles/parse'
 import type { CorpusHit } from '../search'
 
 export const TECH_RUBRIC_DIMENSIONS = ['correctness', 'depth', 'tradeoffs', 'communication'] as const
@@ -82,7 +84,7 @@ export interface FirstTechnicalQuestion {
 export async function firstTechnicalQuestion(
   config: TechnicalConfig,
   chunks: CorpusHit[],
-  client?: InterviewClient
+  client?: ParseClient
 ): Promise<FirstTechnicalQuestion> {
   if (process.env.STARFOLIO_AI_STUB === '1') return stubFirstTechnical(config, chunks)
   const userText = [
@@ -91,7 +93,16 @@ export async function firstTechnicalQuestion(
     '',
     'Open the interview with your first technical question, grounded in the corpus. Cite the chunk_ids you drew on.'
   ].join('\n')
-  const out = await parseWith(client ?? getInterviewClient(), TECH_SYSTEM, userText, firstTechnicalSchema, 'technical')
+  const out = await parseStructured({
+    client: client ?? getParseClient(),
+    model: MODELS.interview,
+    system: TECH_SYSTEM,
+    userText,
+    schema: firstTechnicalSchema,
+    feature: 'technical',
+    maxTokens: 2048,
+    messages: INTERVIEW_PARSE_MESSAGES
+  })
   return { question: out.question, cited_chunk_ids: ensureCited(out.cited_chunk_ids, chunks, false) }
 }
 
@@ -105,7 +116,7 @@ export interface EvaluateTechnicalParams {
 
 export async function evaluateTechnicalAnswer(
   params: EvaluateTechnicalParams,
-  client?: InterviewClient
+  client?: ParseClient
 ): Promise<TechnicalTurn> {
   const answer = params.answer.trim()
   if (!answer) throw new Error('Nothing to evaluate — type an answer first')
@@ -127,7 +138,16 @@ export async function evaluateTechnicalAnswer(
     .join('\n')
     .trim()
 
-  const turn = await parseWith(client ?? getInterviewClient(), TECH_SYSTEM, userText, technicalTurn, 'technical')
+  const turn = await parseStructured({
+    client: client ?? getParseClient(),
+    model: MODELS.interview,
+    system: TECH_SYSTEM,
+    userText,
+    schema: technicalTurn,
+    feature: 'technical',
+    maxTokens: 2048,
+    messages: INTERVIEW_PARSE_MESSAGES
+  })
   return { ...turn, cited_chunk_ids: ensureCited(turn.cited_chunk_ids, params.chunks, turn.next_kind === 'done') }
 }
 

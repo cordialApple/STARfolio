@@ -1,10 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
-import { getSecret } from '../settings/secrets'
 import { MODELS } from './models'
-import { logUsage } from './usage'
-import { resolveAiFetch } from './fixtures'
+import { getParseClient, parseStructured, type ParseClient } from './roles/parse'
+
+export const INTERVIEW_PARSE_MESSAGES = {
+  declined: 'The interviewer declined to respond',
+  failed: 'Interview call failed'
+}
 
 export const RUBRIC_DIMENSIONS = [
   'star_completeness',
@@ -70,21 +71,6 @@ How you work:
 - unbanked: true if the answer tells a real story that does NOT match any provided banked experience (worth capturing later).
 - Never invent facts about the person. Coach on what they actually said.`
 
-export interface InterviewClient {
-  messages: { parse(params: unknown): Promise<InterviewParseResult> }
-}
-interface InterviewParseResult {
-  stop_reason: string | null
-  parsed_output?: unknown
-  usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null }
-}
-
-export function getInterviewClient(): InterviewClient {
-  const apiKey = getSecret('anthropic_api_key')
-  if (!apiKey) throw new Error('No Anthropic API key configured')
-  return new Anthropic({ apiKey, fetch: resolveAiFetch() }) as unknown as InterviewClient
-}
-
 function configLine(config: PracticeConfig): string {
   const marker = config.kind === 'jd' ? 'JOB_DESCRIPTION' : 'THEME'
   const label = config.kind === 'jd' ? "The role's job description" : 'Interview theme'
@@ -108,36 +94,10 @@ function bankLine(candidates: CandidateExperience[]): string {
   return ['Banked experiences (id — title):', ...candidates.map((c) => `- ${c.id} — ${c.title || 'Untitled'}`)].join('\n')
 }
 
-export async function parseWith<S extends z.ZodTypeAny>(
-  client: InterviewClient,
-  system: string,
-  userText: string,
-  schema: S,
-  feature: string
-): Promise<z.infer<S>> {
-  const msg = await client.messages.parse({
-    model: MODELS.interview,
-    // Roomy ceiling: the feedback JSON (4 scored notes + summary + a follow-up question) truncated
-    // mid-string at 1024, which broke structured-output parsing on rich answers.
-    max_tokens: 2048,
-    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: userText }],
-    output_config: { format: zodOutputFormat(schema) }
-  })
-  if (msg.stop_reason === 'refusal') throw new Error('The interviewer declined to respond')
-  if (msg.parsed_output == null) throw new Error(`Interview call failed (stop_reason: ${msg.stop_reason})`)
-  logUsage(MODELS.interview, {
-    in: msg.usage.input_tokens,
-    out: msg.usage.output_tokens,
-    cacheRead: msg.usage.cache_read_input_tokens ?? 0
-  }, feature)
-  return schema.parse(msg.parsed_output)
-}
-
 export async function firstQuestion(
   config: PracticeConfig,
   candidates: CandidateExperience[],
-  client?: InterviewClient
+  client?: ParseClient
 ): Promise<string> {
   if (process.env.STARFOLIO_AI_STUB === '1') return stubFirstQuestion(config)
   const userText = [
@@ -146,7 +106,16 @@ export async function firstQuestion(
     '',
     'Open the interview with your first behavioral question.'
   ].join('\n')
-  const out = await parseWith(client ?? getInterviewClient(), INTERVIEW_SYSTEM, userText, firstQuestionSchema, 'practice')
+  const out = await parseStructured({
+    client: client ?? getParseClient(),
+    model: MODELS.interview,
+    system: INTERVIEW_SYSTEM,
+    userText,
+    schema: firstQuestionSchema,
+    feature: 'practice',
+    maxTokens: 2048,
+    messages: INTERVIEW_PARSE_MESSAGES
+  })
   return out.question
 }
 
@@ -163,7 +132,7 @@ export interface EvaluateParams {
 // Q&A) rides in the user turn so the cache prefix never shifts.
 export async function evaluateAnswer(
   params: EvaluateParams,
-  client?: InterviewClient
+  client?: ParseClient
 ): Promise<InterviewTurn> {
   const answer = params.answer.trim()
   if (!answer) throw new Error('Nothing to evaluate — type an answer first')
@@ -183,7 +152,17 @@ export async function evaluateAnswer(
     .join('\n')
     .trim()
 
-  const turn = await parseWith(client ?? getInterviewClient(), INTERVIEW_SYSTEM, userText, interviewTurn, 'practice')
+  const turn = await parseStructured({
+    client: client ?? getParseClient(),
+    model: MODELS.interview,
+    system: INTERVIEW_SYSTEM,
+    userText,
+    schema: interviewTurn,
+    feature: 'practice',
+    // roomy ceiling: feedback JSON (4 scored notes + summary + follow-up) truncated mid-string at 1024, breaking parse
+    maxTokens: 2048,
+    messages: INTERVIEW_PARSE_MESSAGES
+  })
   const allowed = new Set(params.candidates.map((c) => c.id))
   return { ...turn, used_experience_ids: turn.used_experience_ids.filter((id) => allowed.has(id)) }
 }
