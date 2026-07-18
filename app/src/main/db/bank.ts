@@ -1,7 +1,5 @@
-import { copyFileSync } from 'fs'
 import { z } from 'zod'
-import { getDb, getDbPath } from './client'
-import { checkpointDb } from './migrate'
+import { getDb } from './client'
 import {
   createExperienceIn,
   experienceInput,
@@ -85,10 +83,4 @@ export function importBank(raw: unknown): { imported: number; ids: string[] } {
   })()
 
   return { imported: ids.length, ids }
-}
-
-export function backupTo(destPath: string): { path: string } {
-  checkpointDb(getDb())
-  copyFileSync(getDbPath(), destPath)
-  return { path: destPath }
 }

@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import { getLoadablePath } from 'sqlite-vec'
 import { sep } from 'path'
 import { copyFileSync, existsSync } from 'fs'
+import { getDb, getDbPath } from './client'
 import sql001 from './migrations/001_initial.sql?raw'
 import sql002 from './migrations/002_vec_tables.sql?raw'
 import sql003 from './migrations/003_embed_queue.sql?raw'
@@ -32,6 +33,12 @@ export function loadVecExtension(db: Database.Database): void {
 
 export function checkpointDb(db: Database.Database): void {
   db.pragma('wal_checkpoint(TRUNCATE)')
+}
+
+export function backupTo(destPath: string): { path: string } {
+  checkpointDb(getDb())
+  copyFileSync(getDbPath(), destPath)
+  return { path: destPath }
 }
 
 function backupDb(db: Database.Database, dbPath: string): void {

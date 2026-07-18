@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { initDb } from '../../src/main/db/client'
-import { exportBank, importBank } from '../../src/main/db/backup'
+import { exportBank, importBank } from '../../src/main/db/bank'
 import { createExperience, getExperience } from '../../src/main/db/repositories/experiences'
 
 const fullExperience = {
