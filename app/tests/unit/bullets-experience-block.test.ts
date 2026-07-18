@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { extractBullets, generateBullets } from '../../src/main/ai/bullets'
-import type { InterviewClient } from '../../src/main/ai/interview'
+import type { ParseClient } from '../../src/main/ai/roles/parse'
 import { initDb } from '../../src/main/db/client'
 import { createExperience } from '../../src/main/db/repositories/experiences'
 
@@ -8,11 +8,11 @@ beforeEach(() => initDb(':memory:'))
 afterEach(() => vi.unstubAllEnvs())
 
 function capturingClient(bullets: { text: string; experience_id: string }[]): {
-  client: InterviewClient
+  client: ParseClient
   userText: () => string
 } {
   let seen = ''
-  const client: InterviewClient = {
+  const client: ParseClient = {
     messages: {
       parse: async (params: unknown) => {
         seen = (params as { messages: { content: string }[] }).messages[0].content

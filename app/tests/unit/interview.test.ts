@@ -6,6 +6,12 @@ import {
   type CandidateExperience,
   type PracticeConfig
 } from '../../src/main/ai/interview'
+import type { ParseClient } from '../../src/main/ai/roles/parse'
+
+const usage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0 }
+function clientReturning(msg: { stop_reason: string | null; parsed_output?: unknown }): ParseClient {
+  return { messages: { parse: async () => ({ ...msg, usage }) } }
+}
 
 const config: PracticeConfig = { kind: 'genre', promptText: 'Leadership' }
 const candidates: CandidateExperience[] = [
@@ -70,5 +76,54 @@ describe('interviewer engine (stub)', () => {
     })
     expect(turn.used_experience_ids).toHaveLength(0)
     expect(turn.unbanked).toBe(true)
+  })
+})
+
+describe('interviewer engine (live parse path)', () => {
+  beforeAll(() => {
+    delete process.env.STARFOLIO_AI_STUB
+  })
+
+  const params = { config, candidates, asked: ['Q1'], question: 'Q1', answer: STRONG }
+  const feedbackScore = { score: 4, note: 'ok' }
+  const turnOutput = {
+    feedback: {
+      star_completeness: feedbackScore,
+      specificity: feedbackScore,
+      measurable_result: feedbackScore,
+      length: feedbackScore,
+      summary: 'good'
+    },
+    next_kind: 'question',
+    next_text: 'next',
+    used_experience_ids: ['exp-1', 'not-a-real-id'],
+    unbanked: false
+  }
+
+  it('surfaces the interviewer copy when the model refuses', async () => {
+    const client = clientReturning({ stop_reason: 'refusal' })
+    await expect(firstQuestion(config, candidates, client)).rejects.toThrow(
+      'The interviewer declined to respond'
+    )
+    await expect(evaluateAnswer(params, client)).rejects.toThrow('The interviewer declined to respond')
+  })
+
+  it('surfaces the interviewer failure copy with the stop_reason when parsing yields nothing', async () => {
+    const client = clientReturning({ stop_reason: 'max_tokens', parsed_output: null })
+    await expect(firstQuestion(config, candidates, client)).rejects.toThrow(
+      'Interview call failed (stop_reason: max_tokens)'
+    )
+  })
+
+  it('returns the parsed question on the happy path', async () => {
+    const client = clientReturning({ stop_reason: 'end_turn', parsed_output: { question: 'Tell me about a time.' } })
+    expect(await firstQuestion(config, candidates, client)).toBe('Tell me about a time.')
+  })
+
+  it('parses a turn and filters used ids to the banked set', async () => {
+    const client = clientReturning({ stop_reason: 'end_turn', parsed_output: turnOutput })
+    const turn = await evaluateAnswer(params, client)
+    expect(turn.used_experience_ids).toEqual(['exp-1'])
+    expect(turn.feedback.summary).toBe('good')
   })
 })

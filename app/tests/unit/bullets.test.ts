@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { extractBullets, generateBullets } from '../../src/main/ai/bullets'
-import type { InterviewClient } from '../../src/main/ai/interview'
+import type { ParseClient } from '../../src/main/ai/roles/parse'
 import { initDb } from '../../src/main/db/client'
 import { createExperience, type Experience } from '../../src/main/db/repositories/experiences'
 
@@ -13,7 +13,7 @@ function make(title: string): Experience {
   return createExperience({ title })
 }
 
-function fakeClient(bullets: { text: string; experience_id: string }[]): InterviewClient {
+function fakeClient(bullets: { text: string; experience_id: string }[]): ParseClient {
   return {
     messages: {
       parse: async () => ({

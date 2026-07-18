@@ -28,6 +28,7 @@ export interface ParseArgs<S extends z.ZodTypeAny> {
   schema: S
   feature: string
   maxTokens?: number
+  messages?: { declined?: string; failed?: string }
 }
 
 export async function parseStructured<S extends z.ZodTypeAny>(args: ParseArgs<S>): Promise<z.infer<S>> {
@@ -38,8 +39,10 @@ export async function parseStructured<S extends z.ZodTypeAny>(args: ParseArgs<S>
     messages: [{ role: 'user', content: args.userText }],
     output_config: { format: zodOutputFormat(args.schema) }
   })
-  if (msg.stop_reason === 'refusal') throw new Error('The model declined to respond')
-  if (msg.parsed_output == null) throw new Error(`Structured call failed (stop_reason: ${msg.stop_reason})`)
+  if (msg.stop_reason === 'refusal')
+    throw new Error(args.messages?.declined ?? 'The model declined to respond')
+  if (msg.parsed_output == null)
+    throw new Error(`${args.messages?.failed ?? 'Structured call failed'} (stop_reason: ${msg.stop_reason})`)
   logUsage(
     args.model,
     {
