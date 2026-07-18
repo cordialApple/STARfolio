@@ -18,6 +18,6 @@ Ordering logic: walking skeleton with all risk spikes first; then a lean design 
 | 9 | [Technical-interview layer (bonus)](stages/stage-09-technical-layer.md) | practice over your own reference corpus | ☑ |
 | 10 | [Written materials (bonus)](stages/stage-10-written-materials.md) | JD-tailored resume bullets + resume export | ☑ |
 | 11 | [Maintain, polish, distribute](stages/stage-11-maintain.md) | nudges, export/backup, updater, onboarding | ◐ |
-| 12 | [SOLID refactor sweep](stages/stage-12-solid-refactor.md) | 19 behavior-preserving PRs carving pure/injectable seams for node-testability | ☐ |
+| 12 | [SOLID refactor sweep](stages/stage-12-solid-refactor.md) | 19 behavior-preserving PRs carving pure/injectable seams for node-testability | ◐ |
 
 Status legend: ☐ not started · ◐ in progress · ☑ checkpoint passed. Mark stage status here; check off individual steps inside the stage file.

@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync, createWriteStream, renameSync, rmSync } from 'fs'
+import { isWhisperStub } from './whisper-stub'
 
 export type ModelPhase = 'idle' | 'downloading' | 'ready' | 'error'
 export interface ModelStatus {
@@ -62,7 +63,7 @@ function setStatus(name: string, s: ModelStatus): void {
 }
 
 export function whisperModels(): WhisperModelInfo[] {
-  const stub = process.env.STARFOLIO_WHISPER_STUB === '1'
+  const stub = isWhisperStub()
   return WHISPER_MODELS.map((name) => {
     const downloaded = stub ? name === 'base.en' : existsSync(modelPath(name))
     const base = statusOf(name)
