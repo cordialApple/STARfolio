@@ -43,6 +43,21 @@ describe('partialToDelta', () => {
     expect(dones).toBe(1)
   })
 
+  it('ignores a transient shrink and resumes deltas from the high-water mark', () => {
+    const tokens: string[] = []
+    let dones = 0
+    const relay = partialToDelta(
+      (d) => tokens.push(d),
+      () => (dones += 1)
+    )
+    relay({ text: 'Tell me', done: false })
+    relay({ text: 'Tell', done: false })
+    relay({ text: 'Tell me more', done: true })
+    expect(tokens).toEqual(['Tell me', ' more'])
+    expect(tokens.join('')).toBe('Tell me more')
+    expect(dones).toBe(1)
+  })
+
   it('emits done with no tokens when sealed empty (refusal analog)', () => {
     const tokens: string[] = []
     let dones = 0
