@@ -4,6 +4,9 @@ import type Database from 'better-sqlite3'
 import { getDb } from '../client'
 import { sourceInput, insertSource, linkSource, type Source } from './sources'
 import { deleteExperienceEdges } from './graph'
+import { buildListQuery, toFtsMatchQuery } from './experiences-query'
+
+export { toFtsMatchQuery }
 
 export const CONTEXTS = ['work', 'project', 'class', 'other'] as const
 export const STATUSES = ['draft', 'confirmed'] as const
@@ -112,15 +115,6 @@ export interface ExperienceSummary {
 const SEP = String.fromCharCode(31)
 const splitNames = (v: string | null): string[] => (v ? v.split(SEP) : [])
 
-// FTS5 treats bare words like AND/OR/NEAR and chars like "*():- as operators; unquoted
-// user input throws "fts5: syntax error". Reduce to alnum tokens, quote each (neutralising
-// keywords), and make the final token a prefix so search-as-you-type matches.
-export function toFtsMatchQuery(raw: string): string | null {
-  const tokens = raw.match(/[\p{L}\p{N}]+/gu)
-  if (!tokens || tokens.length === 0) return null
-  return tokens.map((t, i) => (i === tokens.length - 1 ? `"${t}"*` : `"${t}"`)).join(' ')
-}
-
 function upsertSkill(db: Database.Database, s: z.infer<typeof skillInput>): string {
   const existing = db.prepare('SELECT id FROM skills WHERE name = ?').get(s.name) as
     | { id: string }
@@ -163,32 +157,35 @@ function writeChildren(db: Database.Database, id: string, input: ExperienceInput
     insMetric.run(randomUUID(), id, m.label, m.value ?? null, m.unit ?? null)
 }
 
+export function createExperienceIn(db: Database.Database, input: ExperienceInput): string {
+  const id = randomUUID()
+  db.prepare(
+    `INSERT INTO experiences
+     (id, title, situation, task, action, result_text, context, happened_start, happened_end, status, draft_state_json)
+     VALUES (@id, @title, @situation, @task, @action, @result_text, @context, @happened_start, @happened_end, @status, @draft_state_json)`
+  ).run({
+    id,
+    title: input.title,
+    situation: input.situation,
+    task: input.task,
+    action: input.action,
+    result_text: input.result_text,
+    context: input.context,
+    happened_start: input.happened_start ?? null,
+    happened_end: input.happened_end ?? null,
+    status: input.status,
+    draft_state_json: input.draft_state_json ?? null
+  })
+  writeChildren(db, id, input)
+  if (input.source_id) linkSource(db, id, input.source_id)
+  else if (input.source) linkSource(db, id, insertSource(db, input.source))
+  return id
+}
+
 export function createExperience(raw: unknown): Experience {
   const input = experienceInput.parse(raw)
   const db = getDb()
-  const id = randomUUID()
-  db.transaction(() => {
-    db.prepare(
-      `INSERT INTO experiences
-       (id, title, situation, task, action, result_text, context, happened_start, happened_end, status, draft_state_json)
-       VALUES (@id, @title, @situation, @task, @action, @result_text, @context, @happened_start, @happened_end, @status, @draft_state_json)`
-    ).run({
-      id,
-      title: input.title,
-      situation: input.situation,
-      task: input.task,
-      action: input.action,
-      result_text: input.result_text,
-      context: input.context,
-      happened_start: input.happened_start ?? null,
-      happened_end: input.happened_end ?? null,
-      status: input.status,
-      draft_state_json: input.draft_state_json ?? null
-    })
-    writeChildren(db, id, input)
-    if (input.source_id) linkSource(db, id, input.source_id)
-    else if (input.source) linkSource(db, id, insertSource(db, input.source))
-  })()
+  const id = db.transaction(() => createExperienceIn(db, input))()
   return getExperience(id)!
 }
 
@@ -281,59 +278,7 @@ const firstNonEmpty = (r: {
 export function listExperiences(raw: unknown): ExperienceSummary[] {
   const filter = listFilter.parse(raw)
   const db = getDb()
-  const match = filter.query ? toFtsMatchQuery(filter.query) : null
-
-  const where: string[] = []
-  const params: Record<string, string> = {}
-  const joinFts = match !== null
-
-  if (match) {
-    where.push('experiences_fts MATCH @match')
-    params.match = match
-  }
-  if (filter.context) {
-    where.push('e.context = @context')
-    params.context = filter.context
-  }
-  if (filter.status) {
-    where.push('e.status = @status')
-    params.status = filter.status
-  }
-  if (filter.skill) {
-    where.push(
-      `EXISTS (SELECT 1 FROM experience_skills es JOIN skills s ON s.id = es.skill_id
-               WHERE es.experience_id = e.id AND s.name = @skill)`
-    )
-    params.skill = filter.skill
-  }
-  if (filter.tag) {
-    where.push(
-      `EXISTS (SELECT 1 FROM experience_tags et JOIN tags t ON t.id = et.tag_id
-               WHERE et.experience_id = e.id AND t.name = @tag)`
-    )
-    params.tag = filter.tag
-  }
-  if (filter.dateStart) {
-    where.push('COALESCE(e.happened_end, e.happened_start) >= @dateStart')
-    params.dateStart = filter.dateStart
-  }
-  if (filter.dateEnd) {
-    where.push('COALESCE(e.happened_start, e.happened_end) <= @dateEnd')
-    params.dateEnd = filter.dateEnd
-  }
-
-  const sql = `
-    SELECT e.id, e.title, e.context, e.status, e.happened_start, e.happened_end, e.updated_at,
-           e.situation, e.task, e.action, e.result_text,
-           (SELECT group_concat(s.name, char(31)) FROM experience_skills es
-              JOIN skills s ON s.id = es.skill_id WHERE es.experience_id = e.id) AS skill_names,
-           (SELECT group_concat(t.name, char(31)) FROM experience_tags et
-              JOIN tags t ON t.id = et.tag_id WHERE et.experience_id = e.id) AS tag_names
-    FROM experiences e
-    ${joinFts ? 'JOIN experiences_fts ON experiences_fts.rowid = e.rowid' : ''}
-    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY ${joinFts ? 'rank' : 'e.updated_at DESC'}
-    LIMIT 500`
+  const { sql, params } = buildListQuery(filter)
 
   const rows = db.prepare(sql).all(params) as (Omit<
     ExperienceSummary,

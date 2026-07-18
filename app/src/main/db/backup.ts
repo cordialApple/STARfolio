@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { getDb, getDbPath } from './client'
 import { checkpointDb } from './migrate'
 import {
-  createExperience,
+  createExperienceIn,
   experienceInput,
   getExperience,
   type Experience
@@ -75,18 +75,14 @@ export function importBank(raw: unknown): { imported: number; ids: string[] } {
   const db = getDb()
   const ids: string[] = []
 
-  for (const exp of data.experiences) {
-    const { sources, ...fields } = exp
-    // createExperience opens its own transaction and better-sqlite3 forbids nesting,
-    // so it must run un-wrapped; extra sources are linked in a separate transaction.
-    const created = createExperience({ ...fields, source: sources[0] })
-    if (sources.length > 1) {
-      db.transaction(() => {
-        for (const s of sources.slice(1)) linkSource(db, created.id, insertSource(db, s))
-      })()
+  db.transaction(() => {
+    for (const exp of data.experiences) {
+      const { sources, ...fields } = exp
+      const id = createExperienceIn(db, experienceInput.parse({ ...fields, source: sources[0] }))
+      for (const s of sources.slice(1)) linkSource(db, id, insertSource(db, s))
+      ids.push(id)
     }
-    ids.push(created.id)
-  }
+  })()
 
   return { imported: ids.length, ids }
 }
