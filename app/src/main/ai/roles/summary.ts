@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { MODELS } from '../models'
-import { getParseClient, parseStructured, type ParseClient } from './parse'
+import { getParseClient, parseStructured, stubEnabled, type RoleOptions } from './parse'
 import { COVERAGE_DIMENSIONS, type CandidateState, type Roadmap, type Topic } from '../roadmap'
 
 export interface TranscriptTurn {
@@ -58,10 +58,10 @@ function userText(input: SummaryInput): string {
   return lines.join('\n')
 }
 
-export async function summarizeInterview(input: SummaryInput, client?: ParseClient): Promise<InterviewReport> {
-  if (process.env.STARFOLIO_AI_STUB === '1') return stubSummary(input)
+export async function summarizeInterview(input: SummaryInput, opts: RoleOptions = {}): Promise<InterviewReport> {
+  if (stubEnabled(opts.stub)) return stubSummary(input)
   return parseStructured({
-    client: client ?? getParseClient(),
+    client: opts.client ?? getParseClient(),
     model: MODELS.summary,
     system: SUMMARY_SYSTEM,
     userText: userText(input),

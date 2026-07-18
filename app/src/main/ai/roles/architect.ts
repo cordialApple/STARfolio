@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { MODELS } from '../models'
-import { getParseClient, parseStructured, type ParseClient } from './parse'
+import { getParseClient, parseStructured, stubEnabled, type RoleOptions } from './parse'
 import { COVERAGE_DIMENSIONS, emptyCoverage, type Roadmap, type Topic } from '../roadmap'
 
 export interface ArchitectExperience {
@@ -72,10 +72,10 @@ function inputToUserText(input: ArchitectInput): string {
   return lines.join('\n')
 }
 
-export async function buildRoadmap(input: ArchitectInput, client?: ParseClient): Promise<Roadmap> {
-  if (process.env.STARFOLIO_AI_STUB === '1') return stubRoadmap(input)
+export async function buildRoadmap(input: ArchitectInput, opts: RoleOptions = {}): Promise<Roadmap> {
+  if (stubEnabled(opts.stub)) return stubRoadmap(input)
   const plan = await parseStructured({
-    client: client ?? getParseClient(),
+    client: opts.client ?? getParseClient(),
     model: MODELS.architect,
     system: ARCHITECT_SYSTEM,
     userText: inputToUserText(input),

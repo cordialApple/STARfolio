@@ -14,6 +14,15 @@ interface ParseResult {
   usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null }
 }
 
+export interface RoleOptions {
+  client?: ParseClient
+  stub?: boolean
+}
+
+export function stubEnabled(stub?: boolean): boolean {
+  return stub ?? process.env.STARFOLIO_AI_STUB === '1'
+}
+
 export function getParseClient(): ParseClient {
   const apiKey = getSecret('anthropic_api_key')
   if (!apiKey) throw new Error('No Anthropic API key configured')

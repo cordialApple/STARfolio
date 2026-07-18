@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   buildRoadmap,
   planToRoadmap,
@@ -12,9 +12,6 @@ import {
 } from '../../src/main/ai/roles/evaluator'
 import { composeUtterance } from '../../src/main/ai/roles/conversation'
 import type { InterviewAction } from '../../src/main/ai/roadmap'
-
-beforeEach(() => vi.stubEnv('STARFOLIO_AI_STUB', '1'))
-afterEach(() => vi.unstubAllEnvs())
 
 describe('architect', () => {
   it('planToRoadmap seeds coverage and carries objectives', () => {
@@ -32,13 +29,16 @@ describe('architect', () => {
   })
 
   it('stub builds one topic per experience, descending value', async () => {
-    const rm = await buildRoadmap({
-      resumeText: 'ignored',
-      experiences: [
-        { id: 'a', title: 'Search infra' },
-        { id: 'b', title: 'Billing', summary: 'led migration' }
-      ]
-    })
+    const rm = await buildRoadmap(
+      {
+        resumeText: 'ignored',
+        experiences: [
+          { id: 'a', title: 'Search infra' },
+          { id: 'b', title: 'Billing', summary: 'led migration' }
+        ]
+      },
+      { stub: true }
+    )
     expect(rm.topics.map((t) => t.id)).toEqual(['a', 'b'])
     expect(rm.topics[0].value).toBeGreaterThan(rm.topics[1].value)
     expect(rm.topics[1].unresolvedQuestions.length).toBe(1)
@@ -46,13 +46,16 @@ describe('architect', () => {
   })
 
   it('stub derives topics from resume text when no experiences', async () => {
-    const rm = await buildRoadmap({ resumeText: 'Built a search engine\nScaled the API\nOwned billing' })
+    const rm = await buildRoadmap(
+      { resumeText: 'Built a search engine\nScaled the API\nOwned billing' },
+      { stub: true }
+    )
     expect(rm.topics.length).toBeGreaterThan(0)
     expect(rm.topics[0].label).toContain('search')
   })
 
   it('stub always yields at least one topic for empty input', async () => {
-    const rm = await buildRoadmap({ resumeText: '' })
+    const rm = await buildRoadmap({ resumeText: '' }, { stub: true })
     expect(rm.topics.length).toBe(1)
   })
 })
@@ -89,7 +92,7 @@ describe('evaluator', () => {
       'I designed the system because we needed lower latency, so I architected a new pipeline. ' +
       'I chose Kafka instead of SQS after weighing the tradeoffs, and I owned the rollout end to end ' +
       'even after an outage forced a rollback that I led the fix on with the team over several days.'
-    const evaln = await evaluateAnswer({ ...base, answer })
+    const evaln = await evaluateAnswer({ ...base, answer }, { stub: true })
     expect(evaln.coverageDeltas.architecture).toBe('explored')
     expect(evaln.coverageDeltas.tradeoffs).toBe('explored')
     expect(evaln.coverageDeltas.failures).toBe('explored')
@@ -97,14 +100,14 @@ describe('evaluator', () => {
   })
 
   it('stub marks a thin answer partial and opens a follow-up thread', async () => {
-    const evaln = await evaluateAnswer({ ...base, answer: 'I built the API design.' })
+    const evaln = await evaluateAnswer({ ...base, answer: 'I built the API design.' }, { stub: true })
     expect(evaln.coverageDeltas.architecture).toBe('partial')
     expect(evaln.newThreads.length).toBe(1)
     expect(evaln.newThreads[0].id).toBe('pay-t2-0')
   })
 
   it('rejects an empty answer', async () => {
-    await expect(evaluateAnswer({ ...base, answer: '   ' })).rejects.toThrow()
+    await expect(evaluateAnswer({ ...base, answer: '   ' }, { stub: true })).rejects.toThrow()
   })
 })
 
@@ -118,18 +121,21 @@ describe('conversation', () => {
 
   for (const c of cases) {
     it(`stub renders ${c.action.kind}`, async () => {
-      const text = await composeUtterance({ action: c.action, topicLabel: 'Payments' })
+      const text = await composeUtterance({ action: c.action, topicLabel: 'Payments' }, { stub: true })
       expect(text.length).toBeGreaterThan(0)
       expect(text).toContain(c.needle)
     })
   }
 
   it('transition with callback bridges from the earlier thread', async () => {
-    const text = await composeUtterance({
-      action: { kind: 'transition', topicId: 'p', callback: true, reason: 'x' },
-      topicLabel: 'Billing',
-      callbackNote: 'the migration'
-    })
+    const text = await composeUtterance(
+      {
+        action: { kind: 'transition', topicId: 'p', callback: true, reason: 'x' },
+        topicLabel: 'Billing',
+        callbackNote: 'the migration'
+      },
+      { stub: true }
+    )
     expect(text).toContain('Earlier you mentioned')
     expect(text).toContain('the migration')
   })
