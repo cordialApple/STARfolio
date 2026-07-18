@@ -50,6 +50,13 @@ export function filledBeats(filled: {
   return beats
 }
 
+export function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^\w]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function fmtMonth(iso: string): string {

@@ -1,3 +1,4 @@
+import { slugify } from '../lib/format'
 import type { InterviewFeedback, RubricDimension } from '../lib/bank-types'
 
 export type PracticeEntry =
@@ -12,11 +13,7 @@ export const DIMS: { key: RubricDimension; label: string }[] = [
 ]
 
 export function practiceFilename(promptText: string): string {
-  const slug = promptText
-    .toLowerCase()
-    .replace(/[^\w]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return `practice-${slug || 'session'}`
+  return `practice-${slugify(promptText) || 'session'}`
 }
 
 export function practiceToMarkdown(promptText: string, entries: PracticeEntry[]): string {

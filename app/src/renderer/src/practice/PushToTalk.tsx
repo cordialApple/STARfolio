@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Mic, Loader2 } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { startRecording, type Recording } from '../audio/recorder'
+import { BLOCKED_MIC_MESSAGE } from '../voice/mic-error'
 import type { WhisperModelName } from '../lib/bank-types'
 
 type Phase = 'idle' | 'recording' | 'transcribing'
@@ -46,7 +47,7 @@ export function PushToTalk({
       const e = err as Error
       onError(
         e.name === 'NotAllowedError'
-          ? 'Microphone access was blocked. Enable it in Windows Settings › Privacy › Microphone, then retry.'
+          ? BLOCKED_MIC_MESSAGE
           : `Could not start recording: ${e.message}`
       )
       setPhase('idle')

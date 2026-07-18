@@ -1,3 +1,4 @@
+import { slugify } from '../lib/format'
 import type { InterviewReport, InterviewSessionDetail } from '../lib/bank-types'
 
 function list(items: string[]): string {
@@ -5,11 +6,7 @@ function list(items: string[]): string {
 }
 
 export function debriefFilename(detail: InterviewSessionDetail): string {
-  const slug = (detail.candidateName ?? '')
-    .toLowerCase()
-    .replace(/[^\w]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return `interview-${slug || 'anonymous'}`
+  return `interview-${slugify(detail.candidateName ?? '') || 'anonymous'}`
 }
 
 export function reportToMarkdown(report: InterviewReport): string {
