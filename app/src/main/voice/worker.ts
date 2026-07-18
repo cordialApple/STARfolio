@@ -1,21 +1,5 @@
 import { Whisper } from 'smart-whisper'
-
-interface TranscribeRequest {
-  type: 'transcribe'
-  id: string
-  pcm: number[]
-  modelPath: string
-}
-interface TranscribeSamplesRequest {
-  type: 'transcribeSamples'
-  id: string
-  samples: Float32Array
-  modelPath: string
-}
-type WorkerRequest = TranscribeRequest | TranscribeSamplesRequest
-type TranscribeResponse =
-  | { id: string; ok: true; text: string }
-  | { id: string; ok: false; error: string }
+import { runTranscribe, type TranscribeResponse, type WorkerRequest } from './transcribe-core'
 
 interface ParentPort {
   on(event: 'message', listener: (e: { data: WorkerRequest }) => void): void
@@ -34,31 +18,8 @@ function getWhisper(modelPath: string): Whisper {
   return whisper
 }
 
-function int16ToFloat32(pcm: number[]): Float32Array {
-  const out = new Float32Array(pcm.length)
-  for (let i = 0; i < pcm.length; i++) out[i] = Math.max(-1, Math.min(1, pcm[i] / 32768))
-  return out
-}
-
 parentPort.on('message', (e) => {
   const msg = e.data
   if (msg.type !== 'transcribe' && msg.type !== 'transcribeSamples') return
-  void (async () => {
-    try {
-      const whisper = getWhisper(msg.modelPath)
-      const audio = msg.type === 'transcribe' ? int16ToFloat32(msg.pcm) : msg.samples
-      const task = await whisper.transcribe(audio, {
-        language: 'en',
-        n_threads: 4
-      })
-      const segments = await task.result
-      const text = segments
-        .map((s) => s.text)
-        .join(' ')
-        .trim()
-      parentPort.postMessage({ id: msg.id, ok: true, text })
-    } catch (err) {
-      parentPort.postMessage({ id: msg.id, ok: false, error: (err as Error).message })
-    }
-  })()
+  void runTranscribe(msg, getWhisper).then((res) => parentPort.postMessage(res))
 })
