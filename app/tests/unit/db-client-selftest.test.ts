@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { dbSelfTest, getDb, getDbPath, initDb } from '../../src/main/db/client'
+import { getDb, getDbPath, initDb } from '../../src/main/db/client'
+import { dbSelfTest } from '../../src/main/db/selftest'
 
 let dir: string | null = null
 afterEach(() => {
