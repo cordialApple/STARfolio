@@ -1,7 +1,7 @@
-import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
-import { existsSync, mkdirSync, createWriteStream, renameSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, rmSync } from 'fs'
 import { isWhisperStub } from './whisper-stub'
+import { downloadToFile } from './download'
 
 export type ModelPhase = 'idle' | 'downloading' | 'ready' | 'error'
 export interface ModelStatus {
@@ -42,12 +42,25 @@ const MODELS: Record<WhisperModel, ModelDef> = {
 
 const statuses = new Map<string, ModelStatus>()
 
+let broadcast: (models: WhisperModelInfo[]) => void = () => {}
+let userDataDir: () => string = () => {
+  throw new Error('whisper model manager not configured')
+}
+
+export function configureWhisperModels(deps: {
+  broadcast: (models: WhisperModelInfo[]) => void
+  userDataDir: () => string
+}): void {
+  broadcast = deps.broadcast
+  userDataDir = deps.userDataDir
+}
+
 function statusOf(name: string): ModelStatus {
   return statuses.get(name) ?? { phase: 'idle', progress: 0, error: null }
 }
 
 function modelDir(): string {
-  const dir = join(app.getPath('userData'), 'models', 'whisper')
+  const dir = join(userDataDir(), 'models', 'whisper')
   mkdirSync(dir, { recursive: true })
   return dir
 }
@@ -57,9 +70,7 @@ function modelPath(name: string): string {
 
 function setStatus(name: string, s: ModelStatus): void {
   statuses.set(name, s)
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send('voice:modelStatus', whisperModels())
-  }
+  broadcast(whisperModels())
 }
 
 export function whisperModels(): WhisperModelInfo[] {
@@ -83,39 +94,16 @@ export function deleteWhisperModel(name: string): void {
 }
 
 async function download(name: string, dest: string): Promise<void> {
-  const tmp = `${dest}.download`
   setStatus(name, { phase: 'downloading', progress: 0, error: null })
-  const res = await fetch(MODELS[name].url)
-  if (!res.ok || !res.body) throw new Error(`whisper model download failed: ${res.status}`)
-  const total = Number(res.headers.get('content-length')) || MODELS[name].sizeMB * 1024 * 1024
-  const file = createWriteStream(tmp)
-  let loaded = 0
-  let lastPct = -1
   try {
-    const reader = res.body.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      loaded += value.length
-      if (!file.write(value)) await new Promise<void>((r) => file.once('drain', () => r()))
-      const pct = Math.min(99, Math.round((loaded / total) * 100))
-      if (pct !== lastPct) {
-        lastPct = pct
-        setStatus(name, { phase: 'downloading', progress: pct, error: null })
-      }
-    }
-    await new Promise<void>((resolve, reject) => file.end(() => resolve()).on('error', reject))
-    renameSync(tmp, dest)
+    await downloadToFile(
+      MODELS[name].url,
+      dest,
+      (pct) => setStatus(name, { phase: 'downloading', progress: pct, error: null }),
+      MODELS[name].sizeMB * 1024 * 1024
+    )
     setStatus(name, { phase: 'ready', progress: 100, error: null })
   } catch (err) {
-    // Wait for the fd to actually close before unlinking — on Windows rmSync can EBUSY against a
-    // still-closing handle.
-    await new Promise<void>((resolve) => {
-      if (file.destroyed) return resolve()
-      file.once('close', () => resolve())
-      file.destroy()
-    })
-    rmSync(tmp, { force: true })
     setStatus(name, { phase: 'error', progress: 0, error: (err as Error).message })
     throw err
   }
