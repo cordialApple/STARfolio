@@ -74,6 +74,15 @@ describe('RollingTranscript', () => {
     expect(view.livePartial).toBe('live tail')
   })
 
+  it('recent() keeps a segment landing exactly on the cutoff (inclusive window)', () => {
+    const rt = new RollingTranscript()
+    rt.push(ev('on cutoff', true), 5000)
+    rt.push(ev('one ms older', true), 4999)
+    const view = rt.recent(15000, 20000)
+    expect(view.text).toBe('on cutoff')
+    expect(view.segmentCount).toBe(1)
+  })
+
   it('recent() returns just the live partial when all finals are stale', () => {
     const rt = new RollingTranscript()
     rt.push(ev('ancient', true), 0)
