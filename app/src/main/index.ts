@@ -7,6 +7,7 @@ import { stopEmbedWorker } from './embed'
 import { backfillEmbeddings, kickEmbedDrain } from './embed/queue'
 import { backfillCorpusEmbeddings, kickCorpusEmbedDrain } from './embed/corpus-queue'
 import { stopWhisperWorker } from './voice'
+import { configureWhisperModels } from './voice/model'
 import { stopIngestWorker } from './ingest'
 import { getPrefs, type Prefs } from './settings/prefs'
 import { startReminderScheduler, stopReminderScheduler } from './nudges/reminder'
@@ -98,6 +99,14 @@ if (!app.requestSingleInstanceLock()) {
     })
 
     configureMicPermissions()
+    configureWhisperModels({
+      broadcast: (models) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('voice:modelStatus', models)
+        }
+      },
+      userDataDir: () => app.getPath('userData')
+    })
     initDb()
     initUpdater(() => mainWindow?.webContents ?? null)
     registerIpcHandlers(ipcMain, { onPrefsChange: applyPrefs })
