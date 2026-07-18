@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { startRecording, type Recording } from '../audio/recorder'
+import { micErrorMessage } from './mic-error'
 import { TurnController } from './turn-controller'
 import type { TranscriptEvent } from '../lib/bank-types'
 
@@ -67,12 +68,7 @@ export function useStreamingVoice(
       setListening(true)
     } catch (err) {
       window.api.voice.streamStop()
-      const e = err as Error
-      setError(
-        e.name === 'NotAllowedError'
-          ? 'Microphone access was blocked. Enable it in Windows Settings › Privacy › Microphone, then retry.'
-          : `Could not start listening: ${e.message}`
-      )
+      setError(micErrorMessage(err))
     } finally {
       setStarting(false)
     }
