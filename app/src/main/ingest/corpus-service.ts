@@ -1,49 +1,47 @@
 import { readFileSync, statSync } from 'fs'
 import { basename } from 'path'
 import { getDb } from '../db/client'
-import { createSource, type Source } from '../db/repositories/sources'
+import { createSource } from '../db/repositories/sources'
 import { chunkText, createCorpusDoc, insertChunks } from '../db/repositories/corpus'
 import { enqueueCorpusEmbed, kickCorpusEmbedDrain } from '../embed/corpus-queue'
 import { parseDocument, parseUrlDocument } from './index'
+import {
+  ingestCorpusFile,
+  ingestCorpusUrl as ingestCorpusUrlCore,
+  MAX_CORPUS_BYTES,
+  type CorpusDeps,
+  type CorpusIngestResult
+} from './corpus-core'
 
-const MAX_IMPORT_BYTES = 25_000_000
+export type { CorpusIngestResult }
 
-export interface CorpusIngestResult {
-  ok: boolean
-  name: string
-  error?: string
-  docId?: string
-  chunks?: number
+const deps: CorpusDeps = {
+  store: {
+    createSource,
+    chunkText,
+    persistDoc: (title, discipline, sourceId, chunks) => {
+      const db = getDb()
+      let docId = ''
+      let chunkIds: string[] = []
+      db.transaction(() => {
+        docId = createCorpusDoc(db, title, discipline, sourceId)
+        chunkIds = insertChunks(db, docId, chunks)
+      })()
+      return { docId, chunkIds }
+    },
+    enqueueEmbed: enqueueCorpusEmbed,
+    kickDrain: kickCorpusEmbedDrain
+  },
+  parsers: { parseDocument, parseUrlDocument }
 }
-
-function persist(title: string, discipline: string | null, source: Source, text: string): CorpusIngestResult {
-  const chunks = chunkText(text)
-  if (chunks.length === 0) return { ok: false, name: title, error: 'No readable text to add to the corpus.' }
-  const db = getDb()
-  let docId = ''
-  let ids: string[] = []
-  db.transaction(() => {
-    docId = createCorpusDoc(db, title, discipline, source.id)
-    ids = insertChunks(db, docId, chunks)
-  })()
-  for (const id of ids) enqueueCorpusEmbed(id)
-  kickCorpusEmbedDrain()
-  return { ok: true, name: title, docId, chunks: chunks.length }
-}
-
-const clean = (discipline: string): string | null => discipline.trim() || null
 
 async function ingestOneFile(path: string, discipline: string): Promise<CorpusIngestResult> {
   const name = basename(path)
   try {
-    if (statSync(path).size > MAX_IMPORT_BYTES)
+    if (statSync(path).size > MAX_CORPUS_BYTES)
       return { ok: false, name, error: 'That file is too large to add (25 MB max).' }
     const bytes = readFileSync(path)
-    const { text, scanned } = await parseDocument(name, bytes)
-    if (scanned) return { ok: false, name, error: 'This PDF looks scanned — there is no text layer to read.' }
-    if (!text.trim()) return { ok: false, name, error: 'No readable text found in this file.' }
-    const source = createSource({ kind: 'file', uri_or_path: path, title: name, raw_text: text })
-    return persist(name, clean(discipline), source, text)
+    return await ingestCorpusFile(deps, { path, name, bytes }, discipline)
   } catch (err) {
     return { ok: false, name, error: (err as Error).message }
   }
@@ -55,13 +53,6 @@ export async function ingestCorpusFiles(paths: string[], discipline: string): Pr
   return out
 }
 
-export async function ingestCorpusUrl(url: string, discipline: string): Promise<CorpusIngestResult> {
-  try {
-    const { text, title, finalUrl } = await parseUrlDocument(url)
-    if (!text.trim()) return { ok: false, name: url, error: 'No readable article found on that page.' }
-    const source = createSource({ kind: 'url', uri_or_path: finalUrl, title, raw_text: text })
-    return persist(title ?? url, clean(discipline), source, text)
-  } catch (err) {
-    return { ok: false, name: url, error: (err as Error).message }
-  }
+export function ingestCorpusUrl(url: string, discipline: string): Promise<CorpusIngestResult> {
+  return ingestCorpusUrlCore(deps, url, discipline)
 }

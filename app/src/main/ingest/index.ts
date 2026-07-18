@@ -1,6 +1,7 @@
 import { utilityProcess, type UtilityProcess } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import { replyPayload } from './core'
 
 export interface DocResult {
   text: string
@@ -47,8 +48,13 @@ function ensureWorker(): UtilityProcess {
   worker.on('message', (msg: Reply) => {
     const p = settle(msg.id)
     if (!p) return
-    if (msg.ok) p.resolve((msg.doc ?? msg.url ?? msg.pack)!)
-    else p.reject(new Error(msg.error))
+    if (msg.ok) {
+      try {
+        p.resolve(replyPayload(msg))
+      } catch (err) {
+        p.reject(err as Error)
+      }
+    } else p.reject(new Error(msg.error))
   })
   worker.on('exit', () => {
     child = null
