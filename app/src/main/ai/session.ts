@@ -58,6 +58,26 @@ export interface UtteranceStreamSink {
   onPartial?: (partial: UtterancePartial) => void
 }
 
+export interface SessionStore {
+  createSession: typeof createSession
+  loadSession: typeof loadSession
+  commitAnswer: typeof commitAnswer
+  transcript: typeof loadTranscript
+  getSession: typeof getSessionDetail
+  listSessions: typeof listSessionRows
+  deleteSession: typeof deleteSessionRow
+}
+
+const defaultStore: SessionStore = {
+  createSession,
+  loadSession,
+  commitAnswer,
+  transcript: loadTranscript,
+  getSession: getSessionDetail,
+  listSessions: listSessionRows,
+  deleteSession: deleteSessionRow
+}
+
 function composeStream(
   input: ConversationInput,
   sink?: UtteranceStreamSink
@@ -77,8 +97,8 @@ export interface InterviewStep {
   report: InterviewReport | null
 }
 
-function requireSession(id: string): StoredInterviewSession {
-  const session = loadSession(id)
+function requireSession(store: SessionStore, id: string): StoredInterviewSession {
+  const session = store.loadSession(id)
   if (!session) throw new Error('interview session not found')
   return session
 }
@@ -144,11 +164,12 @@ async function evaluationFor(
 export async function steerFromTranscript(
   sessionId: string,
   text: string,
-  client?: ParseClient
+  client?: ParseClient,
+  store: SessionStore = defaultStore
 ): Promise<AnswerEvaluation> {
   const answer = text.trim()
   if (!answer) return EMPTY_EVALUATION
-  const session = loadSession(sessionId)
+  const session = store.loadSession(sessionId)
   if (!session || session.state.phase === 'done') return EMPTY_EVALUATION
   return evaluationFor(session, answer, client)
 }
@@ -169,7 +190,8 @@ function toStep(
 export async function startInterview(
   input: StartInterviewInput,
   client?: ParseClient,
-  sink?: UtteranceStreamSink
+  sink?: UtteranceStreamSink,
+  store: SessionStore = defaultStore
 ): Promise<InterviewStep> {
   const roadmap = await buildRoadmap(
     { resumeText: input.resumeText, experiences: input.experiences },
@@ -188,7 +210,7 @@ export async function startInterview(
     toConversationInput(state, action, input.candidateName),
     sink
   )
-  const id = createSession({
+  const id = store.createSession({
     candidateName: input.candidateName ?? null,
     level: state.candidate.level,
     state,
@@ -202,9 +224,10 @@ export async function startInterview(
 export async function answerInterview(
   input: AnswerInterviewInput,
   client?: ParseClient,
-  sink?: UtteranceStreamSink
+  sink?: UtteranceStreamSink,
+  store: SessionStore = defaultStore
 ): Promise<InterviewStep> {
-  const session = requireSession(input.sessionId)
+  const session = requireSession(store, input.sessionId)
   if (session.state.phase === 'done') throw new Error('this interview has ended')
   const answer = input.answer.trim()
   if (!answer) throw new Error('an answer is required')
@@ -229,7 +252,7 @@ export async function answerInterview(
   let report: InterviewReport | null = session.report
   if (state.phase === 'done') {
     const transcript: TranscriptTurn[] = [
-      ...loadTranscript(session.id),
+      ...store.transcript(session.id),
       { speaker: 'candidate', text: answer },
       { speaker: 'interviewer', text: utterance }
     ]
@@ -239,7 +262,7 @@ export async function answerInterview(
     )
   }
 
-  commitAnswer({
+  store.commitAnswer({
     sessionId: session.id,
     answer,
     state,
@@ -250,18 +273,27 @@ export async function answerInterview(
   return toStep({ id: session.id, lastUtterance: utterance, lastAction: action, state, report })
 }
 
-export function getInterviewReport(sessionId: string): InterviewReport | null {
-  return requireSession(sessionId).report
+export function getInterviewReport(
+  sessionId: string,
+  store: SessionStore = defaultStore
+): InterviewReport | null {
+  return requireSession(store, sessionId).report
 }
 
-export function listInterviewSessions(): InterviewSessionSummary[] {
-  return listSessionRows()
+export function listInterviewSessions(store: SessionStore = defaultStore): InterviewSessionSummary[] {
+  return store.listSessions()
 }
 
-export function getInterviewSession(sessionId: string): InterviewSessionDetail | null {
-  return getSessionDetail(sessionId)
+export function getInterviewSession(
+  sessionId: string,
+  store: SessionStore = defaultStore
+): InterviewSessionDetail | null {
+  return store.getSession(sessionId)
 }
 
-export function deleteInterviewSession(sessionId: string): { deleted: boolean } {
-  return deleteSessionRow(sessionId)
+export function deleteInterviewSession(
+  sessionId: string,
+  store: SessionStore = defaultStore
+): { deleted: boolean } {
+  return store.deleteSession(sessionId)
 }
