@@ -14,6 +14,34 @@ export interface StreamJob {
   feature: string
 }
 
+export interface RunStreamCallbacks {
+  onToken: (token: string) => void
+  onDone: () => void
+  onError: (message: string) => void
+}
+
+export function runStream(
+  transport: AiTransport,
+  job: StreamJob,
+  signal: AbortSignal,
+  cb: RunStreamCallbacks
+): Promise<void> {
+  return transport
+    .stream(
+      { model: job.model, prompt: job.prompt, system: job.system, maxTokens: job.maxTokens },
+      signal,
+      {
+        onToken: cb.onToken,
+        onDone: (usage) => {
+          logUsage(job.model, usage, job.feature)
+          cb.onDone()
+        },
+        onError: cb.onError
+      }
+    )
+    .catch((err) => cb.onError((err as Error).message))
+}
+
 export function startStream(job: StreamJob, requestId: string, sender: WebContents): void {
   // Persistent request-id-keyed channels + caller-supplied requestId: the renderer subscribes
   // once and knows the id before invoking, so synchronously-emitted tokens are never missed.
@@ -32,27 +60,17 @@ export function startStream(job: StreamJob, requestId: string, sender: WebConten
   const ac = new AbortController()
   active.set(requestId, ac)
 
-  transport
-    .stream(
-      { model: job.model, prompt: job.prompt, system: job.system, maxTokens: job.maxTokens },
-      ac.signal,
-      {
-        onToken: (t) => send('ai:token', t),
-        onDone: (usage) => {
-          logUsage(job.model, usage, job.feature)
-          active.delete(requestId)
-          send('ai:done')
-        },
-        onError: (msg) => {
-          active.delete(requestId)
-          send('ai:error', msg)
-        }
-      }
-    )
-    .catch((err) => {
+  runStream(transport, job, ac.signal, {
+    onToken: (t) => send('ai:token', t),
+    onDone: () => {
       active.delete(requestId)
-      send('ai:error', (err as Error).message)
-    })
+      send('ai:done')
+    },
+    onError: (msg) => {
+      active.delete(requestId)
+      send('ai:error', msg)
+    }
+  })
 }
 
 export function startChat(prompt: string, requestId: string, sender: WebContents): void {
@@ -71,22 +89,13 @@ export function runToCompletion(job: StreamJob, signal: AbortSignal): Promise<st
       return
     }
     let out = ''
-    transport
-      .stream(
-        { model: job.model, prompt: job.prompt, system: job.system, maxTokens: job.maxTokens },
-        signal,
-        {
-          onToken: (t) => {
-            out += t
-          },
-          onDone: (usage) => {
-            logUsage(job.model, usage, job.feature)
-            resolve(out)
-          },
-          onError: (msg) => reject(new Error(msg))
-        }
-      )
-      .catch(reject)
+    runStream(transport, job, signal, {
+      onToken: (t) => {
+        out += t
+      },
+      onDone: () => resolve(out),
+      onError: (msg) => reject(new Error(msg))
+    })
   })
 }
 
