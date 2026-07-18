@@ -5,21 +5,14 @@ import { steerFromTranscript } from '../ai/session'
 import {
   STEERING_CADENCE_MS,
   STEERING_WINDOW_MS,
-  SteeringLoop,
-  clearSteeringLoop,
-  registerSteeringLoop
+  startSteeringLoop,
+  type SteeringHandle
 } from '../ai/steering'
-
-interface SteeringDriver {
-  loop: SteeringLoop
-  timer: ReturnType<typeof setInterval>
-  sessionId: string
-}
 
 interface StreamEntry {
   session: VoiceStreamSession
   transcript: RollingTranscript
-  steering?: SteeringDriver
+  steering?: SteeringHandle
 }
 
 const sessions = new Map<number, StreamEntry>()
@@ -28,25 +21,19 @@ export function rollingTranscriptFor(senderId: number): RollingTranscript | unde
   return sessions.get(senderId)?.transcript
 }
 
-function startSteering(sessionId: string, transcript: RollingTranscript): SteeringDriver {
-  const loop = new SteeringLoop({
+function startSteering(sessionId: string, transcript: RollingTranscript): SteeringHandle {
+  return startSteeringLoop({
+    sessionId,
     view: () => ({ text: transcript.recent(STEERING_WINDOW_MS, Date.now()).text }),
-    evaluate: (text) => steerFromTranscript(sessionId, text)
+    evaluate: (text) => steerFromTranscript(sessionId, text),
+    cadence: STEERING_CADENCE_MS
   })
-  registerSteeringLoop(sessionId, loop)
-  // Steering is best-effort: a failed background eval must never break the mic path,
-  // and the turn still falls back to inline evaluation.
-  const timer = setInterval(() => void loop.run(Date.now()).catch(() => {}), STEERING_CADENCE_MS)
-  return { loop, timer, sessionId }
 }
 
 function teardown(entry: StreamEntry | undefined): void {
   if (!entry) return
   entry.session.close()
-  if (entry.steering) {
-    clearInterval(entry.steering.timer)
-    clearSteeringLoop(entry.steering.sessionId)
-  }
+  entry.steering?.dispose()
 }
 
 function open(sender: WebContents, sessionId?: string): void {
