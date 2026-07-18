@@ -1,5 +1,6 @@
 import { getDb } from '../db/client'
 import { embed } from './index'
+import { createEmbedDrainer } from './drain'
 
 interface PassageRow {
   title: string
@@ -49,46 +50,22 @@ export function pendingEmbedCount(): number {
   return (getDb().prepare('SELECT count(*) AS n FROM embed_queue').get() as { n: number }).n
 }
 
-let draining = false
-let retryTimer: ReturnType<typeof setTimeout> | null = null
+const drainer = createEmbedDrainer<string, Float32Array>({
+  nextPending: () =>
+    (
+      getDb()
+        .prepare('SELECT experience_id FROM embed_queue ORDER BY enqueued_at LIMIT 1')
+        .get() as { experience_id: string } | undefined
+    )?.experience_id,
+  resolveText: passageFor,
+  embed,
+  store: (id, vector) =>
+    getDb()
+      .prepare('INSERT OR REPLACE INTO vec_experiences (experience_id, embedding) VALUES (?, ?)')
+      .run(id, vector),
+  drop: (id) => getDb().prepare('DELETE FROM embed_queue WHERE experience_id = ?').run(id)
+})
 
-function scheduleRetry(): void {
-  if (retryTimer) return
-  retryTimer = setTimeout(() => {
-    retryTimer = null
-    kickEmbedDrain()
-  }, 30_000)
-}
-
-// Drains the queue in the background. A missing/failed model leaves rows queued and
-// retries later, so capture never breaks when embeddings are unavailable.
 export function kickEmbedDrain(): void {
-  if (draining) return
-  draining = true
-  void (async () => {
-    try {
-      for (;;) {
-        const row = getDb()
-          .prepare('SELECT experience_id FROM embed_queue ORDER BY enqueued_at LIMIT 1')
-          .get() as { experience_id: string } | undefined
-        if (!row) break
-
-        const passage = passageFor(row.experience_id)
-        const db = getDb()
-        if (passage === null) {
-          db.prepare('DELETE FROM embed_queue WHERE experience_id = ?').run(row.experience_id)
-          continue
-        }
-        const vector = await embed(passage)
-        db.prepare(
-          'INSERT OR REPLACE INTO vec_experiences (experience_id, embedding) VALUES (?, ?)'
-        ).run(row.experience_id, vector)
-        db.prepare('DELETE FROM embed_queue WHERE experience_id = ?').run(row.experience_id)
-      }
-    } catch {
-      scheduleRetry()
-    } finally {
-      draining = false
-    }
-  })()
+  drainer.kick()
 }
