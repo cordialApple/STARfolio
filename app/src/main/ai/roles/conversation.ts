@@ -3,14 +3,7 @@ import { MODELS } from '../models'
 import { getParseClient, parseStructured, type ParseClient } from './parse'
 import type { InterviewAction } from '../roadmap'
 import type { AiTransport } from '../transport'
-import {
-  UtteranceStream,
-  intervalStallTimer,
-  STALL_TIMEOUT_MS,
-  FIRST_TOKEN_TIMEOUT_MS,
-  type StallTimer,
-  type UtterancePartial
-} from '../utterance'
+import { streamWithWatchdog, type StallTimer, type UtterancePartial } from '../utterance'
 import { logUsage } from '../usage'
 
 export interface ConversationInput {
@@ -50,16 +43,33 @@ function userText(input: ConversationInput): string {
   return lines.join('\n')
 }
 
-export async function composeUtterance(input: ConversationInput, client?: ParseClient): Promise<string> {
-  if (process.env.STARFOLIO_AI_STUB === '1') return stubUtterance(input)
-  const out = await parseStructured({
-    client: client ?? getParseClient(),
+export interface ConversationRequest {
+  model: string
+  system: string
+  prompt: string
+  maxTokens: number
+}
+
+function conversationRequest(input: ConversationInput): ConversationRequest {
+  return {
     model: MODELS.conversation,
     system: CONVERSATION_SYSTEM,
-    userText: userText(input),
+    prompt: userText(input),
+    maxTokens: 512
+  }
+}
+
+export async function composeUtterance(input: ConversationInput, client?: ParseClient): Promise<string> {
+  if (process.env.STARFOLIO_AI_STUB === '1') return stubUtterance(input)
+  const req = conversationRequest(input)
+  const out = await parseStructured({
+    client: client ?? getParseClient(),
+    model: req.model,
+    system: req.system,
+    userText: req.prompt,
     schema: conversationOut,
     feature: 'conversation',
-    maxTokens: 512
+    maxTokens: req.maxTokens
   })
   return out.text.trim()
 }
@@ -81,65 +91,15 @@ export async function composeUtteranceStream(
     deps.onPartial?.({ text: line, done: true })
     return line
   }
-  const clock = deps.now ?? Date.now
-  const stream = new UtteranceStream({ now: clock })
-  const controller = new AbortController()
-  if (deps.signal) {
-    if (deps.signal.aborted) controller.abort()
-    else deps.signal.addEventListener('abort', () => controller.abort(), { once: true })
-  }
-  const timer = deps.stallTimer ?? intervalStallTimer()
-  const openedAtMs = clock()
-  let neverStarted = false
-  let stalled = false
-  let failure: string | undefined
-  timer.start(() => {
-    if (controller.signal.aborted) return
-    if (!stream.hasStarted) {
-      if (clock() - openedAtMs >= FIRST_TOKEN_TIMEOUT_MS) {
-        neverStarted = true
-        controller.abort()
-      }
-      return
-    }
-    if (stream.idleMs(clock()) >= STALL_TIMEOUT_MS) {
-      stalled = true
-      controller.abort()
-    }
+  return streamWithWatchdog({
+    transport: deps.transport,
+    request: conversationRequest(input),
+    signal: deps.signal,
+    now: deps.now,
+    stallTimer: deps.stallTimer,
+    onToken: deps.onPartial,
+    onDone: (usage) => logUsage(MODELS.conversation, usage, 'conversation')
   })
-  try {
-    await deps.transport.stream(
-      {
-        model: MODELS.conversation,
-        prompt: userText(input),
-        system: CONVERSATION_SYSTEM,
-        maxTokens: 512
-      },
-      controller.signal,
-      {
-        onToken: (t) => {
-          const partial = stream.push(t)
-          deps.onPartial?.(partial)
-        },
-        onDone: (usage) => {
-          logUsage(MODELS.conversation, usage, 'conversation')
-          deps.onPartial?.(stream.finish())
-        },
-        onError: (msg) => {
-          failure = msg
-        }
-      }
-    )
-  } finally {
-    timer.stop()
-  }
-  if (neverStarted) throw new Error('The interviewer never started composing a reply')
-  if (stalled) throw new Error('The interviewer stalled while composing a reply')
-  if (controller.signal.aborted) throw new Error('composeUtteranceStream aborted')
-  if (failure) throw new Error(failure)
-  const text = stream.text()
-  if (!text) throw new Error('The model produced an empty utterance')
-  return text
 }
 
 // Deterministic engine for CI/e2e — one templated line per action kind.
