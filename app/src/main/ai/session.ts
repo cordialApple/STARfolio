@@ -138,7 +138,7 @@ async function evaluationFor(
 ): Promise<AnswerEvaluation> {
   const input = evaluatorInputFor(session, answer)
   if (!input) return EMPTY_EVALUATION
-  return evaluateAnswer(input, client)
+  return evaluateAnswer(input, { client })
 }
 
 export async function steerFromTranscript(
@@ -173,7 +173,7 @@ export async function startInterview(
 ): Promise<InterviewStep> {
   const roadmap = await buildRoadmap(
     { resumeText: input.resumeText, experiences: input.experiences },
-    client
+    { client }
   )
   const state = reduce(
     initState(roadmap, {
@@ -235,7 +235,7 @@ export async function answerInterview(
     ]
     report = await summarizeInterview(
       { transcript, roadmap: state.roadmap, candidate: state.candidate },
-      client
+      { client }
     )
   }
 

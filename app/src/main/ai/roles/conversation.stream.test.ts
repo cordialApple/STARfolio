@@ -287,4 +287,16 @@ describe('composeUtteranceStream', () => {
     expect(out.length).toBeGreaterThan(0)
     expect(partials).toEqual([{ text: out, done: true }])
   })
+
+  it('honors deps.stub without touching the transport or reading the env', async () => {
+    let touched = false
+    const spyTransport: AiTransport = {
+      async stream(): Promise<void> {
+        touched = true
+      }
+    }
+    const out = await composeUtteranceStream(askIntro, { transport: spyTransport, stub: true })
+    expect(touched).toBe(false)
+    expect(out.length).toBeGreaterThan(0)
+  })
 })

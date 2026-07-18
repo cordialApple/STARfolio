@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { MODELS } from '../models'
-import { getParseClient, parseStructured, type ParseClient } from './parse'
+import { getParseClient, parseStructured, stubEnabled, type RoleOptions } from './parse'
 import {
   COVERAGE_DIMENSIONS,
   COVERAGE_STATUSES,
@@ -83,12 +83,12 @@ function userText(input: EvaluatorInput): string {
   ].join('\n')
 }
 
-export async function evaluateAnswer(input: EvaluatorInput, client?: ParseClient): Promise<AnswerEvaluation> {
+export async function evaluateAnswer(input: EvaluatorInput, opts: RoleOptions = {}): Promise<AnswerEvaluation> {
   const answer = input.answer.trim()
   if (!answer) throw new Error('Nothing to evaluate — an answer is required')
-  if (process.env.STARFOLIO_AI_STUB === '1') return stubEvaluate({ ...input, answer })
+  if (stubEnabled(opts.stub)) return stubEvaluate({ ...input, answer })
   const out = await parseStructured({
-    client: client ?? getParseClient(),
+    client: opts.client ?? getParseClient(),
     model: MODELS.evaluator,
     system: EVALUATOR_SYSTEM,
     userText: userText(input),

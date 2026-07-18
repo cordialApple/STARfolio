@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { MODELS } from '../models'
-import { getParseClient, parseStructured, type ParseClient } from './parse'
+import { getParseClient, parseStructured, stubEnabled, type RoleOptions } from './parse'
 import type { InterviewAction } from '../roadmap'
 import type { AiTransport } from '../transport'
 import { streamWithWatchdog, type StallTimer, type UtterancePartial } from '../utterance'
@@ -59,11 +59,11 @@ function conversationRequest(input: ConversationInput): ConversationRequest {
   }
 }
 
-export async function composeUtterance(input: ConversationInput, client?: ParseClient): Promise<string> {
-  if (process.env.STARFOLIO_AI_STUB === '1') return stubUtterance(input)
+export async function composeUtterance(input: ConversationInput, opts: RoleOptions = {}): Promise<string> {
+  if (stubEnabled(opts.stub)) return stubUtterance(input)
   const req = conversationRequest(input)
   const out = await parseStructured({
-    client: client ?? getParseClient(),
+    client: opts.client ?? getParseClient(),
     model: req.model,
     system: req.system,
     userText: req.prompt,
@@ -80,13 +80,14 @@ export interface ComposeStreamDeps {
   onPartial?: (partial: UtterancePartial) => void
   now?: () => number
   stallTimer?: StallTimer
+  stub?: boolean
 }
 
 export async function composeUtteranceStream(
   input: ConversationInput,
   deps: ComposeStreamDeps
 ): Promise<string> {
-  if (process.env.STARFOLIO_AI_STUB === '1') {
+  if (stubEnabled(deps.stub)) {
     const line = stubUtterance(input)
     deps.onPartial?.({ text: line, done: true })
     return line
