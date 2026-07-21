@@ -33,7 +33,7 @@ function sample(over: Partial<VaultExperience> = {}): VaultExperience {
 }
 
 function fields(e: VaultExperience): Omit<VaultExperience, 'id' | 'created_at' | 'updated_at'> {
-  const { id: _id, created_at: _c, updated_at: _u, ...rest } = e
+  const { id, created_at, updated_at, ...rest } = e
   return rest
 }
 

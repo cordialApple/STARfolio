@@ -17,7 +17,9 @@ describe('getPrefs', () => {
       trayResident: false,
       onboardingDone: false,
       reminderSnoozedAt: null,
-      voiceModel: 'base.en'
+      voiceModel: 'base.en',
+      storageMode: 'sqlite',
+      vaultPath: null
     })
   })
 
