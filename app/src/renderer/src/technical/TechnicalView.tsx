@@ -25,6 +25,7 @@ import {
   technicalFilename,
   type TechnicalEntry
 } from './technical-markdown'
+import { useExport } from '../lib/useExport'
 
 type Entry = TechnicalEntry
 type Phase = 'setup' | 'live' | 'history' | 'transcript'
@@ -380,8 +381,6 @@ function TechnicalHistory({
 function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
   const [session, setSession] = useState<TechnicalSession | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<'md' | 'docx' | null>(null)
-  const toast = useToast()
 
   useEffect(() => {
     let cancelled = false
@@ -403,32 +402,11 @@ function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void })
     return technicalToMarkdown(s.config.promptText, s.config.discipline, entries)
   }
 
-  async function copy(): Promise<void> {
-    if (!session) return
-    try {
-      await window.api.clipboard.write(markdown(session))
-      toast('Session copied to clipboard.', 'success')
-    } catch (err) {
-      toast(`Could not copy: ${(err as Error).message}`, 'danger')
-    }
-  }
-
-  async function exportAs(format: 'md' | 'docx'): Promise<void> {
-    if (!session) return
-    setBusy(format)
-    try {
-      const res = await window.api.materials.export(
-        markdown(session),
-        format,
-        technicalFilename(session.config.promptText)
-      )
-      if (res.saved) toast(`Saved to ${res.path}`, 'success')
-    } catch (err) {
-      toast(`Could not export: ${(err as Error).message}`, 'danger')
-    } finally {
-      setBusy(null)
-    }
-  }
+  const { copy, exportAs, busy } = useExport(
+    () => (session ? markdown(session) : null),
+    () => technicalFilename(session!.config.promptText),
+    'Session'
+  )
 
   const hasAnswer = !!session && session.turns.some((t) => t.role === 'candidate' && t.feedback)
 

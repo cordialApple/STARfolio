@@ -49,30 +49,20 @@ import { useStreamingVoice, type UseStreamingVoice } from '../voice/useStreaming
 import { splitTranscript } from '../voice/transcript'
 import type { TurnMode } from '../voice/turn-controller'
 import { cn } from '../lib/cn'
+import { useExport } from '../lib/useExport'
 import { debriefToMarkdown, debriefFilename, reportToMarkdown } from './debrief-markdown'
+import {
+  wordCount,
+  durationSecs,
+  formatSecs,
+  formatDuration,
+  starStoryToText,
+  topThemes,
+  type ThemeCount
+} from './interview-logic'
 import { SAMPLE_RESUME } from './sample-resume'
 
 type Turn = { role: 'interviewer' | 'candidate'; text: string }
-
-function wordCount(text: string): number {
-  const trimmed = text.trim()
-  return trimmed ? trimmed.split(/\s+/).length : 0
-}
-
-function durationSecs(startedAt: string, endedAt: string): number {
-  return Math.max(
-    0,
-    Math.round((new Date(endedAt + 'Z').getTime() - new Date(startedAt + 'Z').getTime()) / 1000)
-  )
-}
-
-function formatSecs(secs: number): string {
-  return secs < 60 ? `${secs} sec` : `${Math.round(secs / 60)} min`
-}
-
-function formatDuration(startedAt: string, endedAt: string): string {
-  return formatSecs(durationSecs(startedAt, endedAt))
-}
 
 const PHASE_LABEL: Record<InterviewPhase, string> = {
   intro: 'Warm-up',
@@ -638,16 +628,6 @@ function AutoVoice({
   )
 }
 
-function starStoryToText(story: InterviewReport['starStories'][number]): string {
-  const rows: [string, string][] = [
-    ['Situation', story.situation],
-    ['Task', story.task],
-    ['Action', story.action],
-    ['Result', story.result]
-  ]
-  return [story.topic, ...rows.filter(([, v]) => v.trim()).map(([k, v]) => `${k}: ${v}`)].join('\n')
-}
-
 function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element {
   const toast = useToast()
 
@@ -766,22 +746,6 @@ function StarRow({ label, value }: { label: string; value: string }): React.JSX.
       <dd className="text-ink">{value}</dd>
     </div>
   )
-}
-
-type ThemeCount = { label: string; count: number }
-
-function topThemes(details: (InterviewSessionDetail | null)[]): ThemeCount[] {
-  const tally = new Map<string, ThemeCount>()
-  for (const d of details) {
-    for (const area of d?.report?.improvementAreas ?? []) {
-      const key = area.trim().toLowerCase()
-      if (!key) continue
-      const hit = tally.get(key)
-      if (hit) hit.count += 1
-      else tally.set(key, { label: area.trim(), count: 1 })
-    }
-  }
-  return [...tally.values()].sort((a, b) => b.count - a.count).slice(0, 6)
 }
 
 function InsightsView({ onBack }: { onBack: () => void }): React.JSX.Element {
@@ -1082,35 +1046,11 @@ function HistoryList({
 function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
   const [detail, setDetail] = useState<InterviewSessionDetail | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<'md' | 'docx' | null>(null)
-  const toast = useToast()
-
-  async function copy(): Promise<void> {
-    if (!detail) return
-    try {
-      await window.api.clipboard.write(debriefToMarkdown(detail))
-      toast('Debrief copied to clipboard.', 'success')
-    } catch (err) {
-      toast(`Could not copy: ${(err as Error).message}`, 'danger')
-    }
-  }
-
-  async function exportAs(format: 'md' | 'docx'): Promise<void> {
-    if (!detail) return
-    setBusy(format)
-    try {
-      const res = await window.api.materials.export(
-        debriefToMarkdown(detail),
-        format,
-        debriefFilename(detail)
-      )
-      if (res.saved) toast(`Saved to ${res.path}`, 'success')
-    } catch (err) {
-      toast(`Could not export: ${(err as Error).message}`, 'danger')
-    } finally {
-      setBusy(null)
-    }
-  }
+  const { copy, exportAs, busy } = useExport(
+    () => (detail ? debriefToMarkdown(detail) : null),
+    () => debriefFilename(detail!),
+    'Debrief'
+  )
 
   useEffect(() => {
     let cancelled = false
