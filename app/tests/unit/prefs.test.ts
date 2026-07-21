@@ -19,7 +19,8 @@ describe('getPrefs', () => {
       reminderSnoozedAt: null,
       voiceModel: 'base.en',
       storageMode: 'sqlite',
-      vaultPath: null
+      vaultPath: null,
+      loopbackEnabled: false
     })
   })
 
@@ -54,6 +55,11 @@ describe('setPrefs', () => {
       '2026-01-01T00:00:00Z'
     )
     expect(setPrefs({ reminderSnoozedAt: null }).reminderSnoozedAt).toBeNull()
+  })
+
+  it('round-trips the loopback gate flag', () => {
+    expect(setPrefs({ loopbackEnabled: true }).loopbackEnabled).toBe(true)
+    expect(setPrefs({ loopbackEnabled: false }).loopbackEnabled).toBe(false)
   })
 
   it('merges partial patches over prior values', () => {

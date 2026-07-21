@@ -69,34 +69,49 @@ export async function sheetToText(filename: string, bytes: Uint8Array): Promise<
   return blocks.join('\n\n')
 }
 
-export async function packFolder(root: string): Promise<PackResult> {
+type Matcher = { ignores(p: string): boolean }
+type Scope = { base: string; ig: Matcher }
+
+export async function packFolder(rootArg: string): Promise<PackResult> {
   const ignoreFactory = (await import('ignore')).default
   const { isBinaryFile } = await import('isbinaryfile')
-  const ig = ignoreFactory()
-  try {
-    ig.add(await fs.readFile(join(root, '.gitignore'), 'utf8'))
-  } catch {
-    /* no .gitignore */
+  const root = resolve(rootArg)
+
+  const posixRel = (from: string, abs: string): string => relative(from, abs).split(sep).join('/')
+  const relToRoot = (abs: string): string => posixRel(root, abs)
+
+  async function scopeFor(dir: string): Promise<Scope | null> {
+    try {
+      const ig = ignoreFactory()
+      ig.add(await fs.readFile(join(dir, '.gitignore'), 'utf8'))
+      return { base: dir, ig }
+    } catch {
+      return null
+    }
   }
 
-  const posixRel = (abs: string): string => relative(root, abs).split(sep).join('/')
   const files: string[] = []
   const tree: string[] = []
-  async function walk(dir: string, prefix: string): Promise<void> {
+  async function walk(dir: string, prefix: string, scopes: Scope[]): Promise<void> {
+    const local = await scopeFor(dir)
+    const active = local ? [...scopes, local] : scopes
     const entries = (await fs.readdir(dir, { withFileTypes: true })).sort((a, b) =>
       a.name.localeCompare(b.name)
     )
     for (const e of entries) {
       if (HARD_SKIP.has(e.name)) continue
       const abs = join(dir, e.name)
-      const rel = posixRel(abs)
-      if (ig.ignores(e.isDirectory() ? `${rel}/` : rel)) continue
+      const ignored = active.some((s) => {
+        const rel = posixRel(s.base, abs)
+        return s.ig.ignores(e.isDirectory() ? `${rel}/` : rel)
+      })
+      if (ignored) continue
       tree.push(prefix + e.name)
-      if (e.isDirectory()) await walk(abs, `${prefix}  `)
+      if (e.isDirectory()) await walk(abs, `${prefix}  `, active)
       else files.push(abs)
     }
   }
-  await walk(root, '')
+  await walk(root, '', [])
 
   const parts: string[] = []
   const languages: Record<string, number> = {}
@@ -110,7 +125,7 @@ export async function packFolder(root: string): Promise<PackResult> {
       truncated = true
       break
     }
-    const rel = posixRel(abs)
+    const rel = relToRoot(abs)
     total += stat.size
     const ext = extname(abs).toLowerCase() || '(none)'
     languages[ext] = (languages[ext] ?? 0) + 1
@@ -211,7 +226,7 @@ export function parseGitHubUrl(raw: string): RepoRef {
   return { owner, repo, ref: parts[2] === 'tree' ? parts[3] : undefined }
 }
 
-function ghHeaders(token?: string): Record<string, string> {
+export function ghHeaders(token?: string): Record<string, string> {
   const h: Record<string, string> = {
     'User-Agent': 'STARfolio-ingest',
     Accept: 'application/vnd.github+json',

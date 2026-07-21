@@ -4,7 +4,8 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { initDb } from '../../src/main/db/client'
 import { createExperience } from '../../src/main/db/repositories/experiences'
-import { startLoopbackServer, stopLoopbackServer } from '../../src/main/loopback/server'
+import { startLoopbackServer, stopLoopbackServer, loopbackEnabled } from '../../src/main/loopback/server'
+import { setPrefs } from '../../src/main/settings/prefs'
 
 let dir: string
 let handshake: { port: number; token: string }
@@ -71,5 +72,24 @@ describe('loopback server', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toMatch(/genre or jd/)
+  })
+})
+
+describe('loopbackEnabled gate', () => {
+  beforeEach(() => {
+    delete process.env.STARFOLIO_LOOPBACK
+    initDb(':memory:')
+  })
+  afterEach(() => delete process.env.STARFOLIO_LOOPBACK)
+
+  it('is off by default and follows the pref', () => {
+    expect(loopbackEnabled()).toBe(false)
+    setPrefs({ loopbackEnabled: true })
+    expect(loopbackEnabled()).toBe(true)
+  })
+
+  it('honors the env override even when the pref is off', () => {
+    process.env.STARFOLIO_LOOPBACK = '1'
+    expect(loopbackEnabled()).toBe(true)
   })
 })

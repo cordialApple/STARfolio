@@ -26,12 +26,13 @@ export interface Neighbors {
 
 function upsertEntity(db: Database.Database, e: EntityInput): string {
   const name = e.name.trim()
-  db.prepare('INSERT OR IGNORE INTO entities (id, kind, name) VALUES (?, ?, ?)').run(
-    randomUUID(),
-    e.kind,
-    name
-  )
-  return (db.prepare('SELECT id FROM entities WHERE kind = ? AND name = ?').get(e.kind, name) as { id: string }).id
+  const existing = db
+    .prepare('SELECT id FROM entities WHERE kind = ? AND name = ? COLLATE NOCASE')
+    .get(e.kind, name) as { id: string } | undefined
+  if (existing) return existing.id
+  const id = randomUUID()
+  db.prepare('INSERT INTO entities (id, kind, name) VALUES (?, ?, ?)').run(id, e.kind, name)
+  return id
 }
 
 export function linkExperienceEntities(experienceId: string, entities: EntityInput[]): void {
