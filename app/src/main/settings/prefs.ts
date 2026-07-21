@@ -49,17 +49,50 @@ const DEFAULTS: Prefs = {
   loopbackEnabled: false
 }
 
-const KEYS: Record<keyof Prefs, string> = {
-  reminderEnabled: 'pref.reminder.enabled',
-  reminderIntervalDays: 'pref.reminder.interval_days',
-  launchAtLogin: 'pref.startup.launch_at_login',
-  trayResident: 'pref.tray.resident',
-  onboardingDone: 'pref.onboarding.done',
-  reminderSnoozedAt: 'pref.reminder.snoozed_at',
-  voiceModel: 'pref.voice.model',
-  storageMode: 'pref.storage.mode',
-  vaultPath: 'pref.storage.vault_path',
-  loopbackEnabled: 'pref.loopback.enabled'
+interface Codec<T> {
+  key: string
+  decode: (raw: string) => T | undefined
+  encode: (v: T) => string
+}
+
+const boolCodec = (key: string): Codec<boolean> => ({
+  key,
+  decode: (raw) => raw === '1',
+  encode: (v) => (v ? '1' : '0')
+})
+
+const nullableStringCodec = (key: string): Codec<string | null> => ({
+  key,
+  decode: (raw) => raw || null,
+  encode: (v) => v ?? ''
+})
+
+const enumCodec = <T extends string>(key: string, values: readonly T[]): Codec<T> => ({
+  key,
+  decode: (raw) => (values.includes(raw as T) ? (raw as T) : undefined),
+  encode: (v) => v
+})
+
+const posIntCodec = (key: string): Codec<number> => ({
+  key,
+  decode: (raw) => {
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : undefined
+  },
+  encode: (v) => String(v)
+})
+
+const CODECS: { [K in keyof Prefs]: Codec<Prefs[K]> } = {
+  reminderEnabled: boolCodec('pref.reminder.enabled'),
+  reminderIntervalDays: posIntCodec('pref.reminder.interval_days'),
+  launchAtLogin: boolCodec('pref.startup.launch_at_login'),
+  trayResident: boolCodec('pref.tray.resident'),
+  onboardingDone: boolCodec('pref.onboarding.done'),
+  reminderSnoozedAt: nullableStringCodec('pref.reminder.snoozed_at'),
+  voiceModel: enumCodec('pref.voice.model', VOICE_MODELS),
+  storageMode: enumCodec('pref.storage.mode', STORAGE_MODES),
+  vaultPath: nullableStringCodec('pref.storage.vault_path'),
+  loopbackEnabled: boolCodec('pref.loopback.enabled')
 }
 
 function readRaw(key: string): string | null {
@@ -78,24 +111,12 @@ function writeRaw(key: string, value: string): void {
 export function getPrefs(): Prefs {
   const out = { ...DEFAULTS }
   let onboardingStored = false
-  for (const k of Object.keys(KEYS) as (keyof Prefs)[]) {
-    const raw = readRaw(KEYS[k])
+  for (const k of Object.keys(CODECS) as (keyof Prefs)[]) {
+    const raw = readRaw(CODECS[k].key)
     if (raw == null) continue
     if (k === 'onboardingDone') onboardingStored = true
-    if (k === 'reminderIntervalDays') {
-      const n = Number(raw)
-      if (Number.isFinite(n) && n > 0) out.reminderIntervalDays = n
-    } else if (k === 'reminderSnoozedAt') {
-      out.reminderSnoozedAt = raw || null
-    } else if (k === 'voiceModel') {
-      if ((VOICE_MODELS as readonly string[]).includes(raw)) out.voiceModel = raw as VoiceModel
-    } else if (k === 'storageMode') {
-      if ((STORAGE_MODES as readonly string[]).includes(raw)) out.storageMode = raw as StorageMode
-    } else if (k === 'vaultPath') {
-      out.vaultPath = raw || null
-    } else {
-      out[k] = (raw === '1') as never
-    }
+    const decoded = CODECS[k].decode(raw)
+    if (decoded !== undefined) out[k] = decoded as never
   }
   if (process.env.STARFOLIO_E2E === '1' && !onboardingStored) {
     out.onboardingDone = true
@@ -108,9 +129,7 @@ export function setPrefs(patch: Partial<Prefs>): Prefs {
     for (const k of Object.keys(patch) as (keyof Prefs)[]) {
       const v = patch[k]
       if (v === undefined) continue
-      const raw =
-        typeof v === 'boolean' ? (v ? '1' : '0') : v === null ? '' : String(v)
-      writeRaw(KEYS[k], raw)
+      writeRaw(CODECS[k].key, CODECS[k].encode(v as never))
     }
   })
   tx()
