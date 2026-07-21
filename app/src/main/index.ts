@@ -14,6 +14,7 @@ import { startReminderScheduler, stopReminderScheduler } from './nudges/reminder
 import { syncTray, destroyTray, applyLoginItem } from './nudges/tray'
 import { initUpdater } from './updater'
 import { startLoopbackServer, stopLoopbackServer, loopbackEnabled } from './loopback/server'
+import { syncPersonalServerConfig } from './integration/personalserver-config-writer'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -84,6 +85,7 @@ function quitApp(): void {
 function applyPrefs(prefs: Prefs): void {
   applyLoginItem(prefs.launchAtLogin)
   syncTray(prefs.trayResident, showWindow, quitApp)
+  syncPersonalServerConfig(prefs)
 }
 
 if (!app.requestSingleInstanceLock()) {

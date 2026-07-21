@@ -9,6 +9,7 @@ import { writeFileSync, readFileSync } from 'fs'
 import { getPrefs, setPrefs } from '../settings/prefs'
 import { readVault } from '../vault/sync'
 import { nodeVaultFs } from '../vault/node-fs'
+import { syncPersonalServerConfig } from '../integration/personalserver-config-writer'
 
 const updateArg = z.object({ id: nonEmpty.max(64), input: experienceInput })
 const jsonFilter = [{ name: 'JSON', extensions: ['json'] }]
@@ -51,7 +52,7 @@ export function registerBank(ipcMain: IpcMain): void {
   ipcMain.handle('vault:choose', async () => {
     const path = await openDialog({ properties: ['openDirectory', 'createDirectory'] })
     if (!path) return { canceled: true }
-    setPrefs({ vaultPath: path })
+    syncPersonalServerConfig(setPrefs({ vaultPath: path }))
     return { canceled: false, path }
   })
   ipcMain.handle('vault:sync', async () => {
