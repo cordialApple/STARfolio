@@ -61,20 +61,10 @@ import { embedSelfTest } from './embed/selftest'
 import { transcribe } from './voice'
 import { registerVoiceStream } from './voice/stream'
 import { whisperModels, ensureWhisperModel, deleteWhisperModel, WHISPER_MODELS } from './voice/model'
-import {
-  experienceInput,
-  listFilter,
-  createExperience,
-  updateExperience,
-  deleteExperience,
-  getExperience,
-  listExperiences,
-  listSkills,
-  listTags,
-  type Experience
-} from './db/repositories/experiences'
-import { reconcileVault, experienceToVault } from './vault/store'
-import { mirrorNote, removeNote, readVault } from './vault/sync'
+import { experienceInput, listFilter } from './db/repositories/experiences'
+import { getExperienceStore } from './store/experience-store'
+import { reconcileVault } from './vault/store'
+import { readVault } from './vault/sync'
 import { nodeVaultFs } from './vault/node-fs'
 
 const nonEmpty = z.string().min(1)
@@ -139,15 +129,6 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
     if (res.imported) kickEmbedDrain()
     return res
   }
-  function vaultTarget(): string | null {
-    const p = getPrefs()
-    return p.storageMode === 'obsidian' && p.vaultPath ? p.vaultPath : null
-  }
-  async function mirrorIfObsidian(exp: Experience): Promise<void> {
-    const dir = vaultTarget()
-    if (dir) await mirrorNote(nodeVaultFs, dir, experienceToVault(exp))
-  }
-
   ipcMain.handle('ping', () => 'pong')
   ipcMain.handle('prefs:get', () => getPrefs())
   handle(ipcMain, 'prefs:set', prefsPatch, async (_e, patch) => {
@@ -294,7 +275,7 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   const MAX_INTERVIEW_EXPERIENCES = 40
   // Resume the roadmap from our own confirmed bank — never trust a renderer-supplied experience list.
   const interviewBank = (): { id: string; title: string; summary: string }[] =>
-    listExperiences({ status: 'confirmed' })
+    getExperienceStore().list({ status: 'confirmed' })
       .slice(0, MAX_INTERVIEW_EXPERIENCES)
       .map((e) => ({ id: e.id, title: e.title, summary: e.snippet }))
   const interviewStartArg = z.object({
@@ -348,34 +329,26 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   ipcMain.handle('corpus:disciplines', () => corpusDisciplines())
 
   handle(ipcMain, 'bank:create', experienceInput, async (_e, input) => {
-    const exp = createExperience(input)
+    const exp = await getExperienceStore().create(input)
     enqueueEmbed(exp.id)
     kickEmbedDrain()
-    await mirrorIfObsidian(exp)
     return exp
   })
   handle(ipcMain, 'bank:update', updateArg, async (_e, { id, input }) => {
-    const exp = updateExperience(id, input)
+    const exp = await getExperienceStore().update(id, input)
     enqueueEmbed(exp.id)
     kickEmbedDrain()
-    await mirrorIfObsidian(exp)
     return exp
   })
-  handle(ipcMain, 'bank:delete', idArg, async (_e, { id }) => {
-    const dir = vaultTarget()
-    const exp = dir ? getExperience(id) : null
-    const res = deleteExperience(id)
-    if (dir && exp) await removeNote(nodeVaultFs, dir, { id: exp.id, title: exp.title })
-    return res
-  })
-  handle(ipcMain, 'bank:get', idArg, (_e, { id }) => getExperience(id))
-  handle(ipcMain, 'bank:list', listFilter, (_e, filter) => listExperiences(filter))
+  handle(ipcMain, 'bank:delete', idArg, (_e, { id }) => getExperienceStore().delete(id))
+  handle(ipcMain, 'bank:get', idArg, (_e, { id }) => getExperienceStore().get(id))
+  handle(ipcMain, 'bank:list', listFilter, (_e, filter) => getExperienceStore().list(filter))
   handle(ipcMain, 'bank:search', listFilter, (_e, filter) => searchExperiences(filter))
   handle(ipcMain, 'bank:matchStory', z.object({ text: z.string().trim().min(1).max(20_000) }), (_e, { text }) =>
     matchBankedStory(text)
   )
-  ipcMain.handle('bank:skills', () => listSkills())
-  ipcMain.handle('bank:tags', () => listTags())
+  ipcMain.handle('bank:skills', () => getExperienceStore().listSkills())
+  ipcMain.handle('bank:tags', () => getExperienceStore().listTags())
 
   const jsonFilter = [{ name: 'JSON', extensions: ['json'] }]
 
