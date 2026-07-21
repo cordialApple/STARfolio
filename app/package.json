@@ -18,7 +18,7 @@
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
     "build:unpack": "npm run rebuild:electron && npm run build && electron-builder --dir",
     "build:win": "npm run rebuild:electron && npm run build && electron-builder --win",
-    "test:unit": "vitest run",
+    "test:unit": "node scripts/test-unit.mjs",
     "test:unit:watch": "vitest",
     "test:e2e": "npm run build:unpack && playwright test",
     "test:e2e:dev": "npm run rebuild:electron && npm run build && playwright test"

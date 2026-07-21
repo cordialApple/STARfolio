@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, ExternalLink, Sparkles, ArrowRight } from 'lucide-react'
-import { Button, Card, Input, StarRail, useToast } from '../components'
+import { KeyRound, Check, ExternalLink, Sparkles, ArrowRight, Database, FolderOpen } from 'lucide-react'
+import { Button, Card, Input, StarRail, StoragePill, useToast } from '../components'
+import type { StorageMode } from '../components'
 
-type Step = 'welcome' | 'key' | 'ready'
+type Step = 'welcome' | 'key' | 'storage' | 'ready'
 
 export function Onboarding({
   onStartBrainDump,
@@ -16,6 +17,8 @@ export function Onboarding({
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
+  const [storageMode, setStorageMode] = useState<StorageMode>('sqlite')
+  const [vaultPath, setVaultPath] = useState<string | null>(null)
 
   useEffect(() => {
     void window.api.ai.hasKey().then(setHasKey)
@@ -23,11 +26,20 @@ export function Onboarding({
 
   async function finish(next: () => void): Promise<void> {
     try {
-      await window.api.prefs.set({ onboardingDone: true })
+      await window.api.prefs.set({ onboardingDone: true, storageMode })
     } catch {
       // marking onboarding complete is best-effort; never trap the user on this screen
     }
     next()
+  }
+
+  async function pickStorage(mode: StorageMode): Promise<void> {
+    if (mode === 'obsidian' && !vaultPath) {
+      const res = await window.api.vault.choose()
+      if (res.canceled) return
+      setVaultPath(res.path ?? null)
+    }
+    setStorageMode(mode)
   }
 
   async function saveKey(): Promise<void> {
@@ -39,7 +51,7 @@ export function Onboarding({
       setKey('')
       setHasKey(true)
       toast('API key saved.', 'success')
-      setStep('ready')
+      setStep('storage')
     } catch (err) {
       toast(`Could not save key: ${(err as Error).message}`, 'danger')
     } finally {
@@ -114,7 +126,7 @@ export function Onboarding({
 
               <div className="flex flex-wrap items-center gap-2">
                 {hasKey ? (
-                  <Button onClick={() => setStep('ready')}>
+                  <Button onClick={() => setStep('storage')}>
                     Continue
                     <ArrowRight className="size-4" />
                   </Button>
@@ -123,7 +135,7 @@ export function Onboarding({
                     <Button loading={busy} disabled={busy || !key.trim()} onClick={() => void saveKey()}>
                       Save key
                     </Button>
-                    <Button variant="ghost" disabled={busy} onClick={() => setStep('ready')}>
+                    <Button variant="ghost" disabled={busy} onClick={() => setStep('storage')}>
                       Skip for now
                     </Button>
                   </>
@@ -137,6 +149,48 @@ export function Onboarding({
                   Get a key
                   <ExternalLink className="size-3" />
                 </a>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {step === 'storage' && (
+          <Card
+            title={
+              <span className="flex items-center gap-2">
+                <Database className="size-4" />
+                Where your stories live
+              </span>
+            }
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-muted">
+                A local SQLite database is the default — fast and self-contained. Choose Obsidian to
+                also mirror every story as a Markdown note in a vault folder you pick. You can switch
+                later in Settings; switching either way merges by experience id — newer edits win,
+                nothing is deleted.
+              </p>
+
+              <StoragePill value={storageMode} onChange={(m) => void pickStorage(m)} />
+
+              {storageMode === 'obsidian' &&
+                (vaultPath ? (
+                  <div className="flex items-center gap-2 rounded-lg bg-raised px-3 py-2 text-sm text-muted">
+                    <FolderOpen className="size-4 shrink-0" />
+                    <span className="truncate font-mono text-xs">{vaultPath}</span>
+                  </div>
+                ) : (
+                  <Button variant="ghost" onClick={() => void pickStorage('obsidian')}>
+                    <FolderOpen className="size-4" />
+                    Choose vault folder
+                  </Button>
+                ))}
+
+              <div className="flex items-center gap-2">
+                <Button onClick={() => setStep('ready')}>
+                  Continue
+                  <ArrowRight className="size-4" />
+                </Button>
               </div>
             </div>
           </Card>

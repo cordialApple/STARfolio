@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw, Coins, Volume2, Search, Palette, Monitor, Sun, Moon } from 'lucide-react'
-import type { Prefs, UpdateStatus, UsageSummary } from '../../../preload/index.d'
-import { Badge, Button, Card, Input, Skeleton, Toggle, useToast } from '../components'
+import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw, Coins, Volume2, Search, Palette, Monitor, Sun, Moon, Database, FolderOpen } from 'lucide-react'
+import type { Prefs, UpdateStatus, UsageSummary, VaultStatus } from '../../../preload/index.d'
+import { Badge, Button, Card, Input, Skeleton, StoragePill, Toggle, useToast } from '../components'
 import { cn } from '../lib/cn'
 import { useTheme } from '../theme/ThemeProvider'
 import type { ThemeMode } from '../theme/ThemeProvider'
@@ -23,7 +23,7 @@ function formatCost(value: number): string {
   return `$${value.toFixed(2)}`
 }
 
-type SectionId = 'reminders' | 'appearance' | 'apikey' | 'github' | 'voice' | 'connections' | 'data' | 'spend' | 'updates'
+type SectionId = 'reminders' | 'appearance' | 'apikey' | 'github' | 'voice' | 'connections' | 'storage' | 'data' | 'spend' | 'updates'
 
 const SECTIONS: { group: string; items: { id: SectionId; label: string; icon: typeof Bell }[] }[] = [
   {
@@ -45,6 +45,7 @@ const SECTIONS: { group: string; items: { id: SectionId; label: string; icon: ty
     group: 'Data',
     items: [
       { id: 'connections', label: 'Connections', icon: Share2 },
+      { id: 'storage', label: 'Storage', icon: Database },
       { id: 'data', label: 'Data & backups', icon: HardDriveDownload }
     ]
   },
@@ -75,6 +76,8 @@ export function SettingsView(): React.JSX.Element {
   const [usage, setUsage] = useState<UsageSummary | null>(null)
   const [active, setActive] = useState<SectionId>('reminders')
   const [q, setQ] = useState('')
+  const [vault, setVault] = useState<VaultStatus | null>(null)
+  const [vaultBusy, setVaultBusy] = useState(false)
 
   async function savePrefs(patch: Partial<Prefs>): Promise<void> {
     setPrefsState((prev) => (prev ? { ...prev, ...patch } : prev))
@@ -143,6 +146,46 @@ export function SettingsView(): React.JSX.Element {
     setHasPat(await window.api.github.hasPat())
     setPrefsState(await window.api.prefs.get())
     setUsage(await window.api.usage.summary())
+    setVault(await window.api.vault.status())
+  }
+
+  async function setStorageMode(mode: Prefs['storageMode']): Promise<void> {
+    if (mode === 'obsidian' && !vault?.vaultPath) {
+      const res = await window.api.vault.choose()
+      if (res.canceled) return
+    }
+    setVaultBusy(true)
+    try {
+      await savePrefs({ storageMode: mode })
+      setVault(await window.api.vault.status())
+      toast(mode === 'obsidian' ? 'Switched to Obsidian vault.' : 'Switched to SQLite.', 'success')
+    } finally {
+      setVaultBusy(false)
+    }
+  }
+
+  async function chooseVault(): Promise<void> {
+    const res = await window.api.vault.choose()
+    if (res.canceled) return
+    setVault(await window.api.vault.status())
+    if (prefs?.storageMode === 'obsidian') await syncVault()
+  }
+
+  async function syncVault(): Promise<void> {
+    setVaultBusy(true)
+    try {
+      const res = await window.api.vault.sync()
+      if (res.error === 'no-vault') {
+        toast('Pick a vault folder first.', 'info')
+        return
+      }
+      toast(`Synced — ${res.imported} in, ${res.exported} out.`, 'success')
+      setVault(await window.api.vault.status())
+    } catch (err) {
+      toast(`Could not sync vault: ${(err as Error).message}`, 'danger')
+    } finally {
+      setVaultBusy(false)
+    }
   }
   useEffect(() => {
     void refresh()
@@ -469,6 +512,53 @@ export function SettingsView(): React.JSX.Element {
             <Share2 className="size-4" />
             Build connections
           </Button>
+        </div>
+      </Card>
+      )}
+
+      {active === 'storage' && (
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <Database className="size-4" />
+            Storage
+          </span>
+        }
+        action={
+          <StoragePill
+            value={prefs?.storageMode ?? 'sqlite'}
+            onChange={(m) => void setStorageMode(m)}
+            disabled={vaultBusy || prefs === null}
+          />
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            SQLite keeps everything in one on-device database. Obsidian mirrors each experience to a
+            plain-markdown vault folder you can open in Obsidian, edit by hand, and sync yourself.
+            Switching either way merges by experience id — newer edits win, nothing is deleted.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" disabled={vaultBusy} onClick={() => void chooseVault()}>
+              <FolderOpen className="size-4" />
+              {vault?.vaultPath ? 'Change vault folder' : 'Choose vault folder'}
+            </Button>
+            <Button
+              variant="secondary"
+              loading={vaultBusy}
+              disabled={vaultBusy || !vault?.vaultPath}
+              onClick={() => void syncVault()}
+            >
+              <RefreshCw className="size-4" />
+              Sync now
+            </Button>
+            {vault?.notes != null && <Badge tone="neutral">{vault.notes} notes</Badge>}
+          </div>
+          {vault?.vaultPath && (
+            <p className="truncate text-xs text-faint" title={vault.vaultPath}>
+              {vault.vaultPath}
+            </p>
+          )}
         </div>
       </Card>
       )}

@@ -70,8 +70,12 @@ import {
   getExperience,
   listExperiences,
   listSkills,
-  listTags
+  listTags,
+  type Experience
 } from './db/repositories/experiences'
+import { reconcileVault, experienceToVault } from './vault/store'
+import { mirrorNote, removeNote, readVault } from './vault/sync'
+import { nodeVaultFs } from './vault/node-fs'
 
 const nonEmpty = z.string().min(1)
 const MAX_PROMPT = 100_000
@@ -130,11 +134,26 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
     return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]
   }
 
+  async function runVaultSync(dir: string): Promise<{ imported: number; exported: number }> {
+    const res = await reconcileVault(nodeVaultFs, dir, (id) => enqueueEmbed(id))
+    if (res.imported) kickEmbedDrain()
+    return res
+  }
+  function vaultTarget(): string | null {
+    const p = getPrefs()
+    return p.storageMode === 'obsidian' && p.vaultPath ? p.vaultPath : null
+  }
+  async function mirrorIfObsidian(exp: Experience): Promise<void> {
+    const dir = vaultTarget()
+    if (dir) await mirrorNote(nodeVaultFs, dir, experienceToVault(exp))
+  }
+
   ipcMain.handle('ping', () => 'pong')
   ipcMain.handle('prefs:get', () => getPrefs())
-  handle(ipcMain, 'prefs:set', prefsPatch, (_e, patch) => {
+  handle(ipcMain, 'prefs:set', prefsPatch, async (_e, patch) => {
     const next = setPrefs(patch)
     hooks.onPrefsChange?.(next)
+    if (patch.storageMode !== undefined && next.vaultPath) await runVaultSync(next.vaultPath)
     return next
   })
   ipcMain.handle('nudge:staleness', () => staleness())
@@ -328,19 +347,27 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   handle(ipcMain, 'corpus:remove', idArg, (_e, { id }) => deleteCorpusDoc(id))
   ipcMain.handle('corpus:disciplines', () => corpusDisciplines())
 
-  handle(ipcMain, 'bank:create', experienceInput, (_e, input) => {
+  handle(ipcMain, 'bank:create', experienceInput, async (_e, input) => {
     const exp = createExperience(input)
     enqueueEmbed(exp.id)
     kickEmbedDrain()
+    await mirrorIfObsidian(exp)
     return exp
   })
-  handle(ipcMain, 'bank:update', updateArg, (_e, { id, input }) => {
+  handle(ipcMain, 'bank:update', updateArg, async (_e, { id, input }) => {
     const exp = updateExperience(id, input)
     enqueueEmbed(exp.id)
     kickEmbedDrain()
+    await mirrorIfObsidian(exp)
     return exp
   })
-  handle(ipcMain, 'bank:delete', idArg, (_e, { id }) => deleteExperience(id))
+  handle(ipcMain, 'bank:delete', idArg, async (_e, { id }) => {
+    const dir = vaultTarget()
+    const exp = dir ? getExperience(id) : null
+    const res = deleteExperience(id)
+    if (dir && exp) await removeNote(nodeVaultFs, dir, { id: exp.id, title: exp.title })
+    return res
+  })
   handle(ipcMain, 'bank:get', idArg, (_e, { id }) => getExperience(id))
   handle(ipcMain, 'bank:list', listFilter, (_e, filter) => listExperiences(filter))
   handle(ipcMain, 'bank:search', listFilter, (_e, filter) => searchExperiences(filter))
@@ -371,6 +398,30 @@ export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): voi
   ipcMain.handle('update:download', () => downloadUpdate())
   ipcMain.handle('update:install', () => quitAndInstall())
   ipcMain.handle('update:version', () => app.getVersion())
+
+  ipcMain.handle('vault:choose', async () => {
+    const path = await openDialog({ properties: ['openDirectory', 'createDirectory'] })
+    if (!path) return { canceled: true }
+    setPrefs({ vaultPath: path })
+    return { canceled: false, path }
+  })
+  ipcMain.handle('vault:sync', async () => {
+    const dir = getPrefs().vaultPath
+    if (!dir) return { imported: 0, exported: 0, error: 'no-vault' as const }
+    return runVaultSync(dir)
+  })
+  ipcMain.handle('vault:status', async () => {
+    const { storageMode, vaultPath } = getPrefs()
+    let notes: number | null = null
+    if (vaultPath) {
+      try {
+        notes = (await readVault(nodeVaultFs, vaultPath)).length
+      } catch {
+        notes = null
+      }
+    }
+    return { storageMode, vaultPath, notes }
+  })
 
   ipcMain.handle('backup:create', async () => {
     const stamp = new Date().toISOString().slice(0, 10)
