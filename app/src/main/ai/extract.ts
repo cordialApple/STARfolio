@@ -1,10 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
-import { getSecret } from '../settings/secrets'
 import { MODELS } from './models'
-import { logUsage } from './usage'
-import { resolveAiFetch } from './fixtures'
+import { parseStructured, getParseClient } from './roles/parse'
 
 export const CONFIDENCE = ['high', 'medium', 'low'] as const
 
@@ -65,51 +61,31 @@ export interface ExtractClient {
   messages: { parse(params: unknown): Promise<ExtractMessage> }
 }
 
-function getExtractClient(): ExtractClient {
-  const apiKey = getSecret('anthropic_api_key')
-  if (!apiKey) throw new Error('No Anthropic API key configured')
-  return new Anthropic({ apiKey, fetch: resolveAiFetch() }) as unknown as ExtractClient
-}
-
-async function runExtract(
-  client: ExtractClient,
-  params: { system: string; maxTokens: number; text: string; format: unknown }
-): Promise<unknown> {
-  const msg = await client.messages.parse({
+function runExtract<S extends z.ZodTypeAny>(
+  client: ExtractClient | undefined,
+  schema: S,
+  system: string,
+  text: string,
+  maxTokens: number
+): Promise<z.infer<S>> {
+  return parseStructured({
+    client: client ?? getParseClient(),
     model: MODELS.extract,
-    max_tokens: params.maxTokens,
-    system: [{ type: 'text', text: params.system, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: params.text }],
-    output_config: { format: params.format }
+    system,
+    userText: text,
+    schema,
+    feature: 'extract',
+    maxTokens,
+    messages: { failed: 'Extraction failed' },
+    refusalError: (sd) => new AiRefusalError(sd?.category ?? null)
   })
-
-  if (msg.stop_reason === 'refusal') throw new AiRefusalError(msg.stop_details?.category ?? null)
-  if (msg.parsed_output == null) throw new Error(`Extraction failed (stop_reason: ${msg.stop_reason})`)
-
-  logUsage(
-    MODELS.extract,
-    {
-      in: msg.usage.input_tokens,
-      out: msg.usage.output_tokens,
-      cacheRead: msg.usage.cache_read_input_tokens ?? 0
-    },
-    'extract'
-  )
-  return msg.parsed_output
 }
 
 export async function extractStar(rawText: string, client?: ExtractClient): Promise<StarExtraction> {
   const text = rawText.trim()
   if (!text) throw new Error('Nothing to extract — paste some notes first')
   if (process.env.STARFOLIO_AI_STUB === '1') return stubExtraction(text)
-
-  const output = await runExtract(client ?? getExtractClient(), {
-    system: EXTRACT_SYSTEM,
-    maxTokens: 4096,
-    text,
-    format: zodOutputFormat(starExtraction)
-  })
-  return starExtraction.parse(output)
+  return runExtract(client, starExtraction, EXTRACT_SYSTEM, text, 4096)
 }
 
 export const resumeExtraction = z.object({
@@ -136,14 +112,7 @@ export async function extractResumeStar(
   const text = rawText.trim()
   if (!text) throw new Error('Nothing to extract — the document was empty')
   if (process.env.STARFOLIO_AI_STUB === '1') return stubResume(text)
-
-  const output = await runExtract(client ?? getExtractClient(), {
-    system: RESUME_SYSTEM,
-    maxTokens: 8192,
-    text,
-    format: zodOutputFormat(resumeExtraction)
-  })
-  return resumeExtraction.parse(output).experiences
+  return (await runExtract(client, resumeExtraction, RESUME_SYSTEM, text, 8192)).experiences
 }
 
 export const ENTITY_KINDS = ['person', 'team', 'project', 'org', 'tool', 'other'] as const
@@ -182,14 +151,7 @@ export async function extractEvidenceStar(
   const text = rawText.trim()
   if (!text) throw new Error('Nothing to extract — the evidence was empty')
   if (process.env.STARFOLIO_AI_STUB === '1') return stubEvidence(text, kind)
-
-  const output = await runExtract(client ?? getExtractClient(), {
-    system: EVIDENCE_SYSTEM,
-    maxTokens: 4096,
-    text: text.slice(0, 200_000),
-    format: zodOutputFormat(starExtraction)
-  })
-  return starExtraction.parse(output)
+  return runExtract(client, starExtraction, EVIDENCE_SYSTEM, text.slice(0, 200_000), 4096)
 }
 
 export async function extractEntities(
@@ -199,14 +161,7 @@ export async function extractEntities(
   const text = rawText.trim()
   if (!text) return { entities: [] }
   if (process.env.STARFOLIO_AI_STUB === '1') return stubEntities(text)
-
-  const output = await runExtract(client ?? getExtractClient(), {
-    system: ENTITY_SYSTEM,
-    maxTokens: 2048,
-    text: text.slice(0, 50_000),
-    format: zodOutputFormat(entityExtraction)
-  })
-  return entityExtraction.parse(output)
+  return runExtract(client, entityExtraction, ENTITY_SYSTEM, text.slice(0, 50_000), 2048)
 }
 
 function stubEvidence(text: string, kind: EvidenceKind): StarExtraction {

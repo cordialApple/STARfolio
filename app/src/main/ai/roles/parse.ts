@@ -10,6 +10,7 @@ export interface ParseClient {
 }
 interface ParseResult {
   stop_reason: string | null
+  stop_details?: { category?: string | null } | null
   parsed_output?: unknown
   usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null }
 }
@@ -38,6 +39,7 @@ export interface ParseArgs<S extends z.ZodTypeAny> {
   feature: string
   maxTokens?: number
   messages?: { declined?: string; failed?: string }
+  refusalError?: (stopDetails: ParseResult['stop_details']) => Error
 }
 
 export async function parseStructured<S extends z.ZodTypeAny>(args: ParseArgs<S>): Promise<z.infer<S>> {
@@ -48,8 +50,10 @@ export async function parseStructured<S extends z.ZodTypeAny>(args: ParseArgs<S>
     messages: [{ role: 'user', content: args.userText }],
     output_config: { format: zodOutputFormat(args.schema) }
   })
-  if (msg.stop_reason === 'refusal')
+  if (msg.stop_reason === 'refusal') {
+    if (args.refusalError) throw args.refusalError(msg.stop_details)
     throw new Error(args.messages?.declined ?? 'The model declined to respond')
+  }
   if (msg.parsed_output == null)
     throw new Error(`${args.messages?.failed ?? 'Structured call failed'} (stop_reason: ${msg.stop_reason})`)
   logUsage(
