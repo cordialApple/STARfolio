@@ -17,7 +17,8 @@ export const prefsPatch = z
     reminderSnoozedAt: z.string().nullable(),
     voiceModel: z.enum(VOICE_MODELS),
     storageMode: z.enum(STORAGE_MODES),
-    vaultPath: z.string().nullable()
+    vaultPath: z.string().nullable(),
+    loopbackEnabled: z.boolean()
   })
   .partial()
   .strict()
@@ -32,6 +33,7 @@ export interface Prefs {
   voiceModel: VoiceModel
   storageMode: StorageMode
   vaultPath: string | null
+  loopbackEnabled: boolean
 }
 
 const DEFAULTS: Prefs = {
@@ -43,7 +45,8 @@ const DEFAULTS: Prefs = {
   reminderSnoozedAt: null,
   voiceModel: 'base.en',
   storageMode: 'sqlite',
-  vaultPath: null
+  vaultPath: null,
+  loopbackEnabled: false
 }
 
 const KEYS: Record<keyof Prefs, string> = {
@@ -55,7 +58,8 @@ const KEYS: Record<keyof Prefs, string> = {
   reminderSnoozedAt: 'pref.reminder.snoozed_at',
   voiceModel: 'pref.voice.model',
   storageMode: 'pref.storage.mode',
-  vaultPath: 'pref.storage.vault_path'
+  vaultPath: 'pref.storage.vault_path',
+  loopbackEnabled: 'pref.loopback.enabled'
 }
 
 function readRaw(key: string): string | null {

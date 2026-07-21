@@ -5,6 +5,7 @@ import { join } from 'path'
 import { app } from 'electron'
 import { searchExperiences } from '../search'
 import { generateStoryText, storyConfig, NoExperiencesError } from '../ai/story'
+import { getPrefs } from '../settings/prefs'
 
 type Json = Record<string, unknown>
 
@@ -26,9 +27,14 @@ function loopbackFilePath(): string {
   return process.env.SUPERSTAR_LOOPBACK_FILE ?? join(app.getPath('userData'), 'loopback.json')
 }
 
-// Off by default. Env gate for now; a user-facing pref replaces this once settings land.
+// Off by default. Driven by the user-facing pref; STARFOLIO_LOOPBACK stays a dev/test override.
 export function loopbackEnabled(): boolean {
-  return process.env.STARFOLIO_LOOPBACK === '1'
+  if (process.env.STARFOLIO_LOOPBACK === '1') return true
+  try {
+    return getPrefs().loopbackEnabled
+  } catch {
+    return false
+  }
 }
 
 export function startLoopbackServer(): Promise<void> {

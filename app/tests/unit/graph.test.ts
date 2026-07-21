@@ -28,6 +28,16 @@ describe('knowledge graph', () => {
     expect(count).toBe(1)
   })
 
+  it('folds case-variant names into one entity, keeping first-seen casing', () => {
+    const a = createExperience({ title: 'A', action: 'a' })
+    const b = createExperience({ title: 'B', action: 'b' })
+    linkExperienceEntities(a.id, [{ kind: 'tool', name: 'GraphQL' }])
+    linkExperienceEntities(b.id, [{ kind: 'tool', name: 'graphql' }])
+    const rows = getDb().prepare("SELECT name FROM entities WHERE kind='tool'").all() as { name: string }[]
+    expect(rows).toEqual([{ name: 'GraphQL' }])
+    expect(neighborsOf(a.id).connections.map((c) => c.experience.id)).toEqual([b.id])
+  })
+
   it('connects via a shared skill even with no shared entity', () => {
     const a = createExperience({ title: 'Frontend work', action: 'a', skills: [{ name: 'React', kind: 'technical' }] })
     const b = createExperience({ title: 'More frontend', action: 'b', skills: [{ name: 'React', kind: 'technical' }] })

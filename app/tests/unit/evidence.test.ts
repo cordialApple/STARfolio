@@ -7,7 +7,8 @@ import {
   sheetToText,
   packFolder,
   packZipBytes,
-  parseGitHubUrl
+  parseGitHubUrl,
+  ghHeaders
 } from '../../src/main/ingest/evidence-extractors'
 
 function crc32(buf: Buffer): number {
@@ -104,6 +105,36 @@ describe('packFolder', () => {
     expect(languages['.ts']).toBe(1)
     expect(text).not.toContain('SUPER_SECRET_TOKEN')
     expect(text).not.toContain('node_modules')
+  })
+
+  it('honors a nested .gitignore scoped to its own subtree', async () => {
+    const nest = mkdtempSync(join(tmpdir(), 'pack-nest-'))
+    mkdirSync(join(nest, 'sub'), { recursive: true })
+    writeFileSync(join(nest, 'sub', '.gitignore'), 'local.log\n')
+    writeFileSync(join(nest, 'sub', 'local.log'), 'NESTED_IGNORED')
+    writeFileSync(join(nest, 'sub', 'keep.ts'), 'export const y = 2')
+    writeFileSync(join(nest, 'local.log'), 'ROOT_KEPT')
+    try {
+      const { text, tree } = await packFolder(nest)
+      expect(text).not.toContain('NESTED_IGNORED')
+      expect(tree).toContain('keep.ts')
+      expect(text).toContain('ROOT_KEPT')
+    } finally {
+      rmSync(nest, { recursive: true, force: true })
+    }
+  })
+
+  it('normalizes a non-canonical root path', async () => {
+    const { tree } = await packFolder(join(root, 'sub', '..'))
+    expect(tree).toContain('index.ts')
+  })
+})
+
+describe('ghHeaders', () => {
+  it('sends the GitHub bearer token only when one is provided', () => {
+    expect(ghHeaders('ghp_secret').Authorization).toBe('Bearer ghp_secret')
+    expect(ghHeaders()).not.toHaveProperty('Authorization')
+    expect(ghHeaders()['User-Agent']).toBe('STARfolio-ingest')
   })
 })
 
