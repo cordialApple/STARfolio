@@ -560,6 +560,8 @@ export interface BackupApi {
   create: () => Promise<{ saved: boolean; path?: string }>
 }
 
+export type StorageMode = 'sqlite' | 'obsidian'
+
 export interface Prefs {
   reminderEnabled: boolean
   reminderIntervalDays: number
@@ -568,6 +570,24 @@ export interface Prefs {
   onboardingDone: boolean
   reminderSnoozedAt: string | null
   voiceModel: WhisperModelName
+  storageMode: StorageMode
+  vaultPath: string | null
+}
+
+export interface VaultSyncResult {
+  imported: number
+  exported: number
+  error?: 'no-vault'
+}
+export interface VaultStatus {
+  storageMode: StorageMode
+  vaultPath: string | null
+  notes: number | null
+}
+export interface VaultApi {
+  choose: () => Promise<{ canceled: boolean; path?: string }>
+  sync: () => Promise<VaultSyncResult>
+  status: () => Promise<VaultStatus>
 }
 
 export interface Staleness {
@@ -644,6 +664,7 @@ export interface IpcApi {
   bank: BankApi
   backup: BackupApi
   prefs: PrefsApi
+  vault: VaultApi
   nudge: NudgeApi
   usage: UsageApi
   update: UpdateApi

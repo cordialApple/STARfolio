@@ -16,6 +16,7 @@ export { EmptyState, type EmptyStateProps } from './EmptyState'
 export { ErrorState, type ErrorStateProps } from './ErrorState'
 export { CadenceNudge, type CadenceNudgeProps } from './CadenceNudge'
 export { StalenessBanner, type StalenessBannerProps } from './StalenessBanner'
+export { StoragePill, type StoragePillProps, type StorageMode } from './StoragePill'
 export {
   StarRail,
   STAR_BEATS,

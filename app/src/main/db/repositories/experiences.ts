@@ -189,6 +189,56 @@ export function createExperience(raw: unknown): Experience {
   return getExperience(id)!
 }
 
+export function importExperienceWithId(
+  id: string,
+  raw: unknown,
+  stamps?: { created_at?: string | null; updated_at?: string | null }
+): Experience {
+  const input = experienceInput.parse(raw)
+  const db = getDb()
+  const created = stamps?.created_at ?? null
+  const updated = stamps?.updated_at ?? null
+  db.transaction(() => {
+    const exists = db.prepare('SELECT 1 FROM experiences WHERE id = ?').get(id)
+    const cols = {
+      id,
+      title: input.title,
+      situation: input.situation,
+      task: input.task,
+      action: input.action,
+      result_text: input.result_text,
+      context: input.context,
+      happened_start: input.happened_start ?? null,
+      happened_end: input.happened_end ?? null,
+      status: input.status,
+      draft_state_json: input.draft_state_json ?? null,
+      created_at: created,
+      updated_at: updated
+    }
+    if (exists) {
+      db.prepare(
+        `UPDATE experiences SET
+           title=@title, situation=@situation, task=@task, action=@action, result_text=@result_text,
+           context=@context, happened_start=@happened_start, happened_end=@happened_end,
+           status=@status, draft_state_json=@draft_state_json,
+           updated_at=COALESCE(@updated_at, datetime('now'))
+         WHERE id=@id`
+      ).run(cols)
+    } else {
+      db.prepare(
+        `INSERT INTO experiences
+         (id, title, situation, task, action, result_text, context, happened_start, happened_end, status, draft_state_json, created_at, updated_at)
+         VALUES (@id, @title, @situation, @task, @action, @result_text, @context, @happened_start, @happened_end, @status, @draft_state_json,
+                 COALESCE(@created_at, datetime('now')), COALESCE(@updated_at, datetime('now')))`
+      ).run(cols)
+    }
+    writeChildren(db, id, input)
+    if (input.source_id) linkSource(db, id, input.source_id)
+    else if (input.source) linkSource(db, id, insertSource(db, input.source))
+  })()
+  return getExperience(id)!
+}
+
 export function updateExperience(id: string, raw: unknown): Experience {
   const input = experienceInput.parse(raw)
   const db = getDb()

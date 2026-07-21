@@ -172,6 +172,11 @@ const api: IpcApi = {
     get: () => ipcRenderer.invoke('prefs:get'),
     set: (patch) => ipcRenderer.invoke('prefs:set', patch)
   },
+  vault: {
+    choose: () => ipcRenderer.invoke('vault:choose'),
+    sync: () => ipcRenderer.invoke('vault:sync'),
+    status: () => ipcRenderer.invoke('vault:status')
+  },
   nudge: {
     staleness: () => ipcRenderer.invoke('nudge:staleness')
   },

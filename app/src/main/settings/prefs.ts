@@ -4,6 +4,9 @@ import { getDb } from '../db/client'
 const VOICE_MODELS = ['tiny.en', 'base.en', 'small.en'] as const
 type VoiceModel = (typeof VOICE_MODELS)[number]
 
+const STORAGE_MODES = ['sqlite', 'obsidian'] as const
+type StorageMode = (typeof STORAGE_MODES)[number]
+
 export const prefsPatch = z
   .object({
     reminderEnabled: z.boolean(),
@@ -12,7 +15,9 @@ export const prefsPatch = z
     trayResident: z.boolean(),
     onboardingDone: z.boolean(),
     reminderSnoozedAt: z.string().nullable(),
-    voiceModel: z.enum(VOICE_MODELS)
+    voiceModel: z.enum(VOICE_MODELS),
+    storageMode: z.enum(STORAGE_MODES),
+    vaultPath: z.string().nullable()
   })
   .partial()
   .strict()
@@ -25,6 +30,8 @@ export interface Prefs {
   onboardingDone: boolean
   reminderSnoozedAt: string | null
   voiceModel: VoiceModel
+  storageMode: StorageMode
+  vaultPath: string | null
 }
 
 const DEFAULTS: Prefs = {
@@ -34,7 +41,9 @@ const DEFAULTS: Prefs = {
   trayResident: false,
   onboardingDone: false,
   reminderSnoozedAt: null,
-  voiceModel: 'base.en'
+  voiceModel: 'base.en',
+  storageMode: 'sqlite',
+  vaultPath: null
 }
 
 const KEYS: Record<keyof Prefs, string> = {
@@ -44,7 +53,9 @@ const KEYS: Record<keyof Prefs, string> = {
   trayResident: 'pref.tray.resident',
   onboardingDone: 'pref.onboarding.done',
   reminderSnoozedAt: 'pref.reminder.snoozed_at',
-  voiceModel: 'pref.voice.model'
+  voiceModel: 'pref.voice.model',
+  storageMode: 'pref.storage.mode',
+  vaultPath: 'pref.storage.vault_path'
 }
 
 function readRaw(key: string): string | null {
@@ -74,6 +85,10 @@ export function getPrefs(): Prefs {
       out.reminderSnoozedAt = raw || null
     } else if (k === 'voiceModel') {
       if ((VOICE_MODELS as readonly string[]).includes(raw)) out.voiceModel = raw as VoiceModel
+    } else if (k === 'storageMode') {
+      if ((STORAGE_MODES as readonly string[]).includes(raw)) out.storageMode = raw as StorageMode
+    } else if (k === 'vaultPath') {
+      out.vaultPath = raw || null
     } else {
       out[k] = (raw === '1') as never
     }
