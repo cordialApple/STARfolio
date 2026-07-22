@@ -20,7 +20,17 @@ describe('getPrefs', () => {
       voiceModel: 'base.en',
       storageMode: 'sqlite',
       vaultPath: null,
-      loopbackEnabled: false
+      loopbackEnabled: false,
+      providerArchitect: 'anthropic',
+      providerEvaluator: 'anthropic',
+      providerConversation: 'anthropic',
+      openaiBaseUrl: 'http://localhost:11434/v1',
+      openaiModelArchitect: '',
+      openaiModelEvaluator: '',
+      openaiModelConversation: '',
+      geminiModelArchitect: '',
+      geminiModelEvaluator: '',
+      geminiModelConversation: ''
     })
   })
 

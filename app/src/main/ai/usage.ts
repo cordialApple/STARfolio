@@ -32,6 +32,13 @@ const PRICING: Record<string, ModelPricing> = {
 
 const FALLBACK_PRICING: ModelPricing = { in: 3, out: 15, cacheRead: 0.3 }
 
+const ZERO_PRICING: ModelPricing = { in: 0, out: 0, cacheRead: 0 }
+
+function pricingFor(model: string): ModelPricing {
+  if (model.startsWith('openai:') || model.startsWith('gemini:')) return ZERO_PRICING
+  return PRICING[model] ?? FALLBACK_PRICING
+}
+
 export interface FeatureSpend {
   feature: string
   calls: number
@@ -73,7 +80,7 @@ export function usageSummary(): UsageSummary {
   let totalCost = 0
   let totalCalls = 0
   for (const r of rows) {
-    const p = PRICING[r.model] ?? FALLBACK_PRICING
+    const p = pricingFor(r.model)
     const cost = (r.inTok * p.in + r.outTok * p.out + r.cacheTok * p.cacheRead) / 1e6
     let cur = byFeatureMap.get(r.feature)
     if (!cur) {

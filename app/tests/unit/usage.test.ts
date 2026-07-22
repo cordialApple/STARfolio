@@ -32,6 +32,14 @@ describe('usageSummary', () => {
     expect(usageSummary().totalCost).toBeCloseTo(3, 10)
   })
 
+  it('prices openai- and gemini-prefixed models at zero', () => {
+    logUsage('openai:qwen2.5', { in: 5_000_000, out: 2_000_000, cacheRead: 1_000_000 }, 'local')
+    logUsage('gemini:gemini-2.0-flash', { in: 3_000_000, out: 1_000_000, cacheRead: 0 }, 'local')
+    const s = usageSummary()
+    expect(s.totalCost).toBe(0)
+    expect(s.totalCalls).toBe(2)
+  })
+
   it('merges one feature across two models and sums cost', () => {
     logUsage('claude-haiku-4-5', { in: 1_000_000, out: 0, cacheRead: 0 }, 'parse')
     logUsage('claude-sonnet-5', { in: 1_000_000, out: 0, cacheRead: 0 }, 'parse')
