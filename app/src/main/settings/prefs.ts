@@ -1,11 +1,24 @@
 import { z } from 'zod'
 import { getDb } from '../db/client'
+import { PROVIDERS, type Provider } from '../ai/routing'
 
 const VOICE_MODELS = ['tiny.en', 'base.en', 'small.en'] as const
 type VoiceModel = (typeof VOICE_MODELS)[number]
 
 const STORAGE_MODES = ['sqlite', 'obsidian'] as const
 type StorageMode = (typeof STORAGE_MODES)[number]
+
+const httpUrl = z
+  .string()
+  .transform((s) => s.replace(/\/+$/, ''))
+  .refine((s) => {
+    try {
+      const u = new URL(s)
+      return u.protocol === 'http:' || u.protocol === 'https:'
+    } catch {
+      return false
+    }
+  }, 'must be an http or https URL')
 
 export const prefsPatch = z
   .object({
@@ -18,7 +31,17 @@ export const prefsPatch = z
     voiceModel: z.enum(VOICE_MODELS),
     storageMode: z.enum(STORAGE_MODES),
     vaultPath: z.string().nullable(),
-    loopbackEnabled: z.boolean()
+    loopbackEnabled: z.boolean(),
+    providerArchitect: z.enum(PROVIDERS),
+    providerEvaluator: z.enum(PROVIDERS),
+    providerConversation: z.enum(PROVIDERS),
+    openaiBaseUrl: httpUrl,
+    openaiModelArchitect: z.string(),
+    openaiModelEvaluator: z.string(),
+    openaiModelConversation: z.string(),
+    geminiModelArchitect: z.string(),
+    geminiModelEvaluator: z.string(),
+    geminiModelConversation: z.string()
   })
   .partial()
   .strict()
@@ -34,6 +57,16 @@ export interface Prefs {
   storageMode: StorageMode
   vaultPath: string | null
   loopbackEnabled: boolean
+  providerArchitect: Provider
+  providerEvaluator: Provider
+  providerConversation: Provider
+  openaiBaseUrl: string
+  openaiModelArchitect: string
+  openaiModelEvaluator: string
+  openaiModelConversation: string
+  geminiModelArchitect: string
+  geminiModelEvaluator: string
+  geminiModelConversation: string
 }
 
 const DEFAULTS: Prefs = {
@@ -46,7 +79,17 @@ const DEFAULTS: Prefs = {
   voiceModel: 'base.en',
   storageMode: 'sqlite',
   vaultPath: null,
-  loopbackEnabled: false
+  loopbackEnabled: false,
+  providerArchitect: 'anthropic',
+  providerEvaluator: 'anthropic',
+  providerConversation: 'anthropic',
+  openaiBaseUrl: 'http://localhost:11434/v1',
+  openaiModelArchitect: '',
+  openaiModelEvaluator: '',
+  openaiModelConversation: '',
+  geminiModelArchitect: '',
+  geminiModelEvaluator: '',
+  geminiModelConversation: ''
 }
 
 interface Codec<T> {
@@ -65,6 +108,12 @@ const nullableStringCodec = (key: string): Codec<string | null> => ({
   key,
   decode: (raw) => raw || null,
   encode: (v) => v ?? ''
+})
+
+const stringCodec = (key: string): Codec<string> => ({
+  key,
+  decode: (raw) => raw,
+  encode: (v) => v
 })
 
 const enumCodec = <T extends string>(key: string, values: readonly T[]): Codec<T> => ({
@@ -92,7 +141,17 @@ const CODECS: { [K in keyof Prefs]: Codec<Prefs[K]> } = {
   voiceModel: enumCodec('pref.voice.model', VOICE_MODELS),
   storageMode: enumCodec('pref.storage.mode', STORAGE_MODES),
   vaultPath: nullableStringCodec('pref.storage.vault_path'),
-  loopbackEnabled: boolCodec('pref.loopback.enabled')
+  loopbackEnabled: boolCodec('pref.loopback.enabled'),
+  providerArchitect: enumCodec('pref.ai.provider.architect', PROVIDERS),
+  providerEvaluator: enumCodec('pref.ai.provider.evaluator', PROVIDERS),
+  providerConversation: enumCodec('pref.ai.provider.conversation', PROVIDERS),
+  openaiBaseUrl: stringCodec('pref.ai.openai.base_url'),
+  openaiModelArchitect: stringCodec('pref.ai.openai.model.architect'),
+  openaiModelEvaluator: stringCodec('pref.ai.openai.model.evaluator'),
+  openaiModelConversation: stringCodec('pref.ai.openai.model.conversation'),
+  geminiModelArchitect: stringCodec('pref.ai.gemini.model.architect'),
+  geminiModelEvaluator: stringCodec('pref.ai.gemini.model.evaluator'),
+  geminiModelConversation: stringCodec('pref.ai.gemini.model.conversation')
 }
 
 function readRaw(key: string): string | null {

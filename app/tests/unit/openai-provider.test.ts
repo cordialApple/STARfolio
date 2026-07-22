@@ -34,6 +34,25 @@ describe('openaiStructured', () => {
     expect((calls[0].init.headers as Record<string, string>).Authorization).toBe('Bearer k')
   })
 
+  it('falls back to json_object mode and folds the schema into the system prompt', async () => {
+    const { fetch, calls } = jsonFetch({
+      choices: [{ message: { content: '{"answer":"7"}' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 3, completion_tokens: 2 }
+    })
+    const out = await openaiStructured({
+      baseUrl: 'http://x/v1',
+      apiKey: 'k',
+      fetch,
+      structuredMode: 'json_object'
+    }).parse({ model: 'm', system: 'be terse', userText: 'u', schema, maxTokens: 10 })
+
+    expect(out.parsed_output).toEqual({ answer: '7' })
+    const sent = JSON.parse(calls[0].init.body as string)
+    expect(sent.response_format).toEqual({ type: 'json_object' })
+    expect(sent.messages[0].content).toContain('be terse')
+    expect(sent.messages[0].content).toContain('"answer"')
+  })
+
   it('surfaces a refusal as stop_reason refusal with no parsed output', async () => {
     const { fetch } = jsonFetch({
       choices: [{ message: { refusal: 'no' }, finish_reason: 'stop' }],
