@@ -26,6 +26,8 @@ export interface StructuredProvider {
 
 export interface RoleOptions {
   provider?: StructuredProvider
+  model?: string
+  usageId?: string
   stub?: boolean
 }
 

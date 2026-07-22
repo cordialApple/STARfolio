@@ -46,10 +46,15 @@ export interface VoiceApi {
   onPartial: (cb: (event: TranscriptEvent) => void) => () => void
 }
 
+export type Provider = 'anthropic' | 'openai' | 'gemini'
+
 export interface AiApi {
   setKey: (key: string) => Promise<void>
   hasKey: () => Promise<boolean>
   deleteKey: () => Promise<void>
+  providerHasKey: (provider: Provider) => Promise<boolean>
+  providerSetKey: (provider: Provider, key: string) => Promise<void>
+  providerDeleteKey: (provider: Provider) => Promise<void>
   stream: (prompt: string, requestId: string) => Promise<void>
   cancel: (requestId: string) => Promise<void>
   onToken: (cb: (requestId: string, token: string) => void) => () => void
@@ -572,6 +577,17 @@ export interface Prefs {
   voiceModel: WhisperModelName
   storageMode: StorageMode
   vaultPath: string | null
+  loopbackEnabled: boolean
+  providerArchitect: Provider
+  providerEvaluator: Provider
+  providerConversation: Provider
+  openaiBaseUrl: string
+  openaiModelArchitect: string
+  openaiModelEvaluator: string
+  openaiModelConversation: string
+  geminiModelArchitect: string
+  geminiModelEvaluator: string
+  geminiModelConversation: string
 }
 
 export interface VaultSyncResult {

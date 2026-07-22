@@ -50,9 +50,9 @@ export interface ConversationRequest {
   maxTokens: number
 }
 
-function conversationRequest(input: ConversationInput): ConversationRequest {
+function conversationRequest(input: ConversationInput, model?: string): ConversationRequest {
   return {
-    model: MODELS.conversation,
+    model: model ?? MODELS.conversation,
     system: CONVERSATION_SYSTEM,
     prompt: userText(input),
     maxTokens: 512
@@ -61,10 +61,11 @@ function conversationRequest(input: ConversationInput): ConversationRequest {
 
 export async function composeUtterance(input: ConversationInput, opts: RoleOptions = {}): Promise<string> {
   if (stubEnabled(opts.stub)) return stubUtterance(input)
-  const req = conversationRequest(input)
+  const req = conversationRequest(input, opts.model)
   const out = await parseStructured({
     provider: opts.provider,
     model: req.model,
+    usageId: opts.usageId,
     system: req.system,
     userText: req.prompt,
     schema: conversationOut,
@@ -76,6 +77,8 @@ export async function composeUtterance(input: ConversationInput, opts: RoleOptio
 
 export interface ComposeStreamDeps {
   transport: AiTransport
+  model?: string
+  usageId?: string
   signal?: AbortSignal
   onPartial?: (partial: UtterancePartial) => void
   now?: () => number
@@ -94,12 +97,12 @@ export async function composeUtteranceStream(
   }
   return streamWithWatchdog({
     transport: deps.transport,
-    request: conversationRequest(input),
+    request: conversationRequest(input, deps.model),
     signal: deps.signal,
     now: deps.now,
     stallTimer: deps.stallTimer,
     onToken: deps.onPartial,
-    onDone: (usage) => logUsage(MODELS.conversation, usage, 'conversation')
+    onDone: (usage) => logUsage(deps.usageId ?? deps.model ?? MODELS.conversation, usage, 'conversation')
   })
 }
 

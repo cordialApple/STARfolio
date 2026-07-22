@@ -19,7 +19,7 @@ import {
   type InterviewReport,
   type TranscriptTurn
 } from './roles'
-import type { StructuredProvider } from './roles/parse'
+import type { RoleOptions } from './roles/parse'
 import { resolveTransport } from './resolve-transport'
 import type { AiTransport } from './transport'
 import type { UtterancePartial } from './utterance'
@@ -58,6 +58,18 @@ export interface UtteranceStreamSink {
   onPartial?: (partial: UtterancePartial) => void
 }
 
+export interface ConversationRuntime {
+  transport?: AiTransport
+  model?: string
+  usageId?: string
+}
+
+export interface InterviewRuntime {
+  architect?: RoleOptions
+  evaluator?: RoleOptions
+  conversation?: ConversationRuntime
+}
+
 export interface SessionStore {
   createSession: typeof createSession
   loadSession: typeof loadSession
@@ -80,11 +92,14 @@ const defaultStore: SessionStore = {
 
 function composeStream(
   input: ConversationInput,
-  sink?: UtteranceStreamSink
+  sink?: UtteranceStreamSink,
+  conv?: ConversationRuntime
 ): Promise<string> {
   return composeUtteranceStream(input, {
     ...sink,
-    transport: sink?.transport ?? resolveTransport()
+    transport: conv?.transport ?? sink?.transport ?? resolveTransport(),
+    model: conv?.model,
+    usageId: conv?.usageId
   })
 }
 
@@ -154,24 +169,24 @@ function evaluatorInputFor(session: StoredInterviewSession, answer: string): Eva
 async function evaluationFor(
   session: StoredInterviewSession,
   answer: string,
-  provider?: StructuredProvider
+  opts: RoleOptions = {}
 ): Promise<AnswerEvaluation> {
   const input = evaluatorInputFor(session, answer)
   if (!input) return EMPTY_EVALUATION
-  return evaluateAnswer(input, { provider })
+  return evaluateAnswer(input, opts)
 }
 
 export async function steerFromTranscript(
   sessionId: string,
   text: string,
-  provider?: StructuredProvider,
+  runtime: InterviewRuntime = {},
   store: SessionStore = defaultStore
 ): Promise<AnswerEvaluation> {
   const answer = text.trim()
   if (!answer) return EMPTY_EVALUATION
   const session = store.loadSession(sessionId)
   if (!session || session.state.phase === 'done') return EMPTY_EVALUATION
-  return evaluationFor(session, answer, provider)
+  return evaluationFor(session, answer, runtime.evaluator)
 }
 
 function toStep(
@@ -189,13 +204,13 @@ function toStep(
 
 export async function startInterview(
   input: StartInterviewInput,
-  provider?: StructuredProvider,
+  runtime: InterviewRuntime = {},
   sink?: UtteranceStreamSink,
   store: SessionStore = defaultStore
 ): Promise<InterviewStep> {
   const roadmap = await buildRoadmap(
     { resumeText: input.resumeText, experiences: input.experiences },
-    { provider }
+    runtime.architect
   )
   const state = reduce(
     initState(roadmap, {
@@ -208,7 +223,8 @@ export async function startInterview(
   const action = selectAction(state)
   const utterance = await composeStream(
     toConversationInput(state, action, input.candidateName),
-    sink
+    sink,
+    runtime.conversation
   )
   const id = store.createSession({
     candidateName: input.candidateName ?? null,
@@ -223,7 +239,7 @@ export async function startInterview(
 
 export async function answerInterview(
   input: AnswerInterviewInput,
-  provider?: StructuredProvider,
+  runtime: InterviewRuntime = {},
   sink?: UtteranceStreamSink,
   store: SessionStore = defaultStore
 ): Promise<InterviewStep> {
@@ -236,7 +252,7 @@ export async function answerInterview(
   const elapsedMs = input.elapsedMs ?? now - session.startedAtMs
   const evaluation =
     steeringSignalFor(session.id, now, STEERING_MAX_AGE_MS)?.evaluation ??
-    (await evaluationFor(session, answer, provider))
+    (await evaluationFor(session, answer, runtime.evaluator))
   let state = reduce(session.state, { type: 'answer', elapsedMs, evaluation })
 
   const action = selectAction(state)
@@ -246,7 +262,8 @@ export async function answerInterview(
 
   const utterance = await composeStream(
     toConversationInput(state, action, session.candidateName ?? undefined),
-    sink
+    sink,
+    runtime.conversation
   )
 
   let report: InterviewReport | null = session.report
@@ -256,10 +273,7 @@ export async function answerInterview(
       { speaker: 'candidate', text: answer },
       { speaker: 'interviewer', text: utterance }
     ]
-    report = await summarizeInterview(
-      { transcript, roadmap: state.roadmap, candidate: state.candidate },
-      { provider }
-    )
+    report = await summarizeInterview({ transcript, roadmap: state.roadmap, candidate: state.candidate })
   }
 
   store.commitAnswer({

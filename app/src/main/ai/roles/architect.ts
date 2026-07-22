@@ -76,7 +76,8 @@ export async function buildRoadmap(input: ArchitectInput, opts: RoleOptions = {}
   if (stubEnabled(opts.stub)) return stubRoadmap(input)
   const plan = await parseStructured({
     provider: opts.provider,
-    model: MODELS.architect,
+    model: opts.model ?? MODELS.architect,
+    usageId: opts.usageId,
     system: ARCHITECT_SYSTEM,
     userText: inputToUserText(input),
     schema: architectPlan,
