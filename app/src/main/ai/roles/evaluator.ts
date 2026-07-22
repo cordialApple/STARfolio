@@ -89,7 +89,8 @@ export async function evaluateAnswer(input: EvaluatorInput, opts: RoleOptions = 
   if (stubEnabled(opts.stub)) return stubEvaluate({ ...input, answer })
   const out = await parseStructured({
     provider: opts.provider,
-    model: MODELS.evaluator,
+    model: opts.model ?? MODELS.evaluator,
+    usageId: opts.usageId,
     system: EVALUATOR_SYSTEM,
     userText: userText(input),
     schema: evaluatorOut,

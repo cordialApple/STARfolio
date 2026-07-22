@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw, Coins, Volume2, Search, Palette, Monitor, Sun, Moon, Database, FolderOpen } from 'lucide-react'
+import { KeyRound, Check, Trash2, ExternalLink, GitBranch, Share2, Download, Upload, HardDriveDownload, Bell, RefreshCw, Coins, Volume2, Search, Palette, Monitor, Sun, Moon, Database, FolderOpen, Cpu } from 'lucide-react'
 import type { Prefs, UpdateStatus, UsageSummary, VaultStatus } from '../../../preload/index.d'
 import { Badge, Button, Card, Input, Skeleton, StoragePill, Toggle, useToast } from '../components'
 import { cn } from '../lib/cn'
 import { useTheme } from '../theme/ThemeProvider'
 import type { ThemeMode } from '../theme/ThemeProvider'
 import { VoiceModelManager } from './VoiceModelManager'
+import { ProviderSettings } from './ProviderSettings'
 
 const FEATURE_LABELS: Record<string, string> = {
   chat: 'Brain dump',
@@ -23,7 +24,7 @@ function formatCost(value: number): string {
   return `$${value.toFixed(2)}`
 }
 
-type SectionId = 'reminders' | 'appearance' | 'apikey' | 'github' | 'voice' | 'connections' | 'storage' | 'data' | 'spend' | 'updates'
+type SectionId = 'reminders' | 'appearance' | 'apikey' | 'providers' | 'github' | 'voice' | 'connections' | 'storage' | 'data' | 'spend' | 'updates'
 
 const SECTIONS: { group: string; items: { id: SectionId; label: string; icon: typeof Bell }[] }[] = [
   {
@@ -37,6 +38,7 @@ const SECTIONS: { group: string; items: { id: SectionId; label: string; icon: ty
     group: 'AI',
     items: [
       { id: 'apikey', label: 'Anthropic API key', icon: KeyRound },
+      { id: 'providers', label: 'Model providers', icon: Cpu },
       { id: 'github', label: 'GitHub token', icon: GitBranch },
       { id: 'voice', label: 'Voice', icon: Volume2 }
     ]
@@ -396,6 +398,8 @@ export function SettingsView(): React.JSX.Element {
         </div>
       </Card>
       )}
+
+      {active === 'providers' && <ProviderSettings prefs={prefs} onSave={savePrefs} />}
 
       {active === 'github' && (
       <Card

@@ -14,6 +14,7 @@ import {
   deleteInterviewSession,
   type UtteranceStreamSink
 } from '../ai/session'
+import { interviewRuntime } from '../ai/runtime'
 import { partialToDelta } from '../ai/utterance'
 import {
   getSession,
@@ -75,10 +76,10 @@ export function registerSessions(ipcMain: IpcMain): void {
     requestId: nonEmpty.max(64).optional()
   })
   handle(ipcMain, 'interview:start', interviewStartArg, (event, { requestId, ...arg }) =>
-    startInterview({ ...arg, experiences: interviewBank() }, undefined, utteranceSink(event.sender, requestId))
+    startInterview({ ...arg, experiences: interviewBank() }, interviewRuntime(), utteranceSink(event.sender, requestId))
   )
   handle(ipcMain, 'interview:answer', interviewAnswerArg, (event, { requestId, ...arg }) =>
-    answerInterview(arg, undefined, utteranceSink(event.sender, requestId))
+    answerInterview(arg, interviewRuntime(), utteranceSink(event.sender, requestId))
   )
   handle(ipcMain, 'interview:report', sessionArg, (_e, { sessionId }) => getInterviewReport(sessionId))
   ipcMain.handle('interview:list', () => listInterviewSessions())

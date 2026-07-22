@@ -2,6 +2,7 @@ import type { IpcMain, WebContents } from 'electron'
 import { RollingTranscript, VoiceStreamSession, defaultFrameSourceConfig } from './streaming'
 import { transcribeSamples } from './index'
 import { steerFromTranscript } from '../ai/session'
+import { interviewRuntime } from '../ai/runtime'
 import {
   STEERING_CADENCE_MS,
   STEERING_WINDOW_MS,
@@ -22,10 +23,11 @@ export function rollingTranscriptFor(senderId: number): RollingTranscript | unde
 }
 
 function startSteering(sessionId: string, transcript: RollingTranscript): SteeringHandle {
+  const runtime = interviewRuntime()
   return startSteeringLoop({
     sessionId,
     view: () => ({ text: transcript.recent(STEERING_WINDOW_MS, Date.now()).text }),
-    evaluate: (text) => steerFromTranscript(sessionId, text),
+    evaluate: (text) => steerFromTranscript(sessionId, text, runtime),
     cadence: STEERING_CADENCE_MS
   })
 }
