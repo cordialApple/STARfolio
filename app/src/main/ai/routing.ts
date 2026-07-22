@@ -3,6 +3,7 @@ import { MODELS, type ModelRole } from './models'
 export type Provider = 'anthropic' | 'openai' | 'gemini'
 
 export const DEFAULT_OPENAI_BASE = 'https://api.openai.com/v1'
+export const DEFAULT_GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
 export interface ModelSpec {
   provider: Provider

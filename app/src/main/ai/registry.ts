@@ -2,7 +2,8 @@ import { getSecret } from '../settings/secrets'
 import { anthropicStructured, type StructuredProvider } from './roles/parse'
 import { anthropicTransport, type AiTransport } from './transport'
 import { openaiStructured, openaiTransport } from './providers/openai'
-import { DEFAULT_OPENAI_BASE, type ModelSpec } from './routing'
+import { geminiStructured, geminiTransport } from './providers/gemini'
+import { DEFAULT_OPENAI_BASE, DEFAULT_GEMINI_BASE, type ModelSpec } from './routing'
 
 function notYet(provider: string): never {
   throw new Error(`Provider "${provider}" is not available yet`)
@@ -14,6 +15,8 @@ export function structuredProviderFor(spec: ModelSpec): StructuredProvider {
       return anthropicStructured
     case 'openai':
       return openaiStructured({ baseUrl: spec.baseUrl ?? DEFAULT_OPENAI_BASE })
+    case 'gemini':
+      return geminiStructured({ baseUrl: spec.baseUrl ?? DEFAULT_GEMINI_BASE })
     default:
       return notYet(spec.provider)
   }
@@ -28,6 +31,8 @@ export function transportFor(spec: ModelSpec): AiTransport {
     }
     case 'openai':
       return openaiTransport({ baseUrl: spec.baseUrl ?? DEFAULT_OPENAI_BASE })
+    case 'gemini':
+      return geminiTransport({ baseUrl: spec.baseUrl ?? DEFAULT_GEMINI_BASE })
     default:
       return notYet(spec.provider)
   }
