@@ -2,6 +2,8 @@ import { MODELS, type ModelRole } from './models'
 
 export type Provider = 'anthropic' | 'openai' | 'gemini'
 
+export const DEFAULT_OPENAI_BASE = 'https://api.openai.com/v1'
+
 export interface ModelSpec {
   provider: Provider
   model: string

@@ -10,8 +10,8 @@ describe('structuredProviderFor', () => {
     expect(structuredProviderFor(spec('anthropic'))).toBe(anthropicStructured)
   })
 
-  it('throws until the openai adapter lands', () => {
-    expect(() => structuredProviderFor(spec('openai'))).toThrow(/not available yet/)
+  it('builds an openai adapter without touching secrets', () => {
+    expect(typeof structuredProviderFor(spec('openai')).parse).toBe('function')
   })
 
   it('throws until the gemini adapter lands', () => {
@@ -20,8 +20,8 @@ describe('structuredProviderFor', () => {
 })
 
 describe('transportFor', () => {
-  it('throws until the openai transport lands', () => {
-    expect(() => transportFor(spec('openai'))).toThrow(/not available yet/)
+  it('builds an openai transport without touching secrets', () => {
+    expect(typeof transportFor(spec('openai')).stream).toBe('function')
   })
 
   it('throws until the gemini transport lands', () => {
