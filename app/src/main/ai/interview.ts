@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { MODELS } from './models'
-import { getParseClient, parseStructured, type ParseClient } from './roles/parse'
+import { parseStructured, type StructuredProvider } from './roles/parse'
 
 export const INTERVIEW_PARSE_MESSAGES = {
   declined: 'The interviewer declined to respond',
@@ -97,7 +97,7 @@ function bankLine(candidates: CandidateExperience[]): string {
 export async function firstQuestion(
   config: PracticeConfig,
   candidates: CandidateExperience[],
-  client?: ParseClient
+  provider?: StructuredProvider
 ): Promise<string> {
   if (process.env.STARFOLIO_AI_STUB === '1') return stubFirstQuestion(config)
   const userText = [
@@ -107,7 +107,7 @@ export async function firstQuestion(
     'Open the interview with your first behavioral question.'
   ].join('\n')
   const out = await parseStructured({
-    client: client ?? getParseClient(),
+    provider,
     model: MODELS.interview,
     system: INTERVIEW_SYSTEM,
     userText,
@@ -132,7 +132,7 @@ export interface EvaluateParams {
 // Q&A) rides in the user turn so the cache prefix never shifts.
 export async function evaluateAnswer(
   params: EvaluateParams,
-  client?: ParseClient
+  provider?: StructuredProvider
 ): Promise<InterviewTurn> {
   const answer = params.answer.trim()
   if (!answer) throw new Error('Nothing to evaluate — type an answer first')
@@ -153,7 +153,7 @@ export async function evaluateAnswer(
     .trim()
 
   const turn = await parseStructured({
-    client: client ?? getParseClient(),
+    provider,
     model: MODELS.interview,
     system: INTERVIEW_SYSTEM,
     userText,

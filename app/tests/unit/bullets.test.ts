@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { extractBullets, generateBullets } from '../../src/main/ai/bullets'
-import type { ParseClient } from '../../src/main/ai/roles/parse'
+import type { StructuredProvider } from '../../src/main/ai/roles/parse'
 import { initDb } from '../../src/main/db/client'
 import { createExperience, type Experience } from '../../src/main/db/repositories/experiences'
 
@@ -13,15 +13,13 @@ function make(title: string): Experience {
   return createExperience({ title })
 }
 
-function fakeClient(bullets: { text: string; experience_id: string }[]): ParseClient {
+function fakeProvider(bullets: { text: string; experience_id: string }[]): StructuredProvider {
   return {
-    messages: {
-      parse: async () => ({
-        stop_reason: 'end_turn',
-        parsed_output: { bullets },
-        usage: { input_tokens: 1, output_tokens: 1 }
-      })
-    }
+    parse: async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: { bullets },
+      usage: { input_tokens: 1, output_tokens: 1 }
+    })
   }
 }
 
@@ -56,21 +54,21 @@ describe('extractBullets stub path', () => {
 describe('extractBullets grounding', () => {
   it('drops bullets tagged with an unknown experience id', async () => {
     const e = make('real')
-    const client = fakeClient([
+    const provider = fakeProvider([
       { text: 'keep me', experience_id: e.id },
       { text: 'drop me', experience_id: 'not-a-real-id' }
     ])
-    const out = await extractBullets('jd', [e], client)
+    const out = await extractBullets('jd', [e], provider)
     expect(out).toEqual([{ text: 'keep me', experienceId: e.id, experienceTitle: 'real' }])
   })
 
   it('drops blank bullets and trims the surviving text', async () => {
     const e = make('real')
-    const client = fakeClient([
+    const provider = fakeProvider([
       { text: '   ', experience_id: e.id },
       { text: '  trimmed  ', experience_id: e.id }
     ])
-    const out = await extractBullets('jd', [e], client)
+    const out = await extractBullets('jd', [e], provider)
     expect(out).toEqual([{ text: 'trimmed', experienceId: e.id, experienceTitle: 'real' }])
   })
 })

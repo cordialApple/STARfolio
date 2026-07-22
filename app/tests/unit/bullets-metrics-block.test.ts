@@ -1,26 +1,24 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { extractBullets } from '../../src/main/ai/bullets'
-import type { ParseClient } from '../../src/main/ai/roles/parse'
+import type { StructuredProvider } from '../../src/main/ai/roles/parse'
 import { initDb } from '../../src/main/db/client'
 import { createExperience } from '../../src/main/db/repositories/experiences'
 
 beforeEach(() => initDb(':memory:'))
 
-function capturingClient(): { client: ParseClient; userText: () => string } {
+function capturingProvider(): { provider: StructuredProvider; userText: () => string } {
   let seen = ''
-  const client: ParseClient = {
-    messages: {
-      parse: async (params: unknown) => {
-        seen = (params as { messages: { content: string }[] }).messages[0].content
-        return {
-          stop_reason: 'end_turn',
-          parsed_output: { bullets: [] },
-          usage: { input_tokens: 1, output_tokens: 1 }
-        }
+  const provider: StructuredProvider = {
+    parse: async (req) => {
+      seen = req.userText
+      return {
+        stop_reason: 'end_turn',
+        parsed_output: { bullets: [] },
+        usage: { input_tokens: 1, output_tokens: 1 }
       }
     }
   }
-  return { client, userText: () => seen }
+  return { provider, userText: () => seen }
 }
 
 describe('extractBullets experience block metrics', () => {
@@ -32,8 +30,8 @@ describe('extractBullets experience block metrics', () => {
         { label: 'incidents' }
       ]
     })
-    const { client, userText } = capturingClient()
-    await extractBullets('jd', [e], client)
+    const { provider, userText } = capturingProvider()
+    await extractBullets('jd', [e], provider)
     expect(userText()).toContain('Metrics: latency: 120ms; incidents:')
   })
 })

@@ -1,30 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { extractBullets, generateBullets } from '../../src/main/ai/bullets'
-import type { ParseClient } from '../../src/main/ai/roles/parse'
+import type { StructuredProvider } from '../../src/main/ai/roles/parse'
 import { initDb } from '../../src/main/db/client'
 import { createExperience } from '../../src/main/db/repositories/experiences'
 
 beforeEach(() => initDb(':memory:'))
 afterEach(() => vi.unstubAllEnvs())
 
-function capturingClient(bullets: { text: string; experience_id: string }[]): {
-  client: ParseClient
+function capturingProvider(bullets: { text: string; experience_id: string }[]): {
+  provider: StructuredProvider
   userText: () => string
 } {
   let seen = ''
-  const client: ParseClient = {
-    messages: {
-      parse: async (params: unknown) => {
-        seen = (params as { messages: { content: string }[] }).messages[0].content
-        return {
-          stop_reason: 'end_turn',
-          parsed_output: { bullets },
-          usage: { input_tokens: 1, output_tokens: 1 }
-        }
+  const provider: StructuredProvider = {
+    parse: async (req) => {
+      seen = req.userText
+      return {
+        stop_reason: 'end_turn',
+        parsed_output: { bullets },
+        usage: { input_tokens: 1, output_tokens: 1 }
       }
     }
   }
-  return { client, userText: () => seen }
+  return { provider, userText: () => seen }
 }
 
 describe('extractBullets experience block', () => {
@@ -45,8 +43,8 @@ describe('extractBullets experience block', () => {
       title: '',
       metrics: [{ label: 'Uptime', value: null, unit: null }]
     })
-    const { client, userText } = capturingClient([])
-    await extractBullets('jd', [e, untitled], client)
+    const { provider, userText } = capturingProvider([])
+    await extractBullets('jd', [e, untitled], provider)
 
     const text = userText()
     expect(text).toContain('Situation: Releases were manual and flaky.')
@@ -60,21 +58,21 @@ describe('extractBullets experience block', () => {
   })
 
   it('returns nothing when there are no experiences to draw from', async () => {
-    const { client } = capturingClient([{ text: 'x', experience_id: 'y' }])
-    expect(await extractBullets('jd', [], client)).toEqual([])
+    const { provider } = capturingProvider([{ text: 'x', experience_id: 'y' }])
+    expect(await extractBullets('jd', [], provider)).toEqual([])
   })
 
   it('keeps grounded bullets and drops ones with unknown ids or blank text', async () => {
     const e = createExperience({ title: 'Shipped the migration', action: 'a' })
     const untitled = createExperience({ title: '', action: 'b' })
-    const { client } = capturingClient([
+    const { provider } = capturingProvider([
       { text: '  Led the migration  ', experience_id: e.id },
       { text: 'Ghost bullet', experience_id: 'no-such-id' },
       { text: '   ', experience_id: e.id },
       { text: 'Kept it up', experience_id: untitled.id }
     ])
 
-    const bullets = await extractBullets('jd', [e, untitled], client)
+    const bullets = await extractBullets('jd', [e, untitled], provider)
 
     expect(bullets).toEqual([
       { text: 'Led the migration', experienceId: e.id, experienceTitle: 'Shipped the migration' },

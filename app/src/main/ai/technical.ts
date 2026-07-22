@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { INTERVIEW_PARSE_MESSAGES } from './interview'
 import { MODELS } from './models'
-import { getParseClient, parseStructured, type ParseClient } from './roles/parse'
+import { parseStructured, type StructuredProvider } from './roles/parse'
 import type { CorpusHit } from '../search'
 
 export const TECH_RUBRIC_DIMENSIONS = ['correctness', 'depth', 'tradeoffs', 'communication'] as const
@@ -84,7 +84,7 @@ export interface FirstTechnicalQuestion {
 export async function firstTechnicalQuestion(
   config: TechnicalConfig,
   chunks: CorpusHit[],
-  client?: ParseClient
+  provider?: StructuredProvider
 ): Promise<FirstTechnicalQuestion> {
   if (process.env.STARFOLIO_AI_STUB === '1') return stubFirstTechnical(config, chunks)
   const userText = [
@@ -94,7 +94,7 @@ export async function firstTechnicalQuestion(
     'Open the interview with your first technical question, grounded in the corpus. Cite the chunk_ids you drew on.'
   ].join('\n')
   const out = await parseStructured({
-    client: client ?? getParseClient(),
+    provider,
     model: MODELS.interview,
     system: TECH_SYSTEM,
     userText,
@@ -116,7 +116,7 @@ export interface EvaluateTechnicalParams {
 
 export async function evaluateTechnicalAnswer(
   params: EvaluateTechnicalParams,
-  client?: ParseClient
+  provider?: StructuredProvider
 ): Promise<TechnicalTurn> {
   const answer = params.answer.trim()
   if (!answer) throw new Error('Nothing to evaluate — type an answer first')
@@ -139,7 +139,7 @@ export async function evaluateTechnicalAnswer(
     .trim()
 
   const turn = await parseStructured({
-    client: client ?? getParseClient(),
+    provider,
     model: MODELS.interview,
     system: TECH_SYSTEM,
     userText,

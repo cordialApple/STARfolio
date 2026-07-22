@@ -6,20 +6,17 @@ import {
   extractEntities,
   starExtraction,
   entityExtraction,
-  AiRefusalError,
-  type ExtractClient,
-  type ExtractMessage
+  AiRefusalError
 } from '../../src/main/ai/extract'
+import type { StructuredProvider, StructuredResult } from '../../src/main/ai/roles/parse'
 
-function fakeClient(msg: Partial<ExtractMessage>): ExtractClient {
+function fakeProvider(msg: Partial<StructuredResult>): StructuredProvider {
   return {
-    messages: {
-      parse: async () => ({
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5 },
-        ...msg
-      })
-    }
+    parse: async () => ({
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5 },
+      ...msg
+    })
   }
 }
 
@@ -117,7 +114,7 @@ describe('extract siblings (injected client)', () => {
         }
       ]
     }
-    const out = await extractResumeStar('resume', fakeClient({ parsed_output }))
+    const out = await extractResumeStar('resume', fakeProvider({ parsed_output }))
     expect(out).toHaveLength(1)
     expect(out[0].title).toBe('Led the pipeline rewrite')
     const rows = getDb()
@@ -128,13 +125,13 @@ describe('extract siblings (injected client)', () => {
 
   it('validates an entity response', async () => {
     const parsed_output = { entities: [{ kind: 'org', name: 'Acme' }] }
-    const out = await extractEntities('notes', fakeClient({ parsed_output }))
+    const out = await extractEntities('notes', fakeProvider({ parsed_output }))
     expect(out.entities).toEqual([{ kind: 'org', name: 'Acme' }])
   })
 
   it('throws AiRefusalError on an evidence refusal', async () => {
     await expect(
-      extractEvidenceStar('data', 'spreadsheet', fakeClient({ stop_reason: 'refusal' }))
+      extractEvidenceStar('data', 'spreadsheet', fakeProvider({ stop_reason: 'refusal' }))
     ).rejects.toBeInstanceOf(AiRefusalError)
   })
 })
