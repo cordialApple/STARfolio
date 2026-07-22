@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { INTERVIEW_PARSE_MESSAGES } from './interview'
 import { MODELS } from './models'
-import { getParseClient, parseStructured, type ParseClient } from './roles/parse'
+import { parseStructured, type StructuredProvider } from './roles/parse'
 import { getExperience, type Experience } from '../db/repositories/experiences'
 
 export const bulletExtraction = z.object({
@@ -45,7 +45,7 @@ function experienceBlock(exp: Experience): string {
 export async function extractBullets(
   jdText: string,
   experiences: Experience[],
-  client?: ParseClient
+  provider?: StructuredProvider
 ): Promise<ResumeBullet[]> {
   if (experiences.length === 0) return []
   const byId = new Map(experiences.map((e) => [e.id, e]))
@@ -54,7 +54,7 @@ export async function extractBullets(
       ? stubBullets(experiences)
       : (
           await parseStructured({
-            client: client ?? getParseClient(),
+            provider,
             model: MODELS.interview,
             system: BULLETS_SYSTEM,
             userText: [

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { MODELS } from '../models'
-import { getParseClient, parseStructured, stubEnabled, type RoleOptions } from './parse'
+import { parseStructured, stubEnabled, type RoleOptions } from './parse'
 import { COVERAGE_DIMENSIONS, emptyCoverage, type Roadmap, type Topic } from '../roadmap'
 
 export interface ArchitectExperience {
@@ -75,7 +75,7 @@ function inputToUserText(input: ArchitectInput): string {
 export async function buildRoadmap(input: ArchitectInput, opts: RoleOptions = {}): Promise<Roadmap> {
   if (stubEnabled(opts.stub)) return stubRoadmap(input)
   const plan = await parseStructured({
-    client: opts.client ?? getParseClient(),
+    provider: opts.provider,
     model: MODELS.architect,
     system: ARCHITECT_SYSTEM,
     userText: inputToUserText(input),

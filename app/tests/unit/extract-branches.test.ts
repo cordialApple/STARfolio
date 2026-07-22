@@ -1,11 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { getDb, initDb } from '../../src/main/db/client'
-import {
-  extractEntities,
-  extractStar,
-  type ExtractClient,
-  type ExtractMessage
-} from '../../src/main/ai/extract'
+import { extractEntities, extractStar } from '../../src/main/ai/extract'
+import type { StructuredProvider, StructuredResult } from '../../src/main/ai/roles/parse'
 
 const goodOutput = {
   title: 'Led the pipeline rewrite',
@@ -20,15 +16,13 @@ const goodOutput = {
   gaps: []
 }
 
-function fakeClient(msg: Partial<ExtractMessage>): ExtractClient {
+function fakeProvider(msg: Partial<StructuredResult>): StructuredProvider {
   return {
-    messages: {
-      parse: async () => ({
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 10, output_tokens: 20 },
-        ...msg
-      })
-    }
+    parse: async () => ({
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 20 },
+      ...msg
+    })
   }
 }
 
@@ -42,7 +36,7 @@ describe('extract branch edges', () => {
   })
 
   it('logs zero cache-read tokens when the model usage omits them', async () => {
-    await extractStar('notes', fakeClient({ parsed_output: goodOutput }))
+    await extractStar('notes', fakeProvider({ parsed_output: goodOutput }))
     const rows = getDb()
       .prepare("SELECT cache_read_tokens FROM usage_log WHERE feature = 'extract'")
       .all()

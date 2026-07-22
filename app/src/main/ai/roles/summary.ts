@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { MODELS } from '../models'
-import { getParseClient, parseStructured, stubEnabled, type RoleOptions } from './parse'
+import { parseStructured, stubEnabled, type RoleOptions } from './parse'
 import { COVERAGE_DIMENSIONS, type CandidateState, type Roadmap, type Topic } from '../roadmap'
 
 export interface TranscriptTurn {
@@ -61,7 +61,7 @@ function userText(input: SummaryInput): string {
 export async function summarizeInterview(input: SummaryInput, opts: RoleOptions = {}): Promise<InterviewReport> {
   if (stubEnabled(opts.stub)) return stubSummary(input)
   return parseStructured({
-    client: opts.client ?? getParseClient(),
+    provider: opts.provider,
     model: MODELS.summary,
     system: SUMMARY_SYSTEM,
     userText: userText(input),

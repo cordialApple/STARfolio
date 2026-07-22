@@ -1,22 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { initDb, getDb } from '../../src/main/db/client'
-import {
-  extractStar,
-  starExtraction,
-  AiRefusalError,
-  type ExtractClient,
-  type ExtractMessage
-} from '../../src/main/ai/extract'
+import { extractStar, starExtraction, AiRefusalError } from '../../src/main/ai/extract'
+import type { StructuredProvider, StructuredResult } from '../../src/main/ai/roles/parse'
 
-function fakeClient(msg: Partial<ExtractMessage>): ExtractClient {
+function fakeProvider(msg: Partial<StructuredResult>): StructuredProvider {
   return {
-    messages: {
-      parse: async () => ({
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5 },
-        ...msg
-      })
-    }
+    parse: async () => ({
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5 },
+      ...msg
+    })
   }
 }
 
@@ -53,14 +46,14 @@ describe('extractStar (stub)', () => {
   })
 })
 
-describe('extractStar (injected client)', () => {
+describe('extractStar (injected provider)', () => {
   beforeEach(() => {
     initDb(':memory:')
     delete process.env.STARFOLIO_AI_STUB
   })
 
   it('maps a validated model response and logs usage', async () => {
-    const out = await extractStar('notes', fakeClient({ parsed_output: goodOutput }))
+    const out = await extractStar('notes', fakeProvider({ parsed_output: goodOutput }))
     expect(out.title).toBe('Led the pipeline rewrite')
     expect(out.skills[0]).toEqual({ name: 'CI/CD', kind: 'technical' })
     const rows = getDb().prepare("SELECT feature, in_tokens FROM usage_log WHERE feature = 'extract'").all()
@@ -69,13 +62,13 @@ describe('extractStar (injected client)', () => {
 
   it('throws AiRefusalError on a refusal stop_reason', async () => {
     await expect(
-      extractStar('notes', fakeClient({ stop_reason: 'refusal', stop_details: { category: 'cyber' } }))
+      extractStar('notes', fakeProvider({ stop_reason: 'refusal', stop_details: { category: 'cyber' } }))
     ).rejects.toBeInstanceOf(AiRefusalError)
   })
 
   it('throws when the model returns no parsed output', async () => {
     await expect(
-      extractStar('notes', fakeClient({ stop_reason: 'max_tokens', parsed_output: null }))
+      extractStar('notes', fakeProvider({ stop_reason: 'max_tokens', parsed_output: null }))
     ).rejects.toThrow(/Extraction failed/)
   })
 })

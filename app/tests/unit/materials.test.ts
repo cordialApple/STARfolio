@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { markdownToDocx } from '../../src/main/export/docx'
 import { extractBullets } from '../../src/main/ai/bullets'
 import type { Experience } from '../../src/main/db/repositories/experiences'
+import type { StructuredProvider } from '../../src/main/ai/roles/parse'
 
 function exp(id: string, title: string, extra: Partial<Experience> = {}): Experience {
   return {
@@ -26,11 +27,9 @@ function exp(id: string, title: string, extra: Partial<Experience> = {}): Experi
   } as Experience
 }
 
-function mockClient(output: unknown): { messages: { parse: () => Promise<unknown> } } {
+function mockProvider(output: unknown): StructuredProvider {
   return {
-    messages: {
-      parse: async () => ({ stop_reason: null, parsed_output: output, usage: { input_tokens: 0, output_tokens: 0 } })
-    }
+    parse: async () => ({ stop_reason: null, parsed_output: output, usage: { input_tokens: 0, output_tokens: 0 } })
   }
 }
 
@@ -73,14 +72,14 @@ describe('markdownToDocx', () => {
 
 describe('extractBullets grounding', () => {
   it('keeps only bullets that tag a real provided experience', async () => {
-    const client = mockClient({
+    const provider = mockProvider({
       bullets: [
         { text: 'Cut invoice generation from 6 hours to 20 minutes', experience_id: 'e1' },
         { text: 'A fabricated bullet', experience_id: 'ghost' },
         { text: '', experience_id: 'e1' }
       ]
     })
-    const out = await extractBullets('a backend role', [exp('e1', 'Billing migration')], client as never)
+    const out = await extractBullets('a backend role', [exp('e1', 'Billing migration')], provider)
     expect(out).toHaveLength(1)
     expect(out[0].experienceId).toBe('e1')
     expect(out[0].experienceTitle).toBe('Billing migration')

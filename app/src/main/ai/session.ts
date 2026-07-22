@@ -19,7 +19,7 @@ import {
   type InterviewReport,
   type TranscriptTurn
 } from './roles'
-import type { ParseClient } from './roles/parse'
+import type { StructuredProvider } from './roles/parse'
 import { resolveTransport } from './resolve-transport'
 import type { AiTransport } from './transport'
 import type { UtterancePartial } from './utterance'
@@ -154,24 +154,24 @@ function evaluatorInputFor(session: StoredInterviewSession, answer: string): Eva
 async function evaluationFor(
   session: StoredInterviewSession,
   answer: string,
-  client?: ParseClient
+  provider?: StructuredProvider
 ): Promise<AnswerEvaluation> {
   const input = evaluatorInputFor(session, answer)
   if (!input) return EMPTY_EVALUATION
-  return evaluateAnswer(input, { client })
+  return evaluateAnswer(input, { provider })
 }
 
 export async function steerFromTranscript(
   sessionId: string,
   text: string,
-  client?: ParseClient,
+  provider?: StructuredProvider,
   store: SessionStore = defaultStore
 ): Promise<AnswerEvaluation> {
   const answer = text.trim()
   if (!answer) return EMPTY_EVALUATION
   const session = store.loadSession(sessionId)
   if (!session || session.state.phase === 'done') return EMPTY_EVALUATION
-  return evaluationFor(session, answer, client)
+  return evaluationFor(session, answer, provider)
 }
 
 function toStep(
@@ -189,13 +189,13 @@ function toStep(
 
 export async function startInterview(
   input: StartInterviewInput,
-  client?: ParseClient,
+  provider?: StructuredProvider,
   sink?: UtteranceStreamSink,
   store: SessionStore = defaultStore
 ): Promise<InterviewStep> {
   const roadmap = await buildRoadmap(
     { resumeText: input.resumeText, experiences: input.experiences },
-    { client }
+    { provider }
   )
   const state = reduce(
     initState(roadmap, {
@@ -223,7 +223,7 @@ export async function startInterview(
 
 export async function answerInterview(
   input: AnswerInterviewInput,
-  client?: ParseClient,
+  provider?: StructuredProvider,
   sink?: UtteranceStreamSink,
   store: SessionStore = defaultStore
 ): Promise<InterviewStep> {
@@ -236,7 +236,7 @@ export async function answerInterview(
   const elapsedMs = input.elapsedMs ?? now - session.startedAtMs
   const evaluation =
     steeringSignalFor(session.id, now, STEERING_MAX_AGE_MS)?.evaluation ??
-    (await evaluationFor(session, answer, client))
+    (await evaluationFor(session, answer, provider))
   let state = reduce(session.state, { type: 'answer', elapsedMs, evaluation })
 
   const action = selectAction(state)
@@ -258,7 +258,7 @@ export async function answerInterview(
     ]
     report = await summarizeInterview(
       { transcript, roadmap: state.roadmap, candidate: state.candidate },
-      { client }
+      { provider }
     )
   }
 

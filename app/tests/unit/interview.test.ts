@@ -6,11 +6,11 @@ import {
   type CandidateExperience,
   type PracticeConfig
 } from '../../src/main/ai/interview'
-import type { ParseClient } from '../../src/main/ai/roles/parse'
+import type { StructuredProvider } from '../../src/main/ai/roles/parse'
 
 const usage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0 }
-function clientReturning(msg: { stop_reason: string | null; parsed_output?: unknown }): ParseClient {
-  return { messages: { parse: async () => ({ ...msg, usage }) } }
+function providerReturning(msg: { stop_reason: string | null; parsed_output?: unknown }): StructuredProvider {
+  return { parse: async () => ({ ...msg, usage }) }
 }
 
 const config: PracticeConfig = { kind: 'genre', promptText: 'Leadership' }
@@ -101,28 +101,28 @@ describe('interviewer engine (live parse path)', () => {
   }
 
   it('surfaces the interviewer copy when the model refuses', async () => {
-    const client = clientReturning({ stop_reason: 'refusal' })
-    await expect(firstQuestion(config, candidates, client)).rejects.toThrow(
+    const provider = providerReturning({ stop_reason: 'refusal' })
+    await expect(firstQuestion(config, candidates, provider)).rejects.toThrow(
       'The interviewer declined to respond'
     )
-    await expect(evaluateAnswer(params, client)).rejects.toThrow('The interviewer declined to respond')
+    await expect(evaluateAnswer(params, provider)).rejects.toThrow('The interviewer declined to respond')
   })
 
   it('surfaces the interviewer failure copy with the stop_reason when parsing yields nothing', async () => {
-    const client = clientReturning({ stop_reason: 'max_tokens', parsed_output: null })
-    await expect(firstQuestion(config, candidates, client)).rejects.toThrow(
+    const provider = providerReturning({ stop_reason: 'max_tokens', parsed_output: null })
+    await expect(firstQuestion(config, candidates, provider)).rejects.toThrow(
       'Interview call failed (stop_reason: max_tokens)'
     )
   })
 
   it('returns the parsed question on the happy path', async () => {
-    const client = clientReturning({ stop_reason: 'end_turn', parsed_output: { question: 'Tell me about a time.' } })
-    expect(await firstQuestion(config, candidates, client)).toBe('Tell me about a time.')
+    const provider = providerReturning({ stop_reason: 'end_turn', parsed_output: { question: 'Tell me about a time.' } })
+    expect(await firstQuestion(config, candidates, provider)).toBe('Tell me about a time.')
   })
 
   it('parses a turn and filters used ids to the banked set', async () => {
-    const client = clientReturning({ stop_reason: 'end_turn', parsed_output: turnOutput })
-    const turn = await evaluateAnswer(params, client)
+    const provider = providerReturning({ stop_reason: 'end_turn', parsed_output: turnOutput })
+    const turn = await evaluateAnswer(params, provider)
     expect(turn.used_experience_ids).toEqual(['exp-1'])
     expect(turn.feedback.summary).toBe('good')
   })

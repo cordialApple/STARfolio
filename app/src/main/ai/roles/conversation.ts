@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { MODELS } from '../models'
-import { getParseClient, parseStructured, stubEnabled, type RoleOptions } from './parse'
+import { parseStructured, stubEnabled, type RoleOptions } from './parse'
 import type { InterviewAction } from '../roadmap'
 import type { AiTransport } from '../transport'
 import { streamWithWatchdog, type StallTimer, type UtterancePartial } from '../utterance'
@@ -63,7 +63,7 @@ export async function composeUtterance(input: ConversationInput, opts: RoleOptio
   if (stubEnabled(opts.stub)) return stubUtterance(input)
   const req = conversationRequest(input)
   const out = await parseStructured({
-    client: opts.client ?? getParseClient(),
+    provider: opts.provider,
     model: req.model,
     system: req.system,
     userText: req.prompt,

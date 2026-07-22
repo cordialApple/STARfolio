@@ -1,21 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { initDb } from '../../src/main/db/client'
-import {
-  extractEvidenceStar,
-  extractStar,
-  type ExtractClient,
-  type ExtractMessage
-} from '../../src/main/ai/extract'
+import { extractEvidenceStar, extractStar } from '../../src/main/ai/extract'
+import type { StructuredProvider, StructuredResult } from '../../src/main/ai/roles/parse'
 
-function fakeClient(msg: Partial<ExtractMessage>): ExtractClient {
+function fakeProvider(msg: Partial<StructuredResult>): StructuredProvider {
   return {
-    messages: {
-      parse: async () => ({
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5 },
-        ...msg
-      })
-    }
+    parse: async () => ({
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5 },
+      ...msg
+    })
   }
 }
 
@@ -32,7 +26,7 @@ const evidenceOutput = {
   gaps: [{ field: 'result', question: 'What was the outcome?' }]
 }
 
-describe('extractEvidenceStar and getExtractClient', () => {
+describe('extractEvidenceStar provider injection', () => {
   beforeEach(() => {
     initDb(':memory:')
     delete process.env.STARFOLIO_AI_STUB
@@ -42,7 +36,7 @@ describe('extractEvidenceStar and getExtractClient', () => {
   })
 
   it('validates an injected evidence extraction response', async () => {
-    const out = await extractEvidenceStar('a=1,b=2 rows', 'spreadsheet', fakeClient({ parsed_output: evidenceOutput }))
+    const out = await extractEvidenceStar('a=1,b=2 rows', 'spreadsheet', fakeProvider({ parsed_output: evidenceOutput }))
     expect(out.title).toBe('Built the ingest service')
     expect(out.tags).toEqual(['repo'])
   })
