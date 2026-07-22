@@ -1,7 +1,8 @@
 import { getSecret } from '../settings/secrets'
 import { anthropicStructured, type StructuredProvider } from './roles/parse'
 import { anthropicTransport, type AiTransport } from './transport'
-import type { ModelSpec } from './routing'
+import { openaiStructured, openaiTransport } from './providers/openai'
+import { DEFAULT_OPENAI_BASE, type ModelSpec } from './routing'
 
 function notYet(provider: string): never {
   throw new Error(`Provider "${provider}" is not available yet`)
@@ -11,6 +12,8 @@ export function structuredProviderFor(spec: ModelSpec): StructuredProvider {
   switch (spec.provider) {
     case 'anthropic':
       return anthropicStructured
+    case 'openai':
+      return openaiStructured({ baseUrl: spec.baseUrl ?? DEFAULT_OPENAI_BASE })
     default:
       return notYet(spec.provider)
   }
@@ -23,6 +26,8 @@ export function transportFor(spec: ModelSpec): AiTransport {
       if (!apiKey) throw new Error('No Anthropic API key configured')
       return anthropicTransport(apiKey)
     }
+    case 'openai':
+      return openaiTransport({ baseUrl: spec.baseUrl ?? DEFAULT_OPENAI_BASE })
     default:
       return notYet(spec.provider)
   }
