@@ -66,7 +66,32 @@ New vertical under `app/src/main/voice/kyutai/` — pure/injectable, GPU-free in
 
 ## After Stage A
 
-6c is **one shared user surface**. Stage B ([6d](stage-06d-cascade-streaming-tts.md), cascade + streaming TTS, tiers verbatim) and Stage C ([6e](stage-06e-native-full-duplex.md), native Moshi/MoshiRAG full-duplex) both fork from it as parallel branches. Don't touch until 6c's checkpoint passes.
+6c is **one shared user surface**. Stage B ([6d](stage-06d-cascade-streaming-tts.md), cascade + streaming TTS, tiers verbatim) and Stage C ([6e](stage-06e-native-full-duplex.md), native Moshi/MoshiRAG full-duplex) both fork from it as parallel branches.
+
+### 6d.1 LANDED (held, uncommitted-then-committed)
+
+Streaming-TTS adapter built + green — committed at `7484f49`. `app/src/main/voice/kyutai/tts/` mirrors the STT spike (protocol/codec/config/adapter/stub/factory), reuses `SttTransport`/`FakeTransport`/`WebSocketTransport` verbatim. `KyutaiTtsAdapter`: `speak(text)`, `finish(): markerId`, `reset()`, `close()`; buffers outbound until Ready then flushes in order; surfaces `onAudio`/`onStart`(once)/`onEnd`(marker echo)/`onReady`/`onError`. Tests: adapter.test.ts (5) + adapter.pbt.test.ts (5 fast-check props, honesty banner) + codec.pbt.test.ts (3). **66/66 voice tests green.** Still Voice auto-merge exception — held for user live-mic. **Deferred (GPU):** real moshi TTS server + on-wire byte format — wire is modelled, not confirmed.
+
+**PBT note:** fast-check IS now approved and in use (contra the "Open decision" section above, which predates it) — `app/src/main/voice/pbt/pbt.ts` (`runProperty`, `fc`), seed `PBT_SEED` 202607, `PBT_RUNS` 200.
+
+### 6d.2 designed, NOT built — the intent seam (Fable consult)
+
+Full design in [stage-06d §Design](stage-06d-cascade-streaming-tts.md#design--the-intent-seam-6d2) + [migration §Capability tiers](../architecture/full-duplex-migration.md#capability-tiers-not-a-migration). The design is DESIGN-only — do NOT start building 6d.2 without explicit user go. Substance below.
+
+## Brain vs mouth, and the intent seam (Fable consult — this supersedes any earlier framing)
+
+Split the tiers by job:
+
+- **Brain — decides *what* to say / how to score.** Opus (`architect`, roadmap once from JD+resume) + Sonnet (`evaluator`, scores each answer into rubric dimensions) + deterministic reducer (picks next `InterviewAction`). The product's auditable credibility. **Persists unchanged B → C** — at C it moves off the hot path into an async scorer/steerer over Moshi's Inner Monologue (MoshiRAG pattern). Opus + Sonnet are never on the chopping block.
+- **Mouth — decides *how* it's voiced.** Haiku (`conversation`) phrases the action into one spoken line → TTS vocodes it. **Haiku is mouth-side and cascade-only:** Kyutai TTS is a dumb vocoder (speaks what it's handed), so the cascade *must* keep a hot-path phraser. Moshi is speech-to-speech and generates its own phrasing → Stage C drops Haiku. Deleting Haiku = skipping the cascade for native Moshi, **not** a 6d edit.
+
+**The reframe (what changed this session):** B and C are **capability tiers, not a migration**. Cascade is the **flagship** — GPU-less laptops are the entry-level majority install base *permanently* — and Moshi/full-duplex is an optional GPU-gated realism mode. Product reason too: **AI-interrupts-candidate is destructive for entry-level assessment** (nervous candidates need think-time), so B is the correct *assessment* model and C is a *realism-practice* mode. So 6d earns full polish, not minimum-viable.
+
+**The one real leak Fable surfaced:** "same brain, different mouth" holds in code but forks in *semantics* — cascade `InterviewAction` is prescriptive (spoken verbatim, turn boundary, guaranteed) while Moshi's is a best-effort suggestion (fires in a gap, pre-emptible by barge-in, may not be honored); and the evaluator's input forks from a clean per-turn transcript to an overlapped/truncated Inner Monologue. Bake the naive **utterance-level** seam (`action == the line to speak`) now and Stage C silently forks the brain.
+
+**The fix — draw the seam at intents, not utterances.** Above the line (shared, invariant B→C): Opus roadmap; a **mouth-agnostic canonical transcript** (time-aligned, both speakers, overlap + truncation markers); Sonnet over it; reducer emits `InterviewAction` as **intent + authority level** (command-vs-steer), not a literal string; final report. Below the line (per-mouth): turn detection, when intents realize, phrasing, barge-in, transport. Cascade = degenerate case (verbatim, always, at turn boundary; overlap markers empty). Same principle already shipped for per-role LLM routing — the mouth is a runtime-resolved slot, like the model.
+
+**Concrete GPU-free 6d.2 work (all pbt-in-ci, doable now):** 6d.2a intent `InterviewAction` + authority; 6d.2b canonical transcript store w/ overlap+truncation markers; 6d.2c seam conformance suite both mouths pass; 6d.2d Sonnet-scores-synthetic-truncated-transcripts tests (proves brain survives duplex on CPU pre-GPU); 6d.2e the turn loop itself. **Spend zero on Moshi failover infra until C's async-scoring go/no-go actually runs on a GPU.**
 
 ## Standing rules for the code work
 

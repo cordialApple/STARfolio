@@ -6,6 +6,8 @@ Research basis: Moshi (arXiv:2410.00037, kyutai.org/Moshi.pdf), Mimi codec (HF `
 
 The whole current voice stack is scaffolding around two facts: **whisper can't stream**, and **the LLM tier is turn-based**. Kyutai's stack dissolves the first fact cleanly and standalone; the second is a design choice we get to keep or shed. This doc commits Stage A, and frames Stage B vs Stage C for parallel branches.
 
+**Framing correction (read this first):** B and C are **not** a migration where C replaces B. This is a local desktop app on candidate hardware; GPU-less laptops are the majority install base *permanently*. So the **cascade (Stage B) is the flagship** — it earns full polish — and native full-duplex (Stage C) is an optional realism layer gated on a GPU. See ["Capability tiers, not a migration"](#capability-tiers-not-a-migration) below; it also records the one real leak (the reducer contract forks under duplex) and how the intent-level seam absorbs it.
+
 ---
 
 ## Stage A — swap the ASR front end (committed)
@@ -135,3 +137,38 @@ True barge-in, overlap, backchannels, ~200ms. The tiered brain becomes an **asyn
 - **Stage B is the safe capture of ~90% of the perceived win** (streaming both ends) with **0% reasoning loss**. If the demo goal is "fast, natural, obviously better than the whisper build," B alone delivers it.
 - **Stage C is the bet that pays in *interaction realism*** — barge-in and overlap are things B literally cannot do. It costs the live, hot-path, fully-auditable rubric; MoshiRAG is the evidence that async-in-the-gaps recovers the factual/structured parity, but *for our specific rubric-scoring* that's unproven and is the research to actually do on the C branch.
 - Parallel-branch plan: land A, then **B branch = productionize the cascade**, **C branch = spike the MoshiRAG-style async sidecar** and measure whether async gap-scoring holds our coverage-dimension rigor. The go/no-go for C is that single measurement.
+
+---
+
+## Capability tiers, not a migration
+
+C does **not** replace B. Both live behind one seam, permanently:
+
+- **Cascade (B) is the flagship.** This ships on candidate laptops. **GPU-less is the majority install base forever** — that's the entry-level job-seeker. So the cascade is not a stepping-stone we throw away; it's the primary product tier and earns full polish + hardening.
+- **Native full-duplex (C) is an optional realism layer**, gated on a GPU. It's a *mode*, not the destination.
+
+There's a product reason C is a mode and not the goal, too: **AI-interrupts-candidate is destructive for entry-level assessment.** Nervous first-jobbers need think-time; an interviewer that barges in on a pause is indefensible as an *assessor*, however "alive" it feels. Candidate-interrupts-AI is mildly nice; AI-interrupts-candidate is a demo trick that damages the actual measurement. So B is the correct **assessment** model and C is a **"realism practice"** mode — framing them as hardware tiers undersells that B is the product.
+
+### The one real leak: the reducer contract forks under duplex
+
+"Same brain, different mouth" holds in *code* but silently forks in *semantics* unless we're careful:
+
+- **Cascade:** `InterviewAction` is **prescriptive** — Haiku speaks it verbatim, at a clean turn boundary, guaranteed. The evaluator scores a clean per-turn transcript.
+- **Moshi:** `InterviewAction` becomes a **best-effort suggestion/conditioning** — it fires in a gap, may be pre-empted by barge-in, may not be honored at all. The evaluator scores an Inner Monologue full of overlaps and truncations.
+
+Bake the low (utterance-level) seam now — where the action *is* the line to speak — and Stage C quietly forks the brain.
+
+### The fix: draw the seam at intents, not utterances
+
+- **Above the line (shared, invariant B→C):** Opus roadmap; a **mouth-agnostic canonical transcript** (time-aligned, both speakers, overlap + truncation markers); Sonnet scoring over it; the reducer emitting `InterviewAction` as an **intent + authority level** ("probe error handling" / "advance"; command-vs-steer), not a literal string; the final report.
+- **Below the line (per-mouth):** turn/segment detection, *when* an intent is realized, phrasing, barge-in policy, transport.
+- Cascade is the **degenerate case**: intent realized verbatim, always, at the turn boundary (overlap markers trivially empty).
+
+This is the same "the model is a runtime-resolved slot, not a hardcode" principle already shipped for per-role LLM routing (anthropic|openai|gemini resolved at runtime, callers ignorant) — extended from the *reasoning* model to the *mouth*.
+
+### Cheapest GPU-free de-risk (do it inside Stage B, on CPU, now)
+
+1. A **property-based conformance suite** at the seam that both mouths must pass (same intent sequence in → realization guarantees out).
+2. Cascade emits the **full canonical transcript format today** (overlap markers just empty), and we **test Sonnet against synthetic truncated/overlapped transcripts now** — proving the rubric brain survives duplex-shaped input *before any GPU exists*.
+
+Verdict: **cascade is permanent — as the flagship, not a tier below C.** Polish B fully, buy the intent-level seam now for cheap, and spend zero on Moshi failover infrastructure until the async-scoring go/no-go (above) actually runs on a GPU. This is folded into [Stage 6d.2](../stages/stage-06d-cascade-streaming-tts.md#design--the-intent-seam-6d2).
