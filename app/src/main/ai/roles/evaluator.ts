@@ -99,6 +99,12 @@ export async function evaluateAnswer(input: EvaluatorInput, opts: RoleOptions = 
   return outToEvaluation(out, input)
 }
 
+export function scoreAnswerDeterministic(input: EvaluatorInput): AnswerEvaluation {
+  const answer = input.answer.trim()
+  if (!answer) throw new Error('Nothing to evaluate — an answer is required')
+  return stubEvaluate({ ...input, answer })
+}
+
 const DIMENSION_CUES: Record<CoverageDimension, RegExp> = {
   motivation: /\b(because|why|goal|problem|needed|wanted|motivat)/i,
   architecture: /\b(architect|design|system|built|component|service|schema|pipeline|api)/i,
