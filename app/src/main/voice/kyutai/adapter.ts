@@ -59,6 +59,12 @@ export class KyutaiSttAdapter {
     return id
   }
 
+  reset(): void {
+    this.assembler.reset()
+    this.resampler.reset()
+    this.chunker.reset()
+  }
+
   close(): void {
     this.transport.close()
   }

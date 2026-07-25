@@ -20,6 +20,10 @@ export class TranscriptAssembler {
 
   constructor(private readonly sinks: AssemblerSinks) {}
 
+  reset(): void {
+    this.words = []
+  }
+
   private text(): string {
     return this.words.join(' ')
   }
@@ -42,7 +46,7 @@ export class TranscriptAssembler {
       case 'Step':
         if (isEndOfTurn(msg) && this.words.length > 0) {
           this.emit(true)
-          this.words = []
+          this.reset()
           this.sinks.onEndOfTurn?.()
         }
         return

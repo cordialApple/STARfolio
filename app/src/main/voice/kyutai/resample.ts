@@ -8,6 +8,12 @@ export class LinearResampler {
     this.step = inputRate / outputRate
   }
 
+  reset(): void {
+    this.frac = 0
+    this.last = 0
+    this.primed = false
+  }
+
   process(input: Float32Array): Float32Array {
     if (input.length === 0) return new Float32Array(0)
     const out: number[] = []
@@ -34,6 +40,10 @@ export class BlockChunker {
   private buf: number[] = []
 
   constructor(private readonly size: number) {}
+
+  reset(): void {
+    this.buf = []
+  }
 
   push(samples: Float32Array): Float32Array[] {
     for (let i = 0; i < samples.length; i++) this.buf.push(samples[i])

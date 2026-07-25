@@ -1,6 +1,6 @@
 import type { IpcMain, WebContents } from 'electron'
-import { RollingTranscript, VoiceStreamSession, defaultFrameSourceConfig } from './streaming'
-import { transcribeSamples } from './index'
+import { RollingTranscript } from './streaming'
+import { KyutaiVoiceSession } from './kyutai/session'
 import { steerFromTranscript } from '../ai/session'
 import { interviewRuntime } from '../ai/runtime'
 import {
@@ -11,7 +11,7 @@ import {
 } from '../ai/steering'
 
 interface StreamEntry {
-  session: VoiceStreamSession
+  session: KyutaiVoiceSession
   transcript: RollingTranscript
   steering?: SteeringHandle
 }
@@ -41,17 +41,16 @@ function teardown(entry: StreamEntry | undefined): void {
 function open(sender: WebContents, sessionId?: string): void {
   teardown(sessions.get(sender.id))
   const transcript = new RollingTranscript()
-  const session = new VoiceStreamSession(
+  const session = new KyutaiVoiceSession(
     (event) => {
       if (!sender.isDestroyed()) sender.send('voice:utterance', event)
     },
-    defaultFrameSourceConfig(),
     {
-      decode: (samples) => transcribeSamples(samples),
       onTranscript: (event) => {
         transcript.push(event, Date.now())
         if (!sender.isDestroyed()) sender.send('voice:partial', event)
-      }
+      },
+      onError: (message) => console.error('[voice] kyutai stt error:', message)
     }
   )
   const entry: StreamEntry = { session, transcript }
