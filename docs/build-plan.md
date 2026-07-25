@@ -12,7 +12,11 @@ Ordering logic: walking skeleton with all risk spikes first; then a lean design 
 | 3 | [AI spine: brain dump & NL find](stages/stage-03-ai-spine.md) | propose-then-confirm capture; hybrid retrieval + NL search | ☑ |
 | 4 | [Mode B: on-demand stories — **MVP**](stages/stage-04-stories-mvp.md) | JD/genre → grounded, provenance-linked STAR story; tag `v0.1` | ☑ |
 | 5 | [Mode A: live practice (text)](stages/stage-05-practice.md) | interviewer engine, feedback rubric, drill-downs, session history | ☑ |
-| 6 | [Voice](stages/stage-06-voice.md) | push-to-talk STT (core), TTS toggle, streaming (stretch) | ☑ |
+| 6 | [Voice](stages/stage-06-voice.md) | push-to-talk STT (core), TTS toggle | ☑ |
+| 6b | [Streaming voice (whisper)](stages/stage-06b-streaming-voice.md) | whisper sliding-window streaming + VAD; superseded by 6c | ◐ |
+| 6c | [Streaming-STT swap (Stage A)](stages/stage-06c-streaming-stt-swap.md) | Kyutai STT replaces the whisper streaming front end: committed tokens, semantic end-of-turn, ~500 ms; tiers unchanged | ☐ |
+| 6d | [Cascade streaming TTS (Stage B)](stages/stage-06d-cascade-streaming-tts.md) | Unmute-style cascade: streaming TTS, tiers verbatim, retire TTFT-guard/stall-watchdog; still turn-gated | ☐ |
+| 6e | [Native full-duplex (Stage C)](stages/stage-06e-native-full-duplex.md) | Moshi/MoshiRAG: barge-in/overlap ~200 ms, tiers as async gap-scoring sidecar; gated on the rubric-rigor spike | ☐ |
 | 7 | [Narrative ingestion](stages/stage-07-narrative-ingestion.md) | files/resume/URLs → drafts with attached sources | ☑ |
 | 8 | [Evidence ingestion + knowledge graph](stages/stage-08-evidence-ingestion.md) | spreadsheets/code/repos; entities/edges layer | ☑ |
 | 9 | [Technical-interview layer (bonus)](stages/stage-09-technical-layer.md) | practice over your own reference corpus | ☑ |
