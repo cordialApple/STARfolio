@@ -76,6 +76,14 @@ export type InterviewAction =
   | { kind: 'closing' }
   | { kind: 'done' }
 
+export const AUTHORITIES = ['command', 'steer'] as const
+export type Authority = (typeof AUTHORITIES)[number]
+
+export interface DirectedAction {
+  intent: InterviewAction
+  authority: Authority
+}
+
 export const DEFAULT_BUDGET_MS = 30 * 60 * 1000
 export const DEFAULT_CLOSING_RESERVE_MS = 3 * 60 * 1000
 

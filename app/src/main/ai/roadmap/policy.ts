@@ -5,7 +5,14 @@ import {
   timePressure,
   topicSaturation
 } from './coverage'
-import type { InterviewAction, InterviewState, Thread, Topic } from './types'
+import type {
+  Authority,
+  DirectedAction,
+  InterviewAction,
+  InterviewState,
+  Thread,
+  Topic
+} from './types'
 
 function topicById(state: InterviewState, id: string | null): Topic | null {
   if (!id) return null
@@ -85,4 +92,24 @@ export function selectAction(state: InterviewState): InterviewAction {
       }
     }
   }
+}
+
+// Structural moves the interview state depends on are commands the mouth must realize at the
+// turn boundary; a probe is a steer the duplex mouth (Stage C) may weave, defer, or drop as the
+// candidate self-corrects. Cascade honors both verbatim — the degenerate case.
+const AUTHORITY_BY_KIND: Record<InterviewAction['kind'], Authority> = {
+  ask_intro: 'command',
+  probe: 'steer',
+  transition: 'command',
+  closing: 'command',
+  done: 'command'
+}
+
+export function authorityOf(intent: InterviewAction): Authority {
+  return AUTHORITY_BY_KIND[intent.kind]
+}
+
+export function directAction(state: InterviewState): DirectedAction {
+  const intent = selectAction(state)
+  return { intent, authority: authorityOf(intent) }
 }
