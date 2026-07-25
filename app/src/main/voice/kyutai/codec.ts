@@ -1,7 +1,7 @@
 import { decode, encode } from '@msgpack/msgpack'
 import type { InMsg, OutMsg } from './protocol'
 
-const OUT_TYPES = new Set(['Ready', 'Word', 'EndWord', 'Step', 'Marker', 'Error'])
+export const OUT_TYPES = new Set(['Ready', 'Word', 'EndWord', 'Step', 'Marker', 'Error'])
 
 export function encodeInMsg(msg: InMsg): Uint8Array {
   return encode(msg, { forceFloat32: true })
