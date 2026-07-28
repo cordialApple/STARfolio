@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { initDb } from '../../src/main/db/client'
-import { logUsage, usageSummary } from '../../src/main/ai/usage'
+import { logUsage, usageSummary, PRICING } from '../../src/main/ai/usage'
+import { MODELS } from '../../src/main/ai/models'
 
 beforeEach(() => {
   initDb(':memory:')
@@ -30,6 +31,16 @@ describe('usageSummary', () => {
   it('falls back to sonnet pricing for an unknown model', () => {
     logUsage('made-up-model', { in: 1_000_000, out: 0, cacheRead: 0 }, 'parse')
     expect(usageSummary().totalCost).toBeCloseTo(3, 10)
+  })
+
+  it('prices the architect opus model at opus rates, not the sonnet fallback', () => {
+    logUsage(MODELS.architect, { in: 1_000_000, out: 0, cacheRead: 0 }, 'story')
+    expect(usageSummary().totalCost).toBeCloseTo(15, 10)
+  })
+
+  it('has an explicit price for every first-party model in MODELS', () => {
+    const unpriced = Object.values(MODELS).filter((m) => m.startsWith('claude-') && !PRICING[m])
+    expect(unpriced).toEqual([])
   })
 
   it('prices openai- and gemini-prefixed models at zero', () => {

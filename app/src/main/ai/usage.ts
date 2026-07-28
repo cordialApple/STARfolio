@@ -25,9 +25,10 @@ interface ModelPricing {
   cacheRead: number
 }
 
-const PRICING: Record<string, ModelPricing> = {
+export const PRICING: Record<string, ModelPricing> = {
   'claude-haiku-4-5': { in: 1, out: 5, cacheRead: 0.1 },
-  'claude-sonnet-5': { in: 3, out: 15, cacheRead: 0.3 }
+  'claude-sonnet-5': { in: 3, out: 15, cacheRead: 0.3 },
+  'claude-opus-4-8': { in: 15, out: 75, cacheRead: 1.5 }
 }
 
 const FALLBACK_PRICING: ModelPricing = { in: 3, out: 15, cacheRead: 0.3 }
