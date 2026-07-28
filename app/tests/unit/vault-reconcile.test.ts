@@ -94,4 +94,11 @@ describe('planReconcile', () => {
     expect(plan.toVault.map((e) => e.id).sort()).toEqual(['shared', 'store-new'])
     expect(plan.toStore.map((n) => n.id).sort()).toEqual(['vault-new'])
   })
+
+  it('drops empty stub notes instead of importing blanks', () => {
+    const stub = note({ id: null, title: 'Obsidian', situation: '', task: '', action: '', result_text: '' })
+    const real = note({ id: null, title: 'Real', situation: 'happened' })
+    const plan = planReconcile([], [stub, real])
+    expect(plan.toStore.map((n) => n.title)).toEqual(['Real'])
+  })
 })

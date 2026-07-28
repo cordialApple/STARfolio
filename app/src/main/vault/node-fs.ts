@@ -8,7 +8,10 @@ export const nodeVaultFs: VaultFs = {
   },
   writeFile: (path, data) => writeFile(path, data, 'utf8'),
   readFile: (path) => readFile(path, 'utf8'),
-  readdir: (dir) => readdir(dir),
+  walk: async (dir) => {
+    const all = await readdir(dir, { recursive: true })
+    return all.filter((p) => !p.split(/[\\/]/).some((seg) => seg.startsWith('.')))
+  },
   unlink: (path) => unlink(path),
   join
 }
