@@ -5,16 +5,18 @@ export interface ToggleProps extends Omit<ComponentPropsWithRef<'button'>, 'onCh
   checked: boolean
   onCheckedChange: (checked: boolean) => void
   label: string
+  hideLabel?: boolean
 }
 
 export function Toggle({
   checked,
   onCheckedChange,
   label,
+  hideLabel = false,
   className,
   ...props
 }: ToggleProps): React.JSX.Element {
-  return (
+  const control = (
     <button
       type="button"
       role="switch"
@@ -35,5 +37,14 @@ export function Toggle({
         )}
       />
     </button>
+  )
+
+  if (hideLabel) return control
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-ink">{label}</span>
+      {control}
+    </div>
   )
 }

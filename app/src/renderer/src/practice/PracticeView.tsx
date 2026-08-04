@@ -302,6 +302,7 @@ export function PracticeView(): React.JSX.Element {
                 <Volume2 className="size-4" />
                 Read aloud
                 <Toggle
+                  hideLabel
                   label="Read interviewer questions aloud"
                   checked={tts}
                   onCheckedChange={(on) => {
