@@ -40,7 +40,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ['tests/**/*.{ts,tsx}'],
+    files: ['tests/**/*.{ts,tsx}', '**/*.test.{ts,tsx}'],
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off'
     }
