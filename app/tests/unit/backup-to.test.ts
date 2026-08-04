@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { getDb, initDb } from '../../src/main/db/client'
-import { backupTo } from '../../src/main/db/backup'
+import { backupTo } from '../../src/main/db/migrate'
 import { createExperience } from '../../src/main/db/repositories/experiences'
 
 let dir: string | null = null
