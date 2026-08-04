@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDb, initDb } from '../../src/main/db/client'
 import { createExperience, type ExperienceInput } from '../../src/main/db/repositories/experiences'
-import { neighborsOf } from '../../src/main/db/repositories/graph'
+import { loadNeighbors } from '../../src/main/db/repositories/graph'
 import { backfillEntities } from '../../src/main/graph-backfill'
 
 function make(over: Partial<ExperienceInput> = {}): ExperienceInput {
@@ -53,7 +53,7 @@ describe('backfillEntities', () => {
     const res = await backfillEntities()
     expect(res.processed).toBe(1)
 
-    const names = neighborsOf(exp.id).entities.map((e) => e.name)
+    const names = loadNeighbors(exp.id).entities.map((e) => e.name)
     expect(names).toContain('Kafka')
     expect(names).toContain('Redpanda')
     expect(mentionsCount(exp.id)).toBeGreaterThan(0)

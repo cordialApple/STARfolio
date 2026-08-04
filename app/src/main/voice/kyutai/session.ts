@@ -43,7 +43,7 @@ export class KyutaiVoiceSession {
   }
 
   pushFrames(frames: Float32Array): void {
-    if (this.closed || !this.gate.captureOpen(this.now())) return
+    if (this.closed || !this.gate.isCaptureOpen(this.now())) return
     this.adapter.pushFrames(frames)
   }
 

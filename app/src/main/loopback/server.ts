@@ -28,7 +28,7 @@ function loopbackFilePath(): string {
 }
 
 // Off by default. Driven by the user-facing pref; STARFOLIO_LOOPBACK stays a dev/test override.
-export function loopbackEnabled(): boolean {
+export function isLoopbackEnabled(): boolean {
   if (process.env.STARFOLIO_LOOPBACK === '1') return true
   try {
     return getPrefs().loopbackEnabled
@@ -40,7 +40,7 @@ export function loopbackEnabled(): boolean {
 export function startLoopbackServer(): Promise<void> {
   if (server) return Promise.resolve()
   token = randomBytes(32).toString('hex')
-  const s = createServer(handle)
+  const s = createServer(handleRequest)
   server = s
   return new Promise((resolve) => {
     s.listen(0, '127.0.0.1', () => {
@@ -68,7 +68,7 @@ export function stopLoopbackServer(): void {
   }
 }
 
-function authOk(req: IncomingMessage): boolean {
+function isAuthorized(req: IncomingMessage): boolean {
   if (!token) return false
   const header = req.headers['authorization']
   if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false
@@ -99,7 +99,7 @@ function readJson(req: IncomingMessage): Promise<Json> {
   })
 }
 
-function send(res: ServerResponse, status: number, body: unknown): void {
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(body))
 }
@@ -151,19 +151,19 @@ async function handleGenerate(body: Json): Promise<[number, Json]> {
   }
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
-    if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed' })
-    if (!authOk(req)) return send(res, 401, { error: 'unauthorized' })
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' })
+    if (!isAuthorized(req)) return sendJson(res, 401, { error: 'unauthorized' })
     const url = req.url ?? ''
     const body = await readJson(req)
-    if (url === '/retrieve') return send(res, 200, await handleRetrieve(body))
+    if (url === '/retrieve') return sendJson(res, 200, await handleRetrieve(body))
     if (url === '/generate') {
       const [status, payload] = await handleGenerate(body)
-      return send(res, status, payload)
+      return sendJson(res, status, payload)
     }
-    return send(res, 404, { error: 'not found' })
+    return sendJson(res, 404, { error: 'not found' })
   } catch (err) {
-    send(res, 500, { error: (err as Error).message })
+    sendJson(res, 500, { error: (err as Error).message })
   }
 }

@@ -1,5 +1,5 @@
 import { getPrefs, type Prefs } from '../settings/prefs'
-import { resolveSpec, usageId, type ModelSpec, type RouteEntry, type RoutableRole, type RoutingConfig } from './routing'
+import { resolveSpec, toUsageId, type ModelSpec, type RouteEntry, type RoutableRole, type RoutingConfig } from './routing'
 import { structuredProviderFor, transportFor } from './registry'
 import type { RoleOptions } from './roles/parse'
 import type { InterviewRuntime } from './session'
@@ -28,7 +28,7 @@ const ROLE_PREF_KEYS: Record<RoutableRole, RolePrefKeys> = {
   }
 }
 
-function entryForRole(role: RoutableRole, prefs: Prefs): RouteEntry | undefined {
+function resolveRoleEntry(role: RoutableRole, prefs: Prefs): RouteEntry | undefined {
   const keys = ROLE_PREF_KEYS[role]
   const provider = prefs[keys.provider] as RouteEntry['provider']
   if (provider === 'anthropic') return undefined
@@ -44,36 +44,36 @@ function entryForRole(role: RoutableRole, prefs: Prefs): RouteEntry | undefined 
 export function routingConfigFromPrefs(prefs: Prefs): RoutingConfig {
   const cfg: RoutingConfig = {}
   for (const role of Object.keys(ROLE_PREF_KEYS) as RoutableRole[]) {
-    const entry = entryForRole(role, prefs)
+    const entry = resolveRoleEntry(role, prefs)
     if (entry) cfg[role] = entry
   }
   return cfg
 }
 
-function specFor(role: RoutableRole, cfg: RoutingConfig): ModelSpec | undefined {
+function resolveRoleSpec(role: RoutableRole, cfg: RoutingConfig): ModelSpec | undefined {
   const spec = resolveSpec(role, cfg)
   return spec.provider === 'anthropic' ? undefined : spec
 }
 
-function roleOptionsFor(role: RoutableRole, cfg: RoutingConfig): RoleOptions | undefined {
-  const spec = specFor(role, cfg)
+function resolveRoleOptions(role: RoutableRole, cfg: RoutingConfig): RoleOptions | undefined {
+  const spec = resolveRoleSpec(role, cfg)
   if (!spec) return undefined
-  return { provider: structuredProviderFor(spec), model: spec.model, usageId: usageId(spec) }
+  return { provider: structuredProviderFor(spec), model: spec.model, usageId: toUsageId(spec) }
 }
 
 export function interviewRuntime(prefs: Prefs = getPrefs()): InterviewRuntime {
   const cfg = routingConfigFromPrefs(prefs)
   const runtime: InterviewRuntime = {}
 
-  const architect = roleOptionsFor('architect', cfg)
+  const architect = resolveRoleOptions('architect', cfg)
   if (architect) runtime.architect = architect
 
-  const evaluator = roleOptionsFor('evaluator', cfg)
+  const evaluator = resolveRoleOptions('evaluator', cfg)
   if (evaluator) runtime.evaluator = evaluator
 
-  const conversation = specFor('conversation', cfg)
+  const conversation = resolveRoleSpec('conversation', cfg)
   if (conversation) {
-    runtime.conversation = { transport: transportFor(conversation), model: conversation.model, usageId: usageId(conversation) }
+    runtime.conversation = { transport: transportFor(conversation), model: conversation.model, usageId: toUsageId(conversation) }
   }
 
   return runtime

@@ -63,7 +63,7 @@ function applyEvaluation(state: InterviewState, evaluation: AnswerEvaluation): I
   }
 }
 
-function allTopicsSaturated(state: InterviewState): boolean {
+function areAllTopicsSaturated(state: InterviewState): boolean {
   return state.roadmap.topics.every(
     (t) => topicSaturation(t, state.candidate.level) >= 1
   )
@@ -72,7 +72,7 @@ function allTopicsSaturated(state: InterviewState): boolean {
 function nextPhase(state: InterviewState): InterviewState['phase'] {
   if (state.phase === 'intro') return 'exploration'
   if (state.phase === 'exploration') {
-    if (timePressure(state) >= 1 || allTopicsSaturated(state)) return 'closing'
+    if (timePressure(state) >= 1 || areAllTopicsSaturated(state)) return 'closing'
     return 'exploration'
   }
   if (state.phase === 'closing') return 'done'

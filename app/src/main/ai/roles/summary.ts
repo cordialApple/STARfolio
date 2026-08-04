@@ -71,8 +71,7 @@ export async function summarizeInterview(input: SummaryInput, opts: RoleOptions 
   })
 }
 
-// Deterministic engine for CI/e2e — feedback derived from final coverage and the
-// candidate's own answers, one STAR story per topic that was actually explored.
+// Deterministic stand-in for the LLM call, used in CI/e2e.
 function stubSummary(input: SummaryInput): InterviewReport {
   const { roadmap, candidate } = input
   const answers = input.transcript.filter((t) => t.speaker === 'candidate').map((t) => t.text)

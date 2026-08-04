@@ -20,17 +20,17 @@ export function ChipField({
   const [draft, setDraft] = useState('')
   const listId = useId()
 
-  function add(raw: string): void {
+  function addChip(raw: string): void {
     const name = raw.trim()
     if (!name) return
     if (!value.some((v) => v.toLowerCase() === name.toLowerCase())) onChange([...value, name])
     setDraft('')
   }
 
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>): void {
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>): void {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault()
-      add(draft)
+      addChip(draft)
     } else if (e.key === 'Backspace' && !draft && value.length) {
       onChange(value.slice(0, -1))
     }
@@ -66,8 +66,8 @@ export function ChipField({
         list={listId}
         placeholder={placeholder}
         onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={onKeyDown}
-        onBlur={() => add(draft)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => addChip(draft)}
       />
       <datalist id={listId}>
         {open.map((s) => (

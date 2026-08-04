@@ -16,9 +16,9 @@ export async function exportResume(
   deps: ExportResumeDeps,
   { markdown, format, filename }: ExportResumeInput
 ): Promise<ExportResumeResult> {
-  const safe = filename.replace(/[^\w.-]+/g, '-') || 'resume'
+  const safeFilename = filename.replace(/[^\w.-]+/g, '-') || 'resume'
   const path = await deps.saveDialog({
-    defaultPath: `${safe}.${format}`,
+    defaultPath: `${safeFilename}.${format}`,
     filters: [{ name: format === 'docx' ? 'Word document' : 'Markdown', extensions: [format] }]
   })
   if (!path) return { saved: false }

@@ -34,9 +34,9 @@ export interface CorpusIngestResult {
   chunks?: number
 }
 
-const clean = (discipline: string): string | null => discipline.trim() || null
+const normalizeDiscipline = (discipline: string): string | null => discipline.trim() || null
 
-function persist(deps: CorpusDeps, title: string, discipline: string | null, source: Source, text: string): CorpusIngestResult {
+function persistCorpusChunks(deps: CorpusDeps, title: string, discipline: string | null, source: Source, text: string): CorpusIngestResult {
   const chunks = deps.store.chunkText(text)
   if (chunks.length === 0) return { ok: false, name: title, error: 'No readable text to add to the corpus.' }
   const { docId, chunkIds } = deps.store.persistDoc(title, discipline, source.id, chunks)
@@ -55,7 +55,7 @@ export async function ingestCorpusFile(
   if (scanned) return { ok: false, name, error: 'This PDF looks scanned — there is no text layer to read.' }
   if (!text.trim()) return { ok: false, name, error: 'No readable text found in this file.' }
   const source = deps.store.createSource({ kind: 'file', uri_or_path: path, title: name, raw_text: text })
-  return persist(deps, name, clean(discipline), source, text)
+  return persistCorpusChunks(deps, name, normalizeDiscipline(discipline), source, text)
 }
 
 export async function ingestCorpusUrl(deps: CorpusDeps, url: string, discipline: string): Promise<CorpusIngestResult> {
@@ -63,7 +63,7 @@ export async function ingestCorpusUrl(deps: CorpusDeps, url: string, discipline:
     const { text, title, finalUrl } = await deps.parsers.parseUrlDocument(url)
     if (!text.trim()) return { ok: false, name: url, error: 'No readable article found on that page.' }
     const source = deps.store.createSource({ kind: 'url', uri_or_path: finalUrl, title, raw_text: text })
-    return persist(deps, title ?? url, clean(discipline), source, text)
+    return persistCorpusChunks(deps, title ?? url, normalizeDiscipline(discipline), source, text)
   } catch (err) {
     return { ok: false, name: url, error: (err as Error).message }
   }

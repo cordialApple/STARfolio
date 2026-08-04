@@ -95,7 +95,7 @@ const EMPTY: FormState = {
   metrics: []
 }
 
-function toState(initial?: Experience, seed?: StarSeed): FormState {
+function toFormState(initial?: Experience, seed?: StarSeed): FormState {
   if (initial)
     return {
       title: initial.title,
@@ -141,7 +141,7 @@ export function StarForm({
   onSaved,
   onCancel
 }: StarFormProps): React.JSX.Element {
-  const [form, setForm] = useState<FormState>(() => toState(initial, seed))
+  const [form, setForm] = useState<FormState>(() => toFormState(initial, seed))
   const [saving, setSaving] = useState<false | 'draft' | 'confirmed'>(false)
   const [showErrors, setShowErrors] = useState(false)
   const toast = useToast()
@@ -153,7 +153,7 @@ export function StarForm({
   const gaps = draftState.gaps ?? []
   const confidence = draftState.confidence ?? {}
 
-  const set = <K extends keyof FormState>(key: K, val: FormState[K]): void =>
+  const setField = <K extends keyof FormState>(key: K, val: FormState[K]): void =>
     setForm((f) => ({ ...f, [key]: val }))
 
   const filled = useMemo<StarBeat[]>(() => {
@@ -170,7 +170,7 @@ export function StarForm({
   const dateInverted =
     !!form.happened_start && !!form.happened_end && form.happened_end < form.happened_start
 
-  function build(status: 'draft' | 'confirmed'): ExperienceInput {
+  function buildExperienceInput(status: 'draft' | 'confirmed'): ExperienceInput {
     const input: ExperienceInput = {
       title: form.title.trim(),
       situation: form.situation,
@@ -192,7 +192,7 @@ export function StarForm({
     return input
   }
 
-  async function save(status: 'draft' | 'confirmed'): Promise<void> {
+  async function saveExperience(status: 'draft' | 'confirmed'): Promise<void> {
     setShowErrors(true)
     if (titleMissing || dateInverted || (status === 'confirmed' && beatsMissing)) {
       toast('Fill the highlighted fields before saving.', 'danger')
@@ -200,7 +200,7 @@ export function StarForm({
     }
     setSaving(status)
     try {
-      const input = build(status)
+      const input = buildExperienceInput(status)
       const saved = initial
         ? await window.api.bank.update(initial.id, input)
         : await window.api.bank.create(input)
@@ -220,7 +220,7 @@ export function StarForm({
       className="mx-auto w-full max-w-2xl space-y-6"
       onSubmit={(e) => {
         e.preventDefault()
-        void save('confirmed')
+        void saveExperience('confirmed')
       }}
     >
       <div className="flex items-center gap-3">
@@ -251,7 +251,7 @@ export function StarForm({
           value={form.title}
           invalid={showErrors && titleMissing}
           placeholder="Name this accomplishment in a few words"
-          onChange={(e) => set('title', e.target.value)}
+          onChange={(e) => setField('title', e.target.value)}
         />
         {showErrors && titleMissing && (
           <p className="mt-1 text-xs text-fg-danger">Give it a title so you can find it later.</p>
@@ -277,7 +277,7 @@ export function StarForm({
                 id={`exp-${key}`}
                 rows={key === 'action' ? 4 : 3}
                 value={form[key]}
-                onChange={(e) => set(key, e.target.value)}
+                onChange={(e) => setField(key, e.target.value)}
               />
             </div>
           )
@@ -297,7 +297,7 @@ export function StarForm({
           <Select
             id="exp-context"
             value={form.context}
-            onChange={(e) => set('context', e.target.value as ExperienceContext)}
+            onChange={(e) => setField('context', e.target.value as ExperienceContext)}
           >
             {CONTEXTS.map((c) => (
               <option key={c} value={c}>
@@ -314,7 +314,7 @@ export function StarForm({
             id="exp-start"
             type="month"
             value={form.happened_start}
-            onChange={(e) => set('happened_start', e.target.value)}
+            onChange={(e) => setField('happened_start', e.target.value)}
           />
         </div>
         <div>
@@ -326,7 +326,7 @@ export function StarForm({
             type="month"
             value={form.happened_end}
             invalid={showErrors && dateInverted}
-            onChange={(e) => set('happened_end', e.target.value)}
+            onChange={(e) => setField('happened_end', e.target.value)}
           />
         </div>
       </div>
@@ -334,15 +334,15 @@ export function StarForm({
         <p className="-mt-2 text-xs text-fg-danger">End month is before the start month.</p>
       )}
 
-      <SkillField value={form.skills} onChange={(v) => set('skills', v)} suggestions={skills} />
+      <SkillField value={form.skills} onChange={(v) => setField('skills', v)} suggestions={skills} />
       <ChipField
         label="Tags"
         value={form.tags}
-        onChange={(v) => set('tags', v)}
+        onChange={(v) => setField('tags', v)}
         suggestions={tags.map((t) => t.name)}
         placeholder="Add a tag and press Enter"
       />
-      <MetricsField value={form.metrics} onChange={(v) => set('metrics', v)} />
+      <MetricsField value={form.metrics} onChange={(v) => setField('metrics', v)} />
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-5">
         <Button type="button" variant="ghost" onClick={onCancel} disabled={!!saving}>
@@ -353,7 +353,7 @@ export function StarForm({
           variant="secondary"
           loading={saving === 'draft'}
           disabled={!!saving}
-          onClick={() => void save('draft')}
+          onClick={() => void saveExperience('draft')}
         >
           <FileText className="size-4" />
           Save draft

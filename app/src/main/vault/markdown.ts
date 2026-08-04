@@ -163,7 +163,7 @@ function parseFrontmatter(block: string): Record<string, string> {
   return out
 }
 
-function assignKv(target: Record<string, string>, s: string): void {
+function assignKeyValue(target: Record<string, string>, s: string): void {
   const idx = s.indexOf(':')
   if (idx > 0) target[s.slice(0, idx).trim()] = unquote(s.slice(idx + 1).trim())
   else if (s) target._ = unquote(s)
@@ -186,9 +186,9 @@ function parseBlockSeq(fmText: string, key: string): Record<string, string>[] {
     if (body.startsWith('- ')) {
       cur = {}
       items.push(cur)
-      assignKv(cur, body.slice(2).trim())
+      assignKeyValue(cur, body.slice(2).trim())
     } else if (cur) {
-      assignKv(cur, body)
+      assignKeyValue(cur, body)
     }
   }
   return items
@@ -245,7 +245,6 @@ export function parseMarkdown(md: string): ParsedNote {
     ? (fm.status as Status)
     : 'draft'
 
-  // Fall back to the first H1 when a hand-authored note carries no frontmatter title.
   const h1 = (parts[0] ?? '').match(/^#\s+(.+?)\s*$/m)
   const title = fm.title ? unquote(fm.title) : h1 ? h1[1].trim() : ''
 

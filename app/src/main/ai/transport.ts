@@ -56,7 +56,6 @@ export function anthropicTransport(apiKey: string): AiTransport {
   }
 }
 
-// Deterministic stub — the CI/e2e test seam. No network, no key, no nondeterminism.
 export function stubTransport(): AiTransport {
   return {
     async stream(req, signal, cb): Promise<void> {

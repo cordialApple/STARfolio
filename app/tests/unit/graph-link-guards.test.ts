@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { getDb, initDb } from '../../src/main/db/client'
 import { createExperience } from '../../src/main/db/repositories/experiences'
-import { linkExperienceEntities, neighborsOf } from '../../src/main/db/repositories/graph'
+import { linkExperienceEntities, loadNeighbors } from '../../src/main/db/repositories/graph'
 
 const edgeCount = (): number =>
   (getDb().prepare('SELECT COUNT(*) c FROM edges').get() as { c: number }).c
@@ -13,7 +13,7 @@ describe('linkExperienceEntities guards', () => {
     const a = createExperience({ title: 'A', action: 'a' })
     linkExperienceEntities(a.id, [])
     expect(edgeCount()).toBe(0)
-    expect(neighborsOf(a.id).entities).toEqual([])
+    expect(loadNeighbors(a.id).entities).toEqual([])
   })
 
   it('throws when the experience does not exist', () => {
@@ -29,7 +29,7 @@ describe('linkExperienceEntities guards', () => {
       { kind: 'tool', name: '   ' },
       { kind: 'tool', name: 'Kafka' }
     ])
-    expect(neighborsOf(a.id).entities.map((e) => e.name)).toEqual(['Kafka'])
+    expect(loadNeighbors(a.id).entities.map((e) => e.name)).toEqual(['Kafka'])
     expect(edgeCount()).toBe(1)
   })
 })

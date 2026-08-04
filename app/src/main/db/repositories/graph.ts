@@ -59,7 +59,7 @@ export function deleteExperienceEdges(db: Database.Database, experienceId: strin
   ).run(experienceId, experienceId)
 }
 
-export function neighborsOf(experienceId: string): Neighbors {
+export function loadNeighbors(experienceId: string): Neighbors {
   const db = getDb()
   const entities = db
     .prepare(

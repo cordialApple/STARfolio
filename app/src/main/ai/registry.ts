@@ -5,7 +5,7 @@ import { openaiStructured, openaiTransport } from './providers/openai'
 import { geminiStructured, geminiTransport } from './providers/gemini'
 import { DEFAULT_OPENAI_BASE, DEFAULT_GEMINI_BASE, type ModelSpec } from './routing'
 
-function notYet(provider: string): never {
+function throwProviderUnavailable(provider: string): never {
   throw new Error(`Provider "${provider}" is not available yet`)
 }
 
@@ -18,7 +18,7 @@ export function structuredProviderFor(spec: ModelSpec): StructuredProvider {
     case 'gemini':
       return geminiStructured({ baseUrl: spec.baseUrl ?? DEFAULT_GEMINI_BASE })
     default:
-      return notYet(spec.provider)
+      return throwProviderUnavailable(spec.provider)
   }
 }
 
@@ -34,6 +34,6 @@ export function transportFor(spec: ModelSpec): AiTransport {
     case 'gemini':
       return geminiTransport({ baseUrl: spec.baseUrl ?? DEFAULT_GEMINI_BASE })
     default:
-      return notYet(spec.provider)
+      return throwProviderUnavailable(spec.provider)
   }
 }

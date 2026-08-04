@@ -8,7 +8,7 @@ import {
   decodeText,
   extractDocx,
   extractPdf,
-  looksScanned,
+  isLikelyScanned,
   htmlToArticle
 } from '../../src/main/ingest/extractors'
 
@@ -53,12 +53,12 @@ describe('extractPdf', () => {
     expect(numPages).toBe(1)
     expect(text).toContain('Jordan Rivera')
     expect(text).toContain('twenty minutes')
-    expect(looksScanned(text, numPages)).toBe(false)
+    expect(isLikelyScanned(text, numPages)).toBe(false)
   })
 
   it('flags a text-less (scanned) pdf', { timeout: 20000 }, async () => {
     const { text, numPages } = await extractPdf(read('scanned.pdf'), fontDir)
-    expect(looksScanned(text, numPages)).toBe(true)
+    expect(isLikelyScanned(text, numPages)).toBe(true)
   })
 })
 

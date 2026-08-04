@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { initDb } from '../../src/main/db/client'
 import { createExperience } from '../../src/main/db/repositories/experiences'
-import { startLoopbackServer, stopLoopbackServer, loopbackEnabled } from '../../src/main/loopback/server'
+import { startLoopbackServer, stopLoopbackServer, isLoopbackEnabled } from '../../src/main/loopback/server'
 import { setPrefs } from '../../src/main/settings/prefs'
 
 let dir: string
@@ -75,7 +75,7 @@ describe('loopback server', () => {
   })
 })
 
-describe('loopbackEnabled gate', () => {
+describe('isLoopbackEnabled gate', () => {
   beforeEach(() => {
     delete process.env.STARFOLIO_LOOPBACK
     initDb(':memory:')
@@ -83,13 +83,13 @@ describe('loopbackEnabled gate', () => {
   afterEach(() => delete process.env.STARFOLIO_LOOPBACK)
 
   it('is off by default and follows the pref', () => {
-    expect(loopbackEnabled()).toBe(false)
+    expect(isLoopbackEnabled()).toBe(false)
     setPrefs({ loopbackEnabled: true })
-    expect(loopbackEnabled()).toBe(true)
+    expect(isLoopbackEnabled()).toBe(true)
   })
 
   it('honors the env override even when the pref is off', () => {
     process.env.STARFOLIO_LOOPBACK = '1'
-    expect(loopbackEnabled()).toBe(true)
+    expect(isLoopbackEnabled()).toBe(true)
   })
 })

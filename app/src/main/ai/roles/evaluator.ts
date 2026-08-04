@@ -113,8 +113,7 @@ const DIMENSION_CUES: Record<CoverageDimension, RegExp> = {
   ownership: /\b(i |my |i'?d|led|owned|drove|responsible|implemented|designed)/i
 }
 
-// Deterministic engine for CI/e2e — coverage inferred from keyword cues, depth graded by
-// answer length; skill/confidence scale with detail. No randomness.
+// Deterministic stand-in for the LLM call, used in CI/e2e.
 function stubEvaluate(input: EvaluatorInput & { answer: string }): AnswerEvaluation {
   const answer = input.answer
   const words = answer.split(/\s+/).filter(Boolean)

@@ -31,8 +31,8 @@ export function useExport(
     if (md === null) return
     setBusy(format)
     try {
-      const res = await window.api.materials.export(md, format, buildFilename())
-      if (res.saved) toast(`Saved to ${res.path}`, 'success')
+      const result = await window.api.materials.export(md, format, buildFilename())
+      if (result.saved) toast(`Saved to ${result.path}`, 'success')
     } catch (err) {
       toast(`Could not export: ${(err as Error).message}`, 'danger')
     } finally {

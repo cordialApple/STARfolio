@@ -12,9 +12,9 @@ import {
   addInterviewerTurn,
   commitAnswer,
   isSessionOpen,
-  currentQuestion,
-  askedQuestions,
-  rawSessionConfig
+  getCurrentQuestion,
+  listAskedQuestions,
+  getRawSessionConfig
 } from './db/repositories/practice'
 
 export const technicalAnswerArg = z.object({
@@ -50,7 +50,7 @@ function citationsFor(cited: string[], chunks: CorpusHit[]): Citation[] {
 }
 
 function loadConfig(sessionId: string): TechnicalConfig | null {
-  const raw = rawSessionConfig(sessionId)
+  const raw = getRawSessionConfig(sessionId)
   if (!raw) return null
   try {
     return technicalConfig.parse(JSON.parse(raw))
@@ -77,7 +77,7 @@ export async function answerTechnical(
   const config = loadConfig(arg.sessionId)
   if (!config) throw new Error('technical session not found')
   if (!isSessionOpen(arg.sessionId)) throw new Error('this session has ended')
-  const question = currentQuestion(arg.sessionId)
+  const question = getCurrentQuestion(arg.sessionId)
   if (!question) throw new Error('no question to answer yet')
 
   let chunks = await searchCorpus(retrievalQuery(config, question), config.discipline, MAX_CHUNKS)
@@ -87,7 +87,7 @@ export async function answerTechnical(
   const turn = await evaluateTechnicalAnswer({
     config,
     chunks,
-    asked: askedQuestions(arg.sessionId),
+    asked: listAskedQuestions(arg.sessionId),
     question,
     answer: arg.answer
   })

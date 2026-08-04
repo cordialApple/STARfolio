@@ -6,7 +6,7 @@ import { getDb, initDb } from '../../src/main/db/client'
 import {
   createSession,
   loadSession,
-  transcript,
+  loadTranscript,
   commitAnswer,
   getSession,
   deleteSession,
@@ -72,7 +72,7 @@ afterEach(() => {
 describe('interview repository', () => {
   it('createSession seeds exactly one interviewer turn with the opening utterance', () => {
     const id = seed({ lastUtterance: 'Opening line.' })
-    const turns = transcript(id)
+    const turns = loadTranscript(id)
     expect(turns).toHaveLength(1)
     expect(turns[0]).toEqual({ speaker: 'interviewer', text: 'Opening line.' })
   })
@@ -108,7 +108,7 @@ describe('interview repository', () => {
       lastUtterance: 'follow up',
       report: null
     })
-    const turns = transcript(id)
+    const turns = loadTranscript(id)
     expect(turns.map((t) => t.speaker)).toEqual(['interviewer', 'candidate', 'interviewer'])
     expect(turns[1]).toEqual({ speaker: 'candidate', text: 'my answer' })
     expect(turns[2]).toEqual({ speaker: 'interviewer', text: 'follow up' })
@@ -246,7 +246,7 @@ describe('interview repository', () => {
       report: null
     })
     expect(deleteSession(id)).toEqual({ deleted: true })
-    expect(transcript(id)).toHaveLength(0)
+    expect(loadTranscript(id)).toHaveLength(0)
     expect(loadSession(id)).toBeNull()
     expect(deleteSession(id)).toEqual({ deleted: false })
   })

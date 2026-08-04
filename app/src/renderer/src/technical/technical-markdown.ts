@@ -5,7 +5,7 @@ export type TechnicalEntry =
   | { role: 'interviewer'; text: string; citations: Citation[] }
   | { role: 'candidate'; text: string; feedback: TechnicalFeedback }
 
-export const DIMS: { key: TechnicalRubricDimension; label: string }[] = [
+export const DIMENSIONS: { key: TechnicalRubricDimension; label: string }[] = [
   { key: 'correctness', label: 'Correctness' },
   { key: 'depth', label: 'Depth' },
   { key: 'tradeoffs', label: 'Trade-offs' },
@@ -31,7 +31,7 @@ export function technicalToMarkdown(
         out.push(`_From your corpus: ${e.citations.map((c) => c.title).join(', ')}_`)
     } else {
       out.push('', `**Candidate:** ${e.text}`)
-      for (const { key, label } of DIMS)
+      for (const { key, label } of DIMENSIONS)
         out.push(`- ${label}: ${e.feedback[key].score}/5 — ${e.feedback[key].note}`)
       out.push('', e.feedback.summary)
     }

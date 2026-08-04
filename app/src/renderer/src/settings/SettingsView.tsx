@@ -238,7 +238,7 @@ export function SettingsView(): React.JSX.Element {
     }
   }
 
-  async function save(): Promise<void> {
+  async function saveKey(): Promise<void> {
     const value = key.trim()
     if (!value) return
     setBusy(true)
@@ -254,7 +254,7 @@ export function SettingsView(): React.JSX.Element {
     }
   }
 
-  async function remove(): Promise<void> {
+  async function removeKey(): Promise<void> {
     setBusy(true)
     try {
       await window.api.ai.deleteKey()
@@ -368,17 +368,17 @@ export function SettingsView(): React.JSX.Element {
                   placeholder="sk-ant-…"
                   onChange={(e) => setKey(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') void save()
+                    if (e.key === 'Enter') void saveKey()
                   }}
                 />
               </label>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Button loading={busy} disabled={busy || !key.trim()} onClick={() => void save()}>
+                <Button loading={busy} disabled={busy || !key.trim()} onClick={() => void saveKey()}>
                   Save key
                 </Button>
                 {hasKey && (
-                  <Button variant="ghost" disabled={busy} onClick={() => void remove()}>
+                  <Button variant="ghost" disabled={busy} onClick={() => void removeKey()}>
                     <Trash2 className="size-4" />
                     Remove
                   </Button>

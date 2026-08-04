@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { initDb, getDb } from '../../src/main/db/client'
 import { createExperience, deleteExperience } from '../../src/main/db/repositories/experiences'
-import { linkExperienceEntities, neighborsOf } from '../../src/main/db/repositories/graph'
+import { linkExperienceEntities, loadNeighbors } from '../../src/main/db/repositories/graph'
 
 describe('knowledge graph', () => {
   beforeEach(() => initDb(':memory:'))
@@ -12,7 +12,7 @@ describe('knowledge graph', () => {
     linkExperienceEntities(a.id, [{ kind: 'tool', name: 'Postgres' }, { kind: 'project', name: 'Billing' }])
     linkExperienceEntities(b.id, [{ kind: 'tool', name: 'Postgres' }])
 
-    const n = neighborsOf(a.id)
+    const n = loadNeighbors(a.id)
     expect(n.entities.map((e) => e.name).sort()).toEqual(['Billing', 'Postgres'])
     expect(n.connections).toHaveLength(1)
     expect(n.connections[0].experience.id).toBe(b.id)
@@ -35,13 +35,13 @@ describe('knowledge graph', () => {
     linkExperienceEntities(b.id, [{ kind: 'tool', name: 'graphql' }])
     const rows = getDb().prepare("SELECT name FROM entities WHERE kind='tool'").all() as { name: string }[]
     expect(rows).toEqual([{ name: 'GraphQL' }])
-    expect(neighborsOf(a.id).connections.map((c) => c.experience.id)).toEqual([b.id])
+    expect(loadNeighbors(a.id).connections.map((c) => c.experience.id)).toEqual([b.id])
   })
 
   it('connects via a shared skill even with no shared entity', () => {
     const a = createExperience({ title: 'Frontend work', action: 'a', skills: [{ name: 'React', kind: 'technical' }] })
     const b = createExperience({ title: 'More frontend', action: 'b', skills: [{ name: 'React', kind: 'technical' }] })
-    const n = neighborsOf(a.id)
+    const n = loadNeighbors(a.id)
     const conn = n.connections.find((c) => c.experience.id === b.id)
     expect(conn?.viaSkills).toEqual(['React'])
   })

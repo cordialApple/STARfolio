@@ -52,7 +52,7 @@ export function createSession(config: unknown, mode: 'behavioral' | 'technical' 
   return id
 }
 
-export function sessionMode(sessionId: string): 'behavioral' | 'technical' | null {
+export function getSessionMode(sessionId: string): 'behavioral' | 'technical' | null {
   const row = getDb()
     .prepare('SELECT mode FROM practice_sessions WHERE id = ?')
     .get(sessionId) as { mode: string } | undefined
@@ -68,21 +68,21 @@ function linkTurnChunks(db: ReturnType<typeof getDb>, turnId: string, chunkIds: 
   }
 }
 
-export function sessionConfig(sessionId: string): PracticeConfig | null {
+export function getSessionConfig(sessionId: string): PracticeConfig | null {
   const row = getDb()
     .prepare('SELECT config_json FROM practice_sessions WHERE id = ?')
     .get(sessionId) as { config_json: string | null } | undefined
   return row ? parseConfig(row.config_json) : null
 }
 
-export function rawSessionConfig(sessionId: string): string | null {
+export function getRawSessionConfig(sessionId: string): string | null {
   const row = getDb()
     .prepare('SELECT config_json FROM practice_sessions WHERE id = ?')
     .get(sessionId) as { config_json: string | null } | undefined
   return row ? row.config_json : null
 }
 
-export function askedQuestions(sessionId: string): string[] {
+export function listAskedQuestions(sessionId: string): string[] {
   return (
     getDb()
       .prepare(
@@ -93,7 +93,7 @@ export function askedQuestions(sessionId: string): string[] {
   ).map((r) => r.content)
 }
 
-export function currentQuestion(sessionId: string): string | null {
+export function getCurrentQuestion(sessionId: string): string | null {
   const row = getDb()
     .prepare(
       `SELECT content FROM practice_turns WHERE session_id = ? AND role = 'interviewer'

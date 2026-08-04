@@ -12,9 +12,9 @@ import {
   addInterviewerTurn,
   commitAnswer,
   isSessionOpen,
-  sessionConfig,
-  askedQuestions,
-  currentQuestion
+  getSessionConfig,
+  listAskedQuestions,
+  getCurrentQuestion
 } from './db/repositories/practice'
 
 const MAX_CANDIDATES = 40
@@ -49,17 +49,17 @@ export interface AnswerResult extends InterviewTurn {
 }
 
 export async function answerPractice(arg: z.infer<typeof answerArg>): Promise<AnswerResult> {
-  const config = sessionConfig(arg.sessionId)
+  const config = getSessionConfig(arg.sessionId)
   if (!config) throw new Error('practice session not found')
   if (!isSessionOpen(arg.sessionId)) throw new Error('this practice session has ended')
-  const question = currentQuestion(arg.sessionId)
+  const question = getCurrentQuestion(arg.sessionId)
   if (!question) throw new Error('no question to answer yet')
 
   const candidates = bankCandidates()
   const turn = await evaluateAnswer({
     config,
     candidates,
-    asked: askedQuestions(arg.sessionId),
+    asked: listAskedQuestions(arg.sessionId),
     question,
     answer: arg.answer
   })

@@ -101,8 +101,7 @@ function paraXml(p: Para): string {
   return `<w:p><w:pPr>${numPr}</w:pPr>${runsXml(p.text, p.bold, p.italic)}</w:p>`
 }
 
-// Minimal but valid .docx (OOXML). Headings render bold; markdown "- " lines become a
-// bulleted list via a single numbering definition. Enough for a one-page resume export.
+// Minimal hand-rolled OOXML, no docx library — enough for a one-page resume export.
 export function markdownToDocx(md: string): Buffer {
   const body = markdownToParas(md).map(paraXml).join('')
   const buf = (s: string): Buffer => Buffer.from(s, 'utf8')

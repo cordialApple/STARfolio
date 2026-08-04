@@ -21,7 +21,7 @@ const SPEAKER_LABEL: Record<Speaker, string> = {
   candidate: 'Candidate'
 }
 
-function crosses(a: TranscriptEntry, b: TranscriptEntry): boolean {
+function isCrossing(a: TranscriptEntry, b: TranscriptEntry): boolean {
   return a.speaker !== b.speaker && a.startMs < b.endMs && b.startMs < a.endMs
 }
 
@@ -39,12 +39,12 @@ export class CanonicalTranscript {
       endMs: input.endMs,
       truncated: input.truncated ?? false
     }
-    const at = this.insertionIndex(entry.startMs)
+    const at = this.findInsertionIndex(entry.startMs)
     this.entries.splice(at, 0, entry)
     return entry
   }
 
-  private insertionIndex(startMs: number): number {
+  private findInsertionIndex(startMs: number): number {
     let i = this.entries.length
     while (i > 0 && this.entries[i - 1].startMs > startMs) i--
     return i
@@ -65,7 +65,7 @@ export class CanonicalTranscript {
   private *crossingPairs(): Generator<[TranscriptEntry, TranscriptEntry]> {
     for (let i = 0; i < this.entries.length; i++) {
       for (let j = i + 1; j < this.entries.length; j++) {
-        if (crosses(this.entries[i], this.entries[j])) yield [this.entries[i], this.entries[j]]
+        if (isCrossing(this.entries[i], this.entries[j])) yield [this.entries[i], this.entries[j]]
       }
     }
   }
@@ -78,14 +78,14 @@ export class CanonicalTranscript {
     return !this.crossingPairs().next().done
   }
 
-  private overlapsAny(entry: TranscriptEntry): boolean {
-    return this.entries.some((other) => other !== entry && crosses(entry, other))
+  private isOverlappingAny(entry: TranscriptEntry): boolean {
+    return this.entries.some((other) => other !== entry && isCrossing(entry, other))
   }
 
   render(): string {
     return this.entries
       .map((e) => {
-        const label = this.overlapsAny(e) ? `${SPEAKER_LABEL[e.speaker]} (overlapping)` : SPEAKER_LABEL[e.speaker]
+        const label = this.isOverlappingAny(e) ? `${SPEAKER_LABEL[e.speaker]} (overlapping)` : SPEAKER_LABEL[e.speaker]
         const text = e.truncated ? `${e.text} [cut off]` : e.text
         return `${label}: ${text}`
       })

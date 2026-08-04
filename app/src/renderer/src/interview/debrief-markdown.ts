@@ -1,7 +1,7 @@
 import { slugify } from '../lib/format'
 import type { InterviewReport, InterviewSessionDetail } from '../lib/bank-types'
 
-function list(items: string[]): string {
+function toBulletList(items: string[]): string {
   return items.map((i) => `- ${i}`).join('\n')
 }
 
@@ -11,9 +11,9 @@ export function debriefFilename(detail: InterviewSessionDetail): string {
 
 export function reportToMarkdown(report: InterviewReport): string {
   const out: string[] = [report.overallFeedback]
-  if (report.strengths.length > 0) out.push('', '### Strengths', list(report.strengths))
+  if (report.strengths.length > 0) out.push('', '### Strengths', toBulletList(report.strengths))
   if (report.improvementAreas.length > 0)
-    out.push('', '### Areas to improve', list(report.improvementAreas))
+    out.push('', '### Areas to improve', toBulletList(report.improvementAreas))
   for (const s of report.starStories) {
     out.push(
       '',

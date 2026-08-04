@@ -1,6 +1,6 @@
 import { app, type IpcMain } from 'electron'
 import { handle, saveDialog, runVaultSync, type IpcHooks } from './shared'
-import { getPrefs, setPrefs, staleness, prefsPatch } from '../settings/prefs'
+import { getPrefs, setPrefs, computeStaleness, prefsPatch } from '../settings/prefs'
 import { usageSummary } from '../ai/usage'
 import { dbSelfTest } from '../db/selftest'
 import { getModelStatus } from '../embed'
@@ -17,7 +17,7 @@ export function registerSystem(ipcMain: IpcMain, hooks: IpcHooks): void {
     if (patch.storageMode !== undefined && next.vaultPath) await runVaultSync(next.vaultPath)
     return next
   })
-  ipcMain.handle('nudge:staleness', () => staleness())
+  ipcMain.handle('nudge:staleness', () => computeStaleness())
   ipcMain.handle('usage:summary', () => usageSummary())
   ipcMain.handle('db:selfTest', () => dbSelfTest())
   ipcMain.handle('embed:selfTest', () => embedSelfTest())

@@ -43,7 +43,7 @@ Absolute rules:
 - Write in the person's first-person voice. Match the requested length and tone.
 - Output only the story itself — no preamble, headings, or commentary.`
 
-function experienceBlock(exp: Experience, index: number): string {
+function formatExperienceBlock(exp: Experience, index: number): string {
   const lines = [`--- Experience ${index + 1}: ${exp.title || 'Untitled'} ---`]
   if (exp.situation) lines.push(`Situation: ${exp.situation}`)
   if (exp.task) lines.push(`Task: ${exp.task}`)
@@ -74,7 +74,7 @@ export function buildStoryPrompt(
     '',
     'My banked experiences (the only material you may draw on):',
     '',
-    experiences.map(experienceBlock).join('\n\n'),
+    experiences.map(formatExperienceBlock).join('\n\n'),
     '',
     `Length: ${spec.words}.`,
     `Tone: ${TONE_SPEC[config.tone]}.`,
@@ -105,7 +105,6 @@ function resolveStoryExperiences(config: StoryConfig): Experience[] {
   return experiences
 }
 
-// Stream a grounded story from the selected experiences via Sonnet.
 export function streamStory(config: StoryConfig, sender: WebContents): void {
   const experiences = resolveStoryExperiences(config)
   const { system, prompt, maxTokens } = buildStoryPrompt(config, experiences)

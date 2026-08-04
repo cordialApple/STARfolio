@@ -1,5 +1,5 @@
 import { Notification } from 'electron'
-import { getPrefs, setPrefs, staleness, type Prefs, type Staleness } from '../settings/prefs'
+import { getPrefs, setPrefs, computeStaleness, type Prefs, type Staleness } from '../settings/prefs'
 
 const DAY_MS = 86_400_000
 const CHECK_INTERVAL_MS = 60 * 60 * 1000
@@ -18,7 +18,7 @@ export function shouldRemind(prefs: Prefs, s: Staleness, nowMs: number): boolean
   return true
 }
 
-function fire(s: Staleness, onActivate?: () => void): void {
+function fireReminderNotification(s: Staleness, onActivate?: () => void): void {
   if (!Notification.isSupported()) return
   const weeks = Math.max(1, Math.round((s.daysSinceLast ?? 0) / 7))
   const n = new Notification({
@@ -35,8 +35,8 @@ let timer: ReturnType<typeof setInterval> | null = null
 export function startReminderScheduler(onActivate?: () => void): void {
   stopReminderScheduler()
   const tick = (): void => {
-    const s = staleness()
-    if (shouldRemind(getPrefs(), s, Date.now())) fire(s, onActivate)
+    const s = computeStaleness()
+    if (shouldRemind(getPrefs(), s, Date.now())) fireReminderNotification(s, onActivate)
   }
   timer = setInterval(tick, CHECK_INTERVAL_MS)
   setTimeout(tick, 10_000)

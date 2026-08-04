@@ -28,7 +28,7 @@ export function useStreamingVoice(
   const [utteranceActive, setUtteranceActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const recRef = useRef<Recording | null>(null)
+  const recordingRef = useRef<Recording | null>(null)
   const submitRef = useRef(submit)
   submitRef.current = submit
   const sessionIdRef = useRef(sessionId)
@@ -43,25 +43,25 @@ export function useStreamingVoice(
   }
 
   const stop = useCallback(async () => {
-    const rec = recRef.current
-    recRef.current = null
+    const recording = recordingRef.current
+    recordingRef.current = null
     setListening(false)
     setStarting(false)
     setUtteranceActive(false)
     setPartial(null)
     controllerRef.current?.reset()
     window.api.voice.streamStop()
-    await rec?.stop()
+    await recording?.stop()
   }, [])
 
   const start = useCallback(async () => {
-    if (recRef.current || starting) return
+    if (recordingRef.current || starting) return
     setStarting(true)
     setError(null)
     controllerRef.current?.reset()
     try {
       window.api.voice.streamStart(sessionIdRef.current ?? undefined)
-      recRef.current = await startRecording({
+      recordingRef.current = await startRecording({
         onFrames: (frames) => window.api.voice.streamFrames(frames),
         batchSamples: STREAM_BATCH_SAMPLES
       })
@@ -91,14 +91,14 @@ export function useStreamingVoice(
   }, [])
 
   useEffect(() => {
-    if (ready && recRef.current) controllerRef.current?.reset()
+    if (ready && recordingRef.current) controllerRef.current?.reset()
   }, [ready])
 
   useEffect(() => {
     return () => {
       window.api.voice.streamStop()
-      void recRef.current?.stop()
-      recRef.current = null
+      void recordingRef.current?.stop()
+      recordingRef.current = null
     }
   }, [])
 

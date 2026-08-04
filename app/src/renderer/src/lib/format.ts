@@ -59,7 +59,7 @@ export function slugify(input: string): string {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-function fmtMonth(iso: string): string {
+function formatMonth(iso: string): string {
   const [y, m] = iso.split('-')
   const mi = Number(m) - 1
   return mi >= 0 && mi < 12 ? `${MONTHS[mi]} ${y}` : y
@@ -67,9 +67,9 @@ function fmtMonth(iso: string): string {
 
 export function formatDateRange(start: string | null, end: string | null): string {
   if (!start && !end) return ''
-  if (start && !end) return fmtMonth(start)
-  if (!start && end) return `until ${fmtMonth(end)}`
-  const a = fmtMonth(start!)
-  const b = fmtMonth(end!)
+  if (start && !end) return formatMonth(start)
+  if (!start && end) return `until ${formatMonth(end)}`
+  const a = formatMonth(start!)
+  const b = formatMonth(end!)
   return a === b ? a : `${a} – ${b}`
 }

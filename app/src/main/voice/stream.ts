@@ -32,14 +32,14 @@ function startSteering(sessionId: string, transcript: RollingTranscript): Steeri
   })
 }
 
-function teardown(entry: StreamEntry | undefined): void {
+function teardownStream(entry: StreamEntry | undefined): void {
   if (!entry) return
   entry.session.close()
   entry.steering?.dispose()
 }
 
-function open(sender: WebContents, sessionId?: string): void {
-  teardown(sessions.get(sender.id))
+function openStream(sender: WebContents, sessionId?: string): void {
+  teardownStream(sessions.get(sender.id))
   const transcript = new RollingTranscript()
   const session = new KyutaiVoiceSession(
     (event) => {
@@ -56,17 +56,17 @@ function open(sender: WebContents, sessionId?: string): void {
   const entry: StreamEntry = { session, transcript }
   if (sessionId) entry.steering = startSteering(sessionId, transcript)
   sessions.set(sender.id, entry)
-  sender.once('destroyed', () => close(sender.id))
+  sender.once('destroyed', () => closeStream(sender.id))
 }
 
-function close(senderId: number): void {
-  teardown(sessions.get(senderId))
+function closeStream(senderId: number): void {
+  teardownStream(sessions.get(senderId))
   sessions.delete(senderId)
 }
 
 export function registerVoiceStream(ipcMain: IpcMain): void {
   ipcMain.on('voice:streamStart', (e, sessionId?: string) =>
-    open(e.sender, typeof sessionId === 'string' ? sessionId : undefined)
+    openStream(e.sender, typeof sessionId === 'string' ? sessionId : undefined)
   )
   ipcMain.on('voice:frames', (e, frames: Float32Array) => {
     sessions.get(e.sender.id)?.session.pushFrames(frames)
@@ -77,5 +77,5 @@ export function registerVoiceStream(ipcMain: IpcMain): void {
     entry?.steering?.loop.reset()
   })
   ipcMain.on('voice:ttsEnd', (e) => sessions.get(e.sender.id)?.session.onTtsEnd())
-  ipcMain.on('voice:streamStop', (e) => close(e.sender.id))
+  ipcMain.on('voice:streamStop', (e) => closeStream(e.sender.id))
 }

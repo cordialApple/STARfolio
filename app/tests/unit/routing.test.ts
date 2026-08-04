@@ -3,7 +3,7 @@ import {
   ROUTABLE_ROLES,
   isRoutable,
   resolveSpec,
-  usageId,
+  toUsageId,
   type RoutingConfig
 } from '../../src/main/ai/routing'
 import { MODELS } from '../../src/main/ai/models'
@@ -50,13 +50,13 @@ describe('isRoutable', () => {
   })
 })
 
-describe('usageId', () => {
+describe('toUsageId', () => {
   it('uses the bare model for anthropic so existing pricing keys stay stable', () => {
-    expect(usageId({ provider: 'anthropic', model: 'claude-opus-4-8' })).toBe('claude-opus-4-8')
+    expect(toUsageId({ provider: 'anthropic', model: 'claude-opus-4-8' })).toBe('claude-opus-4-8')
   })
 
   it('namespaces non-anthropic providers', () => {
-    expect(usageId({ provider: 'openai', model: 'llama-3.1' })).toBe('openai:llama-3.1')
-    expect(usageId({ provider: 'gemini', model: 'gemini-2.5-pro' })).toBe('gemini:gemini-2.5-pro')
+    expect(toUsageId({ provider: 'openai', model: 'llama-3.1' })).toBe('openai:llama-3.1')
+    expect(toUsageId({ provider: 'gemini', model: 'gemini-2.5-pro' })).toBe('gemini:gemini-2.5-pro')
   })
 })

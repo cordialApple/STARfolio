@@ -112,7 +112,7 @@ export function ExperienceDetail({
     }
   }
 
-  async function remove(): Promise<void> {
+  async function deleteExperience(): Promise<void> {
     setBusy(true)
     try {
       await window.api.bank.remove(id)
@@ -308,7 +308,7 @@ export function ExperienceDetail({
             <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={busy}>
               Cancel
             </Button>
-            <Button variant="danger" loading={busy} onClick={() => void remove()}>
+            <Button variant="danger" loading={busy} onClick={() => void deleteExperience()}>
               Delete
             </Button>
           </>

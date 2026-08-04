@@ -37,6 +37,6 @@ export function resolveSpec(role: ModelRole, cfg: RoutingConfig = {}): ModelSpec
   }
 }
 
-export function usageId(spec: ModelSpec): string {
+export function toUsageId(spec: ModelSpec): string {
   return spec.provider === 'anthropic' ? spec.model : `${spec.provider}:${spec.model}`
 }
