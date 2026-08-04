@@ -11,12 +11,14 @@ const TYPE_MAP: Record<string, string> = {
 
 type JsonNode = Record<string, unknown>
 
-function convert(node: JsonNode): Record<string, unknown> {
+function convertSchemaNode(node: JsonNode): Record<string, unknown> {
   const anyOf = node.anyOf as JsonNode[] | undefined
   if (anyOf) {
     const nonNull = anyOf.filter((m) => m.type !== 'null')
     const nn = nonNull.length !== anyOf.length ? { nullable: true } : {}
-    return nonNull.length === 1 ? { ...convert(nonNull[0]), ...nn } : { anyOf: nonNull.map(convert), ...nn }
+    return nonNull.length === 1
+      ? { ...convertSchemaNode(nonNull[0]), ...nn }
+      : { anyOf: nonNull.map(convertSchemaNode), ...nn }
   }
   const out: Record<string, unknown> = {}
   const rawType = node.type
@@ -34,14 +36,14 @@ function convert(node: JsonNode): Record<string, unknown> {
   if (typeof node.description === 'string') out.description = node.description
   if (Array.isArray(node.enum)) out.enum = node.enum
   const props = node.properties as Record<string, JsonNode> | undefined
-  if (props) out.properties = Object.fromEntries(Object.entries(props).map(([k, v]) => [k, convert(v)]))
+  if (props) out.properties = Object.fromEntries(Object.entries(props).map(([k, v]) => [k, convertSchemaNode(v)]))
   if (Array.isArray(node.required)) out.required = node.required
-  if (node.items) out.items = convert(node.items as JsonNode)
+  if (node.items) out.items = convertSchemaNode(node.items as JsonNode)
   return out
 }
 
 export function toGeminiSchema(schema: z.ZodTypeAny): Record<string, unknown> {
-  return convert(z.toJSONSchema(schema) as JsonNode)
+  return convertSchemaNode(z.toJSONSchema(schema) as JsonNode)
 }
 
 export function toOpenAiJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {

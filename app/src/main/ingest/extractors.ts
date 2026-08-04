@@ -57,7 +57,7 @@ export async function extractPdf(bytes: Uint8Array, standardFontDataUrl: string)
   }
 }
 
-export function looksScanned(text: string, numPages: number): boolean {
+export function isLikelyScanned(text: string, numPages: number): boolean {
   const glyphs = text.replace(/\s/g, '').length
   return glyphs < Math.max(20, numPages * 15)
 }

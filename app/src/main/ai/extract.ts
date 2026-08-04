@@ -188,7 +188,6 @@ function stubResume(text: string): StarExtraction[] {
   return (blocks.length ? blocks.slice(0, 5) : [text]).map(stubExtraction)
 }
 
-// Deterministic stub for CI/e2e — mirrors the pasted notes into a plausible draft, no network.
 function stubExtraction(text: string): StarExtraction {
   const firstLine = text.split('\n')[0].slice(0, 80).trim()
   return {

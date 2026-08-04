@@ -28,7 +28,7 @@ const parentPort = (process as unknown as { parentPort: ParentPort }).parentPort
 const MODEL = 'Xenova/bge-small-en-v1.5'
 let pipePromise: Promise<FeatureExtractionPipeline> | null = null
 
-function getPipe(cacheDir: string): Promise<FeatureExtractionPipeline> {
+function loadPipeline(cacheDir: string): Promise<FeatureExtractionPipeline> {
   if (!pipePromise) {
     env.cacheDir = cacheDir
     env.allowRemoteModels = true
@@ -45,7 +45,7 @@ parentPort.on('message', (e) => {
   if (msg.type !== 'embed') return
   void (async () => {
     try {
-      const pipe = await getPipe(msg.cacheDir)
+      const pipe = await loadPipeline(msg.cacheDir)
       const out = await pipe(msg.text, { pooling: 'mean', normalize: true })
       parentPort.postMessage({ id: msg.id, ok: true, vector: Array.from(out.data as Float32Array) })
     } catch (err) {

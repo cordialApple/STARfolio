@@ -31,7 +31,7 @@ import {
   getSession as getSessionDetail,
   listSessions as listSessionRows,
   loadSession,
-  transcript as loadTranscript,
+  loadTranscript,
   type InterviewSessionDetail,
   type InterviewSessionSummary,
   type StoredInterviewSession

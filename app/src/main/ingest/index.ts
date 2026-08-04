@@ -32,7 +32,7 @@ const pending = new Map<
   { resolve: (v: IngestReply) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
 >()
 
-function settle(id: string): { resolve: (v: IngestReply) => void; reject: (e: Error) => void } | undefined {
+function takePendingRequest(id: string): { resolve: (v: IngestReply) => void; reject: (e: Error) => void } | undefined {
   const p = pending.get(id)
   if (!p) return undefined
   clearTimeout(p.timer)
@@ -46,7 +46,7 @@ function ensureWorker(): UtilityProcess {
     serviceName: 'starfolio-ingest'
   })
   worker.on('message', (msg: Reply) => {
-    const p = settle(msg.id)
+    const p = takePendingRequest(msg.id)
     if (!p) return
     if (msg.ok) {
       try {
@@ -68,7 +68,7 @@ function ensureWorker(): UtilityProcess {
   return worker
 }
 
-function request<T extends IngestReply>(message: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
+function sendWorkerRequest<T extends IngestReply>(message: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   const worker = ensureWorker()
   const id = randomUUID()
   return new Promise<T>((resolve, reject) => {
@@ -82,27 +82,27 @@ function request<T extends IngestReply>(message: Record<string, unknown>, timeou
 }
 
 export function parseDocument(filename: string, bytes: Uint8Array): Promise<DocResult> {
-  return request<DocResult>({ type: 'parseDoc', filename, bytes })
+  return sendWorkerRequest<DocResult>({ type: 'parseDoc', filename, bytes })
 }
 
 export function parseUrlDocument(url: string): Promise<UrlResult> {
-  return request<UrlResult>({ type: 'parseUrl', url })
+  return sendWorkerRequest<UrlResult>({ type: 'parseUrl', url })
 }
 
 export function parseSheetDocument(filename: string, bytes: Uint8Array): Promise<PackDoc> {
-  return request<PackDoc>({ type: 'parseSheet', filename, bytes })
+  return sendWorkerRequest<PackDoc>({ type: 'parseSheet', filename, bytes })
 }
 
 export function packFolderDocument(path: string): Promise<PackDoc> {
-  return request<PackDoc>({ type: 'packFolder', path }, 180_000)
+  return sendWorkerRequest<PackDoc>({ type: 'packFolder', path }, 180_000)
 }
 
 export function packZipDocument(filename: string, bytes: Uint8Array): Promise<PackDoc> {
-  return request<PackDoc>({ type: 'packZip', filename, bytes }, 180_000)
+  return sendWorkerRequest<PackDoc>({ type: 'packZip', filename, bytes }, 180_000)
 }
 
 export function packRepoDocument(url: string, token?: string): Promise<PackDoc> {
-  return request<PackDoc>({ type: 'packRepo', url, token }, 180_000)
+  return sendWorkerRequest<PackDoc>({ type: 'packRepo', url, token }, 180_000)
 }
 
 export function stopIngestWorker(): void {

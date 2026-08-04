@@ -17,7 +17,7 @@ const PACK_LIMITS = { maxTotalBytes: 5_000_000, maxFileBytes: 256_000 }
 const ARCHIVE_LIMITS = { maxEntries: 20_000, maxTotalBytes: 50_000_000, maxFileBytes: 2_000_000 }
 const HARD_SKIP = new Set(['node_modules', '.git', 'dist', 'out', 'build', '.next', 'coverage', '.turbo'])
 
-function cellToStr(v: unknown): string {
+function cellToString(v: unknown): string {
   if (v == null) return ''
   if (v instanceof Date) return v.toISOString()
   if (typeof v === 'object') {
@@ -28,7 +28,7 @@ function cellToStr(v: unknown): string {
   return String(v)
 }
 
-function numericSummary(rows: string[][]): string {
+function computeNumericSummary(rows: string[][]): string {
   if (rows.length < 2) return ''
   const [headers, ...body] = rows
   const lines: string[] = []
@@ -41,8 +41,8 @@ function numericSummary(rows: string[][]): string {
   return lines.length ? 'Numeric summary:\n' + lines.join('\n') : ''
 }
 
-function sheetBlock(name: string, rows: string[][]): string {
-  return [`Sheet: ${name}`, rows.map((r) => r.join('\t')).join('\n'), numericSummary(rows)]
+function formatSheetBlock(name: string, rows: string[][]): string {
+  return [`Sheet: ${name}`, rows.map((r) => r.join('\t')).join('\n'), computeNumericSummary(rows)]
     .filter(Boolean)
     .join('\n')
 }
@@ -52,7 +52,7 @@ export async function sheetToText(filename: string, bytes: Uint8Array): Promise<
   if (ext === '.csv') {
     const Papa = (await import('papaparse')).default
     const parsed = Papa.parse<string[]>(new TextDecoder('utf-8').decode(bytes), { skipEmptyLines: true })
-    return sheetBlock(basename(filename), parsed.data)
+    return formatSheetBlock(basename(filename), parsed.data)
   }
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
@@ -62,9 +62,9 @@ export async function sheetToText(filename: string, bytes: Uint8Array): Promise<
     const rows: string[][] = []
     ws.eachRow({ includeEmpty: false }, (row) => {
       const vals = (row.values as unknown[]).slice(1)
-      rows.push(vals.map(cellToStr))
+      rows.push(vals.map(cellToString))
     })
-    blocks.push(sheetBlock(ws.name, rows))
+    blocks.push(formatSheetBlock(ws.name, rows))
   }
   return blocks.join('\n\n')
 }

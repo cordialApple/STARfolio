@@ -106,7 +106,7 @@ export async function composeUtteranceStream(
   })
 }
 
-// Deterministic engine for CI/e2e — one templated line per action kind.
+// Deterministic stand-in for the LLM call, used in CI/e2e.
 function stubUtterance(input: ConversationInput): string {
   const topic = input.topicLabel ?? 'that'
   const a = input.action

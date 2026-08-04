@@ -23,7 +23,7 @@ export class HalfDuplexGate {
     this.releaseAt = now + this.config.guardMs
   }
 
-  captureOpen(now: number): boolean {
+  isCaptureOpen(now: number): boolean {
     return !this.speaking && now >= this.releaseAt
   }
 

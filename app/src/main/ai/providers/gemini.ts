@@ -20,7 +20,7 @@ interface GeminiUsage {
 
 const REFUSAL_REASONS = new Set(['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'RECITATION'])
 
-function mapUsage(u: GeminiUsage | undefined): StructuredResult['usage'] {
+function toStructuredUsage(u: GeminiUsage | undefined): StructuredResult['usage'] {
   return {
     input_tokens: u?.promptTokenCount ?? 0,
     output_tokens: u?.candidatesTokenCount ?? 0,
@@ -28,14 +28,14 @@ function mapUsage(u: GeminiUsage | undefined): StructuredResult['usage'] {
   }
 }
 
-function resolve(opts: GeminiOptions): { key: string; base: string; doFetch: Fetch } {
+function resolveGeminiConnection(opts: GeminiOptions): { key: string; base: string; doFetch: Fetch } {
   const key = opts.apiKey ?? getSecret('gemini_api_key')
   if (!key) throw new Error('No Gemini API key configured')
   const doFetch = opts.fetch ?? resolveAiFetch() ?? (globalThis.fetch as Fetch)
   return { key, base: opts.baseUrl.replace(/\/+$/, ''), doFetch }
 }
 
-function headers(key: string): Record<string, string> {
+function buildGeminiHeaders(key: string): Record<string, string> {
   return { 'Content-Type': 'application/json', 'x-goog-api-key': key }
 }
 
@@ -46,10 +46,10 @@ function partsText(parts: { text?: string }[] | undefined): string {
 export function geminiStructured(opts: GeminiOptions): StructuredProvider {
   return {
     async parse(req) {
-      const { key, base, doFetch } = resolve(opts)
+      const { key, base, doFetch } = resolveGeminiConnection(opts)
       const res = await doFetch(`${base}/models/${req.model}:generateContent`, {
         method: 'POST',
-        headers: headers(key),
+        headers: buildGeminiHeaders(key),
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: req.system }] },
           contents: [{ role: 'user', parts: [{ text: req.userText }] }],
@@ -67,7 +67,7 @@ export function geminiStructured(opts: GeminiOptions): StructuredProvider {
         usageMetadata?: GeminiUsage
       }
       const cand = json.candidates?.[0]
-      const usage = mapUsage(json.usageMetadata)
+      const usage = toStructuredUsage(json.usageMetadata)
       const reason = cand?.finishReason
       const block = json.promptFeedback?.blockReason
       if (block || (reason && REFUSAL_REASONS.has(reason)))
@@ -88,10 +88,10 @@ export function geminiTransport(opts: GeminiOptions): AiTransport {
     async stream(req, signal, cb) {
       let usage = { in: 0, out: 0, cacheRead: 0 }
       try {
-        const { key, base, doFetch } = resolve(opts)
+        const { key, base, doFetch } = resolveGeminiConnection(opts)
         const res = await doFetch(`${base}/models/${req.model}:streamGenerateContent?alt=sse`, {
           method: 'POST',
-          headers: headers(key),
+          headers: buildGeminiHeaders(key),
           signal,
           body: JSON.stringify({
             ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),

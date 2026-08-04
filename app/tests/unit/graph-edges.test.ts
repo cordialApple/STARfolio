@@ -5,7 +5,7 @@ import { createExperience } from '../../src/main/db/repositories/experiences'
 import {
   deleteExperienceEdges,
   linkExperienceEntities,
-  neighborsOf
+  loadNeighbors
 } from '../../src/main/db/repositories/graph'
 
 const edgeCount = (): number =>
@@ -22,7 +22,7 @@ describe('deleteExperienceEdges', () => {
     deleteExperienceEdges(getDb(), a.id)
 
     expect(edgeCount()).toBe(0)
-    expect(neighborsOf(a.id).entities).toEqual([])
+    expect(loadNeighbors(a.id).entities).toEqual([])
   })
 
   it('drops edges where the experience is the dst', () => {
@@ -48,8 +48,8 @@ describe('deleteExperienceEdges', () => {
 
     deleteExperienceEdges(getDb(), a.id)
 
-    expect(neighborsOf(a.id).entities).toEqual([])
-    expect(neighborsOf(b.id).entities.map((e) => e.name)).toEqual(['Postgres'])
+    expect(loadNeighbors(a.id).entities).toEqual([])
+    expect(loadNeighbors(b.id).entities.map((e) => e.name)).toEqual(['Postgres'])
   })
 
   it('is a no-op for an unknown experience id', () => {

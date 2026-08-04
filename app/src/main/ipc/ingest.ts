@@ -5,7 +5,7 @@ import { setSecret, hasSecret, deleteSecret, getSecret } from '../settings/secre
 import { extractEvidenceStar, extractEntities } from '../ai/extract'
 import { ingestFiles, ingestUrl, ingestCodeFolder, ingestRepo } from '../ingest/service'
 import { getSource } from '../db/repositories/sources'
-import { linkExperienceEntities, neighborsOf, ENTITY_KINDS } from '../db/repositories/graph'
+import { linkExperienceEntities, loadNeighbors, ENTITY_KINDS } from '../db/repositories/graph'
 import { backfillEntities } from '../graph-backfill'
 import { assertPublicHttpUrl } from '../ingest/fetch-url'
 
@@ -46,7 +46,7 @@ export function registerIngest(ipcMain: IpcMain): void {
   handle(ipcMain, 'graph:link', linkArg, (_e, { experienceId, entities }) => {
     linkExperienceEntities(experienceId, entities)
   })
-  handle(ipcMain, 'graph:neighbors', idArg, (_e, { id }) => neighborsOf(id))
+  handle(ipcMain, 'graph:neighbors', idArg, (_e, { id }) => loadNeighbors(id))
   ipcMain.handle('graph:backfill', () => backfillEntities())
 
   ipcMain.handle('github:hasPat', () => hasSecret('github_pat'))

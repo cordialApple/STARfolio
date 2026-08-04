@@ -1,6 +1,6 @@
 import { createRequire } from 'module'
 import { dirname, join } from 'path'
-import { detectFileKind, decodeText, extractDocx, extractPdf, looksScanned, htmlToArticle } from './extractors'
+import { detectFileKind, decodeText, extractDocx, extractPdf, isLikelyScanned, htmlToArticle } from './extractors'
 import { fetchArticleHtml } from './fetch-url'
 import { sheetToText, packFolder, packZipBytes, packRepo } from './evidence-extractors'
 
@@ -70,7 +70,7 @@ async function parseDoc(filename: string, bytes: Uint8Array): Promise<DocResult>
     return { text: decodeText(bytes).trim(), scanned: false, meta: { kind } }
   if (kind === 'docx') return { text: await extractDocx(bytes), scanned: false, meta: { kind } }
   const { text, numPages } = await extractPdf(bytes, standardFontDataUrl())
-  return { text, scanned: looksScanned(text, numPages), meta: { kind, numPages } }
+  return { text, scanned: isLikelyScanned(text, numPages), meta: { kind, numPages } }
 }
 
 async function parseUrl(url: string): Promise<UrlResult> {

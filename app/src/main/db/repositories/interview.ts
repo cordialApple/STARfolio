@@ -110,7 +110,7 @@ export function loadSession(sessionId: string): StoredInterviewSession | null {
   return row ? toStored(row) : null
 }
 
-export function transcript(sessionId: string): TranscriptTurn[] {
+export function loadTranscript(sessionId: string): TranscriptTurn[] {
   return getDb()
     .prepare(
       `SELECT speaker, text FROM interview_turns WHERE session_id = ? ORDER BY created_at, rowid`
@@ -167,7 +167,7 @@ export function getSession(sessionId: string): InterviewSessionDetail | null {
     startedAt: row.started_at,
     endedAt: row.ended_at,
     report: parseReport(row.report_json),
-    transcript: transcript(sessionId)
+    transcript: loadTranscript(sessionId)
   }
 }
 

@@ -104,8 +104,7 @@ function deriveFromText(text: string): ArchitectPlan['topics'] {
   }))
 }
 
-// Deterministic engine for CI/e2e — one topic per banked experience (or resume-line derived),
-// descending value by order, no seeded coverage.
+// Deterministic stand-in for the LLM call, used in CI/e2e.
 function stubRoadmap(input: ArchitectInput): Roadmap {
   const exps = input.experiences ?? []
   const topics: ArchitectPlan['topics'] =

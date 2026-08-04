@@ -59,13 +59,13 @@ function statusOf(name: string): ModelStatus {
   return statuses.get(name) ?? { phase: 'idle', progress: 0, error: null }
 }
 
-function modelDir(): string {
+function ensureModelDir(): string {
   const dir = join(userDataDir(), 'models', 'whisper')
   mkdirSync(dir, { recursive: true })
   return dir
 }
 function modelPath(name: string): string {
-  return join(modelDir(), `ggml-${name}.bin`)
+  return join(ensureModelDir(), `ggml-${name}.bin`)
 }
 
 function setStatus(name: string, s: ModelStatus): void {
@@ -93,7 +93,7 @@ export function deleteWhisperModel(name: string): void {
   setStatus(name, { phase: 'idle', progress: 0, error: null })
 }
 
-async function download(name: string, dest: string): Promise<void> {
+async function downloadModel(name: string, dest: string): Promise<void> {
   setStatus(name, { phase: 'downloading', progress: 0, error: null })
   try {
     await downloadToFile(
@@ -118,6 +118,6 @@ export async function ensureWhisperModel(name: string): Promise<string> {
     if (statusOf(name).phase !== 'ready') setStatus(name, { phase: 'ready', progress: 100, error: null })
     return dest
   }
-  await download(name, dest)
+  await downloadModel(name, dest)
   return dest
 }

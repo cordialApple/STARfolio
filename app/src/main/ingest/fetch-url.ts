@@ -21,7 +21,7 @@ export function assertPublicHttpUrl(raw: string): URL {
   return u
 }
 
-export function ipInPrivateRange(ip: string): boolean {
+export function isIpInPrivateRange(ip: string): boolean {
   let addr = ip.toLowerCase()
   if (isIP(addr) === 6) {
     if (addr === '::1' || addr === '::') return true
@@ -51,7 +51,7 @@ async function assertResolvesPublic(u: URL): Promise<void> {
   const addrs = await lookup(u.hostname, { all: true }).catch(() => [])
   if (addrs.length === 0) throw new Error('Could not resolve that host.')
   for (const { address } of addrs)
-    if (ipInPrivateRange(address))
+    if (isIpInPrivateRange(address))
       throw new Error('That link resolves to a local or private-network address.')
 }
 

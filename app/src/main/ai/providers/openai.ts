@@ -19,7 +19,7 @@ interface OpenAiUsage {
   prompt_tokens_details?: { cached_tokens?: number } | null
 }
 
-function mapUsage(u: OpenAiUsage | undefined): StructuredResult['usage'] {
+function toStructuredUsage(u: OpenAiUsage | undefined): StructuredResult['usage'] {
   return {
     input_tokens: u?.prompt_tokens ?? 0,
     output_tokens: u?.completion_tokens ?? 0,
@@ -27,21 +27,21 @@ function mapUsage(u: OpenAiUsage | undefined): StructuredResult['usage'] {
   }
 }
 
-function resolve(opts: OpenAiOptions): { url: string; key: string; doFetch: Fetch } {
+function resolveOpenAiConnection(opts: OpenAiOptions): { url: string; key: string; doFetch: Fetch } {
   const key = opts.apiKey ?? getSecret('openai_api_key')
   if (!key) throw new Error('No OpenAI API key configured')
   const doFetch = opts.fetch ?? resolveAiFetch() ?? (globalThis.fetch as Fetch)
   return { url: `${opts.baseUrl.replace(/\/+$/, '')}/chat/completions`, key, doFetch }
 }
 
-function headers(key: string): Record<string, string> {
+function buildOpenAiHeaders(key: string): Record<string, string> {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }
 }
 
 export function openaiStructured(opts: OpenAiOptions): StructuredProvider {
   return {
     async parse(req) {
-      const { url, key, doFetch } = resolve(opts)
+      const { url, key, doFetch } = resolveOpenAiConnection(opts)
       const jsonSchema = toOpenAiJsonSchema(req.schema)
       const jsonObject = opts.structuredMode === 'json_object'
       const system = jsonObject
@@ -52,7 +52,7 @@ export function openaiStructured(opts: OpenAiOptions): StructuredProvider {
         : { type: 'json_schema' as const, json_schema: { name: 'output', strict: false, schema: jsonSchema } }
       const res = await doFetch(url, {
         method: 'POST',
-        headers: headers(key),
+        headers: buildOpenAiHeaders(key),
         body: JSON.stringify({
           model: req.model,
           max_tokens: req.maxTokens,
@@ -69,7 +69,7 @@ export function openaiStructured(opts: OpenAiOptions): StructuredProvider {
         usage?: OpenAiUsage
       }
       const choice = json.choices?.[0]
-      const usage = mapUsage(json.usage)
+      const usage = toStructuredUsage(json.usage)
       if (choice?.message?.refusal)
         return { stop_reason: 'refusal', stop_details: { category: 'refusal' }, parsed_output: undefined, usage }
       const content = choice?.message?.content
@@ -92,10 +92,10 @@ export function openaiTransport(opts: OpenAiOptions): AiTransport {
     async stream(req, signal, cb) {
       let usage = { in: 0, out: 0, cacheRead: 0 }
       try {
-        const { url, key, doFetch } = resolve(opts)
+        const { url, key, doFetch } = resolveOpenAiConnection(opts)
         const res = await doFetch(url, {
           method: 'POST',
-          headers: headers(key),
+          headers: buildOpenAiHeaders(key),
           signal,
           body: JSON.stringify({
             model: req.model,

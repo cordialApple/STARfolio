@@ -78,7 +78,7 @@ export class TurnLoop {
   }
 
   captureOpen(now = this.now()): boolean {
-    return this.phase === 'listening' && this.gate.captureOpen(now)
+    return this.phase === 'listening' && this.gate.isCaptureOpen(now)
   }
 
   endOfTurn(): RealizedTurn | null {
