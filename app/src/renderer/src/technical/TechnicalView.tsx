@@ -20,7 +20,7 @@ import type {
   TechnicalSessionSummary
 } from '../lib/bank-types'
 import {
-  DIMS,
+  DIMENSIONS,
   technicalToMarkdown,
   technicalFilename,
   type TechnicalEntry
@@ -38,7 +38,7 @@ function FeedbackGrid({ feedback }: { feedback: TechnicalFeedback }): React.JSX.
   return (
     <div className="rounded-lg border border-line p-3">
       <div className="grid grid-cols-2 gap-2">
-        {DIMS.map(({ key, label }) => (
+        {DIMENSIONS.map(({ key, label }) => (
           <div key={key} className="flex items-center justify-between gap-2 text-sm">
             <span className="text-muted">{label}</span>
             <Badge tone={scoreTone(feedback[key].score)}>{feedback[key].score}/5</Badge>
@@ -393,7 +393,7 @@ function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void })
     }
   }, [id])
 
-  function markdown(s: TechnicalSession): string {
+  function toMarkdown(s: TechnicalSession): string {
     const entries: TechnicalEntry[] = s.turns.map((t) =>
       t.role === 'interviewer'
         ? { role: 'interviewer', text: t.content, citations: t.citations }
@@ -403,7 +403,7 @@ function TechnicalTranscript({ id, onBack }: { id: string; onBack: () => void })
   }
 
   const { copy, exportAs, busy } = useExport(
-    () => (session ? markdown(session) : null),
+    () => (session ? toMarkdown(session) : null),
     () => technicalFilename(session!.config.promptText),
     'Session'
   )

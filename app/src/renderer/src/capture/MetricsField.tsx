@@ -8,7 +8,7 @@ export interface MetricsFieldProps {
 }
 
 export function MetricsField({ value, onChange }: MetricsFieldProps): React.JSX.Element {
-  function update(i: number, patch: Partial<MetricInput>): void {
+  function updateMetric(i: number, patch: Partial<MetricInput>): void {
     onChange(value.map((m, idx) => (idx === i ? { ...m, ...patch } : m)))
   }
 
@@ -22,7 +22,7 @@ export function MetricsField({ value, onChange }: MetricsFieldProps): React.JSX.
               <Input
                 value={m.label}
                 placeholder="What you moved (e.g. deploy time)"
-                onChange={(e) => update(i, { label: e.target.value })}
+                onChange={(e) => updateMetric(i, { label: e.target.value })}
                 className="flex-[2]"
                 aria-label="Metric label"
               />
@@ -33,7 +33,7 @@ export function MetricsField({ value, onChange }: MetricsFieldProps): React.JSX.
                 onChange={(e) => {
                   const raw = e.target.value.trim()
                   const num = Number(raw)
-                  update(i, { value: raw === '' || Number.isNaN(num) ? null : num })
+                  updateMetric(i, { value: raw === '' || Number.isNaN(num) ? null : num })
                 }}
                 className="flex-1"
                 aria-label="Metric value"
@@ -41,7 +41,7 @@ export function MetricsField({ value, onChange }: MetricsFieldProps): React.JSX.
               <Input
                 value={m.unit ?? ''}
                 placeholder="Unit"
-                onChange={(e) => update(i, { unit: e.target.value || null })}
+                onChange={(e) => updateMetric(i, { unit: e.target.value || null })}
                 className="w-24"
                 aria-label="Metric unit"
               />

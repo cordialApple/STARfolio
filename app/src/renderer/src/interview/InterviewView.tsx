@@ -146,7 +146,7 @@ export function InterviewView(): React.JSX.Element {
     if (!autoVoiceOpen && voiceListening) void stopVoice()
   }, [autoVoiceOpen, voiceListening, stopVoice])
 
-  function apply(step: InterviewStep): void {
+  function applyStep(step: InterviewStep): void {
     setSessionId(step.sessionId)
     setPhase(step.phase)
     setTurns((prev) => [...prev, { role: 'interviewer', text: step.utterance }])
@@ -170,7 +170,7 @@ export function InterviewView(): React.JSX.Element {
       startedAt.current = Date.now()
       setTurns([])
       setReport(null)
-      apply(step)
+      applyStep(step)
       setStreaming(null)
       setStage('live')
     } catch (err) {
@@ -198,7 +198,7 @@ export function InterviewView(): React.JSX.Element {
         Date.now() - startedAt.current,
         requestId
       )
-      apply(step)
+      applyStep(step)
       setStreaming(null)
     } catch (err) {
       toast((err as Error).message, 'danger')

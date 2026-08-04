@@ -37,12 +37,12 @@ export function PushToTalk({
     }
   }, [])
 
-  async function begin(): Promise<void> {
+  async function beginRecording(): Promise<void> {
     if (phase !== 'idle' || disabled) return
     try {
       recRef.current = await startRecording({ onLevel: setLevel })
       setPhase('recording')
-      timerRef.current = setTimeout(() => void end(), MAX_RECORD_MS)
+      timerRef.current = setTimeout(() => void endRecording(), MAX_RECORD_MS)
     } catch (err) {
       const e = err as Error
       onError(
@@ -54,7 +54,7 @@ export function PushToTalk({
     }
   }
 
-  async function end(): Promise<void> {
+  async function endRecording(): Promise<void> {
     if (timerRef.current) {
       clearTimeout(timerRef.current)
       timerRef.current = null
@@ -97,9 +97,9 @@ export function PushToTalk({
         disabled={disabled || phase === 'transcribing'}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
-          void begin()
+          void beginRecording()
         }}
-        onPointerUp={() => void end()}
+        onPointerUp={() => void endRecording()}
         aria-label={phase === 'recording' ? 'Release to transcribe' : 'Hold to talk'}
         className={cn(
           'inline-flex size-12 shrink-0 items-center justify-center rounded-full transition-colors',

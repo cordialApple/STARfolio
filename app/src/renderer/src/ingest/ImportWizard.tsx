@@ -18,7 +18,7 @@ interface ReviewItem {
 }
 
 const EVIDENCE_KINDS = new Set(['spreadsheet', 'code', 'repo'])
-const ekey = (e: EntityInput): string => `${e.kind}:${e.name}`
+const entityKey = (e: EntityInput): string => `${e.kind}:${e.name}`
 
 function seedFrom(ext: StarExtraction, sourceId: string): StarSeed {
   return {
@@ -57,7 +57,7 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
   const toast = useToast()
 
   useEffect(() => {
-    if (review[cursor]) setApproved(new Set(review[cursor].entities.map(ekey)))
+    if (review[cursor]) setApproved(new Set(review[cursor].entities.map(entityKey)))
   }, [cursor, review])
 
   async function extractSources(results: IngestResult[]): Promise<void> {
@@ -102,7 +102,7 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
     }
   }
 
-  async function run(kind: string, fn: () => Promise<IngestResult[]>): Promise<void> {
+  async function runIngest(kind: string, fn: () => Promise<IngestResult[]>): Promise<void> {
     setBusy(kind)
     try {
       await extractSources(await fn())
@@ -113,10 +113,10 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
   }
 
   async function importPaths(paths: string[]): Promise<void> {
-    if (paths.length > 0) await run('files', () => window.api.ingest.files(paths))
+    if (paths.length > 0) await runIngest('files', () => window.api.ingest.files(paths))
   }
 
-  function onDrop(e: React.DragEvent): void {
+  function handleDrop(e: React.DragEvent): void {
     e.preventDefault()
     setDragging(false)
     const paths = Array.from(e.dataTransfer.files).map((f) => window.api.ingest.pathForFile(f))
@@ -125,7 +125,7 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
 
   async function pickFolder(): Promise<void> {
     const path = await window.api.ingest.pickFolder()
-    if (path) await run('folder', async () => [await window.api.ingest.codeFolder(path)])
+    if (path) await runIngest('folder', async () => [await window.api.ingest.codeFolder(path)])
   }
 
   if (review.length > 0 && cursor < review.length) {
@@ -140,16 +140,16 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
             <p className="mb-2 text-sm font-semibold text-ink">Connections found — approve what to keep</p>
             <div className="flex flex-wrap gap-1.5">
               {item.entities.map((e) => {
-                const on = approved.has(ekey(e))
+                const on = approved.has(entityKey(e))
                 return (
                   <button
-                    key={ekey(e)}
+                    key={entityKey(e)}
                     type="button"
                     onClick={() =>
                       setApproved((prev) => {
                         const next = new Set(prev)
-                        if (next.has(ekey(e))) next.delete(ekey(e))
-                        else next.add(ekey(e))
+                        if (next.has(entityKey(e))) next.delete(entityKey(e))
+                        else next.add(entityKey(e))
                         return next
                       })
                     }
@@ -171,7 +171,7 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
           tags={tags}
           onCancel={() => (cursor + 1 < review.length ? setCursor((c) => c + 1) : onExit())}
           onSaved={async (exp) => {
-            const keep = item.entities.filter((e) => approved.has(ekey(e)))
+            const keep = item.entities.filter((e) => approved.has(entityKey(e)))
             if (keep.length > 0) await window.api.graph.link(exp.id, keep)
             if (cursor + 1 < review.length) setCursor((c) => c + 1)
             else onSaved(exp.id)
@@ -216,7 +216,7 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
           setDragging(true)
         }}
         onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
+        onDrop={handleDrop}
         className={`flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
           dragging ? 'border-fg-brand bg-raised' : 'border-line'
         }`}
@@ -224,7 +224,7 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
         <Upload className="size-6 text-faint" />
         <p className="text-sm text-muted">Drop pdf, docx, txt, md, xlsx, csv, or zip files here</p>
         <div className="flex flex-wrap justify-center gap-2">
-          <Button variant="secondary" onClick={() => void run('files', async () => window.api.ingest.files(await window.api.ingest.pickFiles()))} loading={busy === 'files'}>
+          <Button variant="secondary" onClick={() => void runIngest('files', async () => window.api.ingest.files(await window.api.ingest.pickFiles()))} loading={busy === 'files'}>
             <FileText className="size-4" />
             Choose files
           </Button>
@@ -247,10 +247,10 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && url.trim()) void run('url', async () => [await window.api.ingest.url(url.trim())])
+              if (e.key === 'Enter' && url.trim()) void runIngest('url', async () => [await window.api.ingest.url(url.trim())])
             }}
           />
-          <Button onClick={() => void run('url', async () => [await window.api.ingest.url(url.trim())])} loading={busy === 'url'} disabled={!url.trim()}>
+          <Button onClick={() => void runIngest('url', async () => [await window.api.ingest.url(url.trim())])} loading={busy === 'url'} disabled={!url.trim()}>
             <Link2 className="size-4" />
             Import
           </Button>
@@ -269,10 +269,10 @@ export function ImportWizard({ skills, tags, onExit, onSaved }: ImportWizardProp
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && repoUrl.trim()) void run('repo', async () => [await window.api.ingest.repo(repoUrl.trim())])
+              if (e.key === 'Enter' && repoUrl.trim()) void runIngest('repo', async () => [await window.api.ingest.repo(repoUrl.trim())])
             }}
           />
-          <Button onClick={() => void run('repo', async () => [await window.api.ingest.repo(repoUrl.trim())])} loading={busy === 'repo'} disabled={!repoUrl.trim()}>
+          <Button onClick={() => void runIngest('repo', async () => [await window.api.ingest.repo(repoUrl.trim())])} loading={busy === 'repo'} disabled={!repoUrl.trim()}>
             <GitBranch className="size-4" />
             Import
           </Button>

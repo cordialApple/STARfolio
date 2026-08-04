@@ -8,27 +8,29 @@ export interface StalenessBannerProps {
 }
 
 export function StalenessBanner({ onNew, reloadToken }: StalenessBannerProps): React.JSX.Element | null {
-  const [s, setS] = useState<Staleness | null>(null)
+  const [staleness, setStaleness] = useState<Staleness | null>(null)
   const [prefs, setPrefs] = useState<{ reminderIntervalDays: number } | null>(null)
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
     let live = true
-    void Promise.all([window.api.nudge.staleness(), window.api.prefs.get()]).then(([st, p]) => {
-      if (!live) return
-      setS(st)
-      setPrefs({ reminderIntervalDays: p.reminderIntervalDays })
-    })
+    void Promise.all([window.api.nudge.staleness(), window.api.prefs.get()]).then(
+      ([staleness, prefs]) => {
+        if (!live) return
+        setStaleness(staleness)
+        setPrefs({ reminderIntervalDays: prefs.reminderIntervalDays })
+      }
+    )
     return () => {
       live = false
     }
   }, [reloadToken])
 
-  if (dismissed || !s || !prefs) return null
-  if (s.count === 0 || s.daysSinceLast == null) return null
-  if (s.daysSinceLast < prefs.reminderIntervalDays) return null
+  if (dismissed || !staleness || !prefs) return null
+  if (staleness.count === 0 || staleness.daysSinceLast == null) return null
+  if (staleness.daysSinceLast < prefs.reminderIntervalDays) return null
 
-  const weeks = Math.max(1, Math.round(s.daysSinceLast / 7))
+  const weeks = Math.max(1, Math.round(staleness.daysSinceLast / 7))
   return (
     <div className="mb-6 flex items-center gap-3 rounded-xl border border-pop/30 bg-pop/10 px-4 py-3">
       <Clock aria-hidden className="size-4 shrink-0 text-pop" />

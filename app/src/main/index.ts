@@ -13,7 +13,7 @@ import { getPrefs, type Prefs } from './settings/prefs'
 import { startReminderScheduler, stopReminderScheduler } from './nudges/reminder'
 import { syncTray, destroyTray, applyLoginItem } from './nudges/tray'
 import { initUpdater } from './updater'
-import { startLoopbackServer, stopLoopbackServer, loopbackEnabled } from './loopback/server'
+import { startLoopbackServer, stopLoopbackServer, isLoopbackEnabled } from './loopback/server'
 import { syncPersonalServerConfig } from './integration/personalserver-config-writer'
 
 let mainWindow: BrowserWindow | null = null
@@ -112,7 +112,7 @@ if (!app.requestSingleInstanceLock()) {
     initDb()
     initUpdater(() => mainWindow?.webContents ?? null)
     registerIpcHandlers(ipcMain, { onPrefsChange: applyPrefs })
-    if (loopbackEnabled()) void startLoopbackServer()
+    if (isLoopbackEnabled()) void startLoopbackServer()
     createWindow()
     applyPrefs(getPrefs())
     startReminderScheduler(showWindow)

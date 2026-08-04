@@ -5,7 +5,7 @@ import type { ResumeBullet } from '../lib/bank-types'
 
 const MAX_SOURCES = 10
 
-function buildMarkdown(name: string, contact: string, bullets: ResumeBullet[]): string {
+function formatResumeMarkdown(name: string, contact: string, bullets: ResumeBullet[]): string {
   const lines: string[] = []
   if (name.trim()) lines.push(`# ${name.trim()}`)
   if (contact.trim()) lines.push(contact.trim())
@@ -27,9 +27,9 @@ export function MaterialsView(): React.JSX.Element {
     () => (bullets ? bullets.filter((_, i) => kept.has(i)) : []),
     [bullets, kept]
   )
-  const markdown = useMemo(() => buildMarkdown(name, contact, keptBullets), [name, contact, keptBullets])
+  const markdown = useMemo(() => formatResumeMarkdown(name, contact, keptBullets), [name, contact, keptBullets])
 
-  async function generate(): Promise<void> {
+  async function generateBullets(): Promise<void> {
     if (!jd.trim()) return
     setBusy('generate')
     try {
@@ -83,7 +83,7 @@ export function MaterialsView(): React.JSX.Element {
             value={jd}
             onChange={(e) => setJd(e.target.value)}
           />
-          <Button onClick={() => void generate()} loading={busy === 'generate'} disabled={!jd.trim()}>
+          <Button onClick={() => void generateBullets()} loading={busy === 'generate'} disabled={!jd.trim()}>
             <Sparkles className="size-4" />
             Draft bullets
           </Button>

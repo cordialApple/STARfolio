@@ -41,7 +41,7 @@ export function BrainDump({ skills, tags, onSaved, onExit }: BrainDumpProps): Re
   const [error, setError] = useState<string | null>(null)
   const [seed, setSeed] = useState<StarSeed | null>(null)
 
-  async function extract(): Promise<void> {
+  async function extractDraft(): Promise<void> {
     setBusy(true)
     setError(null)
     try {
@@ -110,7 +110,7 @@ export function BrainDump({ skills, tags, onSaved, onExit }: BrainDumpProps): Re
       />
 
       <div className="flex justify-end">
-        <Button loading={busy} disabled={busy || !text.trim()} onClick={() => void extract()}>
+        <Button loading={busy} disabled={busy || !text.trim()} onClick={() => void extractDraft()}>
           <Sparkles className="size-4" />
           Draft with AI
         </Button>

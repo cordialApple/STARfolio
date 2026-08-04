@@ -98,31 +98,31 @@ interface Codec<T> {
   encode: (v: T) => string
 }
 
-const boolCodec = (key: string): Codec<boolean> => ({
+const createBoolCodec = (key: string): Codec<boolean> => ({
   key,
   decode: (raw) => raw === '1',
   encode: (v) => (v ? '1' : '0')
 })
 
-const nullableStringCodec = (key: string): Codec<string | null> => ({
+const createNullableStringCodec = (key: string): Codec<string | null> => ({
   key,
   decode: (raw) => raw || null,
   encode: (v) => v ?? ''
 })
 
-const stringCodec = (key: string): Codec<string> => ({
+const createStringCodec = (key: string): Codec<string> => ({
   key,
   decode: (raw) => raw,
   encode: (v) => v
 })
 
-const enumCodec = <T extends string>(key: string, values: readonly T[]): Codec<T> => ({
+const createEnumCodec = <T extends string>(key: string, values: readonly T[]): Codec<T> => ({
   key,
   decode: (raw) => (values.includes(raw as T) ? (raw as T) : undefined),
   encode: (v) => v
 })
 
-const posIntCodec = (key: string): Codec<number> => ({
+const createPositiveIntCodec = (key: string): Codec<number> => ({
   key,
   decode: (raw) => {
     const n = Number(raw)
@@ -132,26 +132,26 @@ const posIntCodec = (key: string): Codec<number> => ({
 })
 
 const CODECS: { [K in keyof Prefs]: Codec<Prefs[K]> } = {
-  reminderEnabled: boolCodec('pref.reminder.enabled'),
-  reminderIntervalDays: posIntCodec('pref.reminder.interval_days'),
-  launchAtLogin: boolCodec('pref.startup.launch_at_login'),
-  trayResident: boolCodec('pref.tray.resident'),
-  onboardingDone: boolCodec('pref.onboarding.done'),
-  reminderSnoozedAt: nullableStringCodec('pref.reminder.snoozed_at'),
-  voiceModel: enumCodec('pref.voice.model', VOICE_MODELS),
-  storageMode: enumCodec('pref.storage.mode', STORAGE_MODES),
-  vaultPath: nullableStringCodec('pref.storage.vault_path'),
-  loopbackEnabled: boolCodec('pref.loopback.enabled'),
-  providerArchitect: enumCodec('pref.ai.provider.architect', PROVIDERS),
-  providerEvaluator: enumCodec('pref.ai.provider.evaluator', PROVIDERS),
-  providerConversation: enumCodec('pref.ai.provider.conversation', PROVIDERS),
-  openaiBaseUrl: stringCodec('pref.ai.openai.base_url'),
-  openaiModelArchitect: stringCodec('pref.ai.openai.model.architect'),
-  openaiModelEvaluator: stringCodec('pref.ai.openai.model.evaluator'),
-  openaiModelConversation: stringCodec('pref.ai.openai.model.conversation'),
-  geminiModelArchitect: stringCodec('pref.ai.gemini.model.architect'),
-  geminiModelEvaluator: stringCodec('pref.ai.gemini.model.evaluator'),
-  geminiModelConversation: stringCodec('pref.ai.gemini.model.conversation')
+  reminderEnabled: createBoolCodec('pref.reminder.enabled'),
+  reminderIntervalDays: createPositiveIntCodec('pref.reminder.interval_days'),
+  launchAtLogin: createBoolCodec('pref.startup.launch_at_login'),
+  trayResident: createBoolCodec('pref.tray.resident'),
+  onboardingDone: createBoolCodec('pref.onboarding.done'),
+  reminderSnoozedAt: createNullableStringCodec('pref.reminder.snoozed_at'),
+  voiceModel: createEnumCodec('pref.voice.model', VOICE_MODELS),
+  storageMode: createEnumCodec('pref.storage.mode', STORAGE_MODES),
+  vaultPath: createNullableStringCodec('pref.storage.vault_path'),
+  loopbackEnabled: createBoolCodec('pref.loopback.enabled'),
+  providerArchitect: createEnumCodec('pref.ai.provider.architect', PROVIDERS),
+  providerEvaluator: createEnumCodec('pref.ai.provider.evaluator', PROVIDERS),
+  providerConversation: createEnumCodec('pref.ai.provider.conversation', PROVIDERS),
+  openaiBaseUrl: createStringCodec('pref.ai.openai.base_url'),
+  openaiModelArchitect: createStringCodec('pref.ai.openai.model.architect'),
+  openaiModelEvaluator: createStringCodec('pref.ai.openai.model.evaluator'),
+  openaiModelConversation: createStringCodec('pref.ai.openai.model.conversation'),
+  geminiModelArchitect: createStringCodec('pref.ai.gemini.model.architect'),
+  geminiModelEvaluator: createStringCodec('pref.ai.gemini.model.evaluator'),
+  geminiModelConversation: createStringCodec('pref.ai.gemini.model.conversation')
 }
 
 function readRaw(key: string): string | null {
@@ -200,7 +200,7 @@ export interface Staleness {
   daysSinceLast: number | null
 }
 
-export function staleness(): Staleness {
+export function computeStaleness(): Staleness {
   const row = getDb()
     .prepare(
       `SELECT COUNT(*) AS count,

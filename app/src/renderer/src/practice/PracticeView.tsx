@@ -96,14 +96,13 @@ export function PracticeView(): React.JSX.Element {
     return window.api.voice.onModelStatus(setModels)
   }, [])
   useEffect(() => () => stopSpeaking(), [])
-  // Stop any in-flight question read-aloud when leaving the live interview for another view.
   useEffect(() => {
     if (view !== 'live') stopSpeaking()
   }, [view])
 
   const voiceReady = models.find((m) => m.name === voiceModel)?.downloaded ?? false
 
-  function say(text: string): void {
+  function speakIfTtsOn(text: string): void {
     if (tts) speak(text)
   }
 
@@ -124,7 +123,7 @@ export function PracticeView(): React.JSX.Element {
       setTurns([{ role: 'interviewer', text: question }])
       setEnded(false)
       setView('live')
-      say(question)
+      speakIfTtsOn(question)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -134,7 +133,7 @@ export function PracticeView(): React.JSX.Element {
 
   // Background semantic check: is this spoken answer already one of the banked stories? Runs after
   // the feedback shows so it never blocks the interview; the capture banner appears when it resolves.
-  async function checkMatch(idx: number, text: string): Promise<void> {
+  async function checkStoryMatch(idx: number, text: string): Promise<void> {
     let match: StoryMatch | null = null
     try {
       match = await window.api.bank.matchStory(text)
@@ -174,9 +173,9 @@ export function PracticeView(): React.JSX.Element {
         setEnded(true)
         toast('Session complete — nice work.', 'success')
       } else if (res.next_text) {
-        say(res.next_text)
+        speakIfTtsOn(res.next_text)
       }
-      void checkMatch(candidateIdx, text)
+      void checkStoryMatch(candidateIdx, text)
     } catch (err) {
       setError((err as Error).message)
       setTurns((t) => t.slice(0, -1))
@@ -619,7 +618,7 @@ function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.J
     }
   }, [id])
 
-  function markdown(s: PracticeSession): string {
+  function toMarkdown(s: PracticeSession): string {
     const entries: PracticeEntry[] = s.turns.map((t) =>
       t.role === 'interviewer'
         ? { role: 'interviewer', text: t.content }
@@ -634,7 +633,7 @@ function Transcript({ id, onBack }: { id: string; onBack: () => void }): React.J
   }
 
   const { copy, exportAs, busy } = useExport(
-    () => (session ? markdown(session) : null),
+    () => (session ? toMarkdown(session) : null),
     () => practiceFilename(session!.config.promptText),
     'Session'
   )

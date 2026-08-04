@@ -17,9 +17,9 @@ const DEFAULT_BATCH_SAMPLES = 4000
 function concatFloat32(chunks: Float32Array[], total: number): Float32Array {
   const out = new Float32Array(total)
   let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.length
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.length
   }
   return out
 }
@@ -35,9 +35,9 @@ function floatChunksToInt16(chunks: Float32Array[]): Int16Array {
   for (const c of chunks) total += c.length
   const out = new Int16Array(total)
   let offset = 0
-  for (const c of chunks) {
-    for (let i = 0; i < c.length; i++) {
-      const s = Math.max(-1, Math.min(1, c[i]))
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i++) {
+      const s = Math.max(-1, Math.min(1, chunk[i]))
       out[offset++] = s < 0 ? s * 0x8000 : s * 0x7fff
     }
   }
@@ -48,13 +48,13 @@ export async function startRecording(opts: RecordOptions = {}): Promise<Recordin
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
   })
-  let ctx: AudioContext | undefined
+  let audioContext: AudioContext | undefined
   try {
-    ctx = new AudioContext({ sampleRate: 16000 })
-    await ctx.audioWorklet.addModule(new URL('./pcm-processor.js', import.meta.url))
+    audioContext = new AudioContext({ sampleRate: 16000 })
+    await audioContext.audioWorklet.addModule(new URL('./pcm-processor.js', import.meta.url))
 
-    const source = ctx.createMediaStreamSource(stream)
-    const node = new AudioWorkletNode(ctx, 'pcm-processor')
+    const source = audioContext.createMediaStreamSource(stream)
+    const node = new AudioWorkletNode(audioContext, 'pcm-processor')
     const chunks: Float32Array[] = []
     const batchSamples = opts.batchSamples ?? DEFAULT_BATCH_SAMPLES
     let batch: Float32Array[] = []
@@ -75,21 +75,21 @@ export async function startRecording(opts: RecordOptions = {}): Promise<Recordin
       }
     }
     source.connect(node)
-    const audioCtx = ctx
+    const openContext = audioContext
 
     return {
       async stop(): Promise<Int16Array> {
         source.disconnect()
         node.disconnect()
         stream.getTracks().forEach((t) => t.stop())
-        await audioCtx.close()
+        await openContext.close()
         if (opts.onFrames && batchLen > 0) opts.onFrames(concatFloat32(batch, batchLen))
         return floatChunksToInt16(chunks)
       }
     }
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop())
-    await ctx?.close()
+    await audioContext?.close()
     throw err
   }
 }

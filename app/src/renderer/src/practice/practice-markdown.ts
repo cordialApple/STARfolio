@@ -5,7 +5,7 @@ export type PracticeEntry =
   | { role: 'interviewer'; text: string }
   | { role: 'candidate'; text: string; feedback?: InterviewFeedback; used?: { title: string }[] }
 
-export const DIMS: { key: RubricDimension; label: string }[] = [
+export const DIMENSIONS: { key: RubricDimension; label: string }[] = [
   { key: 'star_completeness', label: 'STAR completeness' },
   { key: 'specificity', label: 'Specificity' },
   { key: 'measurable_result', label: 'Measurable result' },
@@ -25,7 +25,7 @@ export function practiceToMarkdown(promptText: string, entries: PracticeEntry[])
     } else {
       out.push('', `**Candidate:** ${e.text}`)
       if (e.feedback) {
-        for (const { key, label } of DIMS)
+        for (const { key, label } of DIMENSIONS)
           out.push(`- ${label}: ${e.feedback[key].score}/5 — ${e.feedback[key].note}`)
         out.push('', e.feedback.summary)
       }

@@ -92,7 +92,7 @@ export function StoryView(): React.JSX.Element {
   const promptText = mode === 'jd' ? jd.trim() : genre
   const query = mode === 'jd' ? jd.trim() : (GENRES.find((g) => g.label === genre)?.query ?? genre)
 
-  const retrieve = useCallback(async (): Promise<void> => {
+  const retrieveCandidates = useCallback(async (): Promise<void> => {
     setRetrieving(true)
     setRetrieveError(null)
     try {
@@ -106,7 +106,7 @@ export function StoryView(): React.JSX.Element {
     }
   }, [query])
 
-  function toggle(id: string): void {
+  function toggleSelected(id: string): void {
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -115,7 +115,7 @@ export function StoryView(): React.JSX.Element {
     })
   }
 
-  async function generate(): Promise<void> {
+  async function generateStory(): Promise<void> {
     if (selected.size === 0) return
     const requestId = crypto.randomUUID()
     reqRef.current = requestId
@@ -140,12 +140,12 @@ export function StoryView(): React.JSX.Element {
     }
   }
 
-  function stop(): void {
+  function stopGeneration(): void {
     if (reqRef.current) void window.api.story.cancel(reqRef.current)
     setStreaming(false)
   }
 
-  async function copy(): Promise<void> {
+  async function copyStory(): Promise<void> {
     try {
       await window.api.clipboard.write(output)
       toast('Story copied to clipboard.', 'success')
@@ -154,7 +154,7 @@ export function StoryView(): React.JSX.Element {
     }
   }
 
-  async function save(): Promise<void> {
+  async function saveStory(): Promise<void> {
     try {
       const story = await window.api.story.save({
         content: output,
@@ -231,7 +231,7 @@ export function StoryView(): React.JSX.Element {
               variant="secondary"
               loading={retrieving}
               disabled={retrieving || !canRetrieve}
-              onClick={() => void retrieve()}
+              onClick={() => void retrieveCandidates()}
             >
               <Search className="size-4" />
               Find experiences
@@ -268,7 +268,7 @@ export function StoryView(): React.JSX.Element {
                     >
                       <Checkbox
                         checked={on}
-                        onChange={() => toggle(c.id)}
+                        onChange={() => toggleSelected(c.id)}
                         className="mt-0.5"
                         aria-label={`Include ${c.title || 'Untitled experience'}`}
                       />
@@ -325,7 +325,7 @@ export function StoryView(): React.JSX.Element {
               <Button
                 loading={streaming}
                 disabled={streaming || selected.size === 0}
-                onClick={() => void generate()}
+                onClick={() => void generateStory()}
               >
                 <Sparkles className="size-4" />
                 Generate story
@@ -366,27 +366,27 @@ export function StoryView(): React.JSX.Element {
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 {streaming ? (
-                  <Button size="sm" variant="secondary" onClick={stop}>
+                  <Button size="sm" variant="secondary" onClick={stopGeneration}>
                     <Square className="size-4" />
                     Stop
                   </Button>
                 ) : (
                   <>
-                    <Button size="sm" variant="secondary" onClick={() => void copy()} disabled={!output}>
+                    <Button size="sm" variant="secondary" onClick={() => void copyStory()} disabled={!output}>
                       <Copy className="size-4" />
                       Copy
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => void save()}
+                      onClick={() => void saveStory()}
                       disabled={!output || savedId !== null}
                     >
                       {savedId ? <Check className="size-4" /> : <Save className="size-4" />}
                       {savedId ? 'Saved' : 'Save'}
                     </Button>
                     {done && (
-                      <Button size="sm" variant="ghost" onClick={() => void generate()}>
+                      <Button size="sm" variant="ghost" onClick={() => void generateStory()}>
                         <RefreshCw className="size-4" />
                         Regenerate
                       </Button>

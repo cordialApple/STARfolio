@@ -15,7 +15,7 @@ export type UpdateStatus =
 let status: UpdateStatus = { state: 'idle' }
 let resolveSender: () => WebContents | null = () => null
 
-function push(next: UpdateStatus): void {
+function publishStatus(next: UpdateStatus): void {
   status = next
   const sender = resolveSender()
   if (sender && !sender.isDestroyed()) sender.send('update:status', next)
@@ -28,16 +28,16 @@ function ensureWired(): void {
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
 
-  autoUpdater.on('checking-for-update', () => push({ state: 'checking' }))
-  autoUpdater.on('update-available', (info) => push({ state: 'available', version: info.version }))
-  autoUpdater.on('update-not-available', () => push({ state: 'not-available' }))
+  autoUpdater.on('checking-for-update', () => publishStatus({ state: 'checking' }))
+  autoUpdater.on('update-available', (info) => publishStatus({ state: 'available', version: info.version }))
+  autoUpdater.on('update-not-available', () => publishStatus({ state: 'not-available' }))
   autoUpdater.on('download-progress', (p) =>
-    push({ state: 'downloading', percent: Math.round(p.percent) })
+    publishStatus({ state: 'downloading', percent: Math.round(p.percent) })
   )
   autoUpdater.on('update-downloaded', (info) =>
-    push({ state: 'downloaded', version: info.version })
+    publishStatus({ state: 'downloaded', version: info.version })
   )
-  autoUpdater.on('error', (err) => push({ state: 'error', message: err.message }))
+  autoUpdater.on('error', (err) => publishStatus({ state: 'error', message: err.message }))
 }
 
 export function initUpdater(getSender: () => WebContents | null): void {
@@ -50,14 +50,14 @@ export function updateStatus(): UpdateStatus {
 
 export async function checkForUpdate(): Promise<UpdateStatus> {
   if (!app.isPackaged) {
-    push({ state: 'error', message: 'Updates are only available in the installed app.' })
+    publishStatus({ state: 'error', message: 'Updates are only available in the installed app.' })
     return status
   }
   ensureWired()
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {
-    push({ state: 'error', message: (err as Error).message })
+    publishStatus({ state: 'error', message: (err as Error).message })
   }
   return status
 }
@@ -68,7 +68,7 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
   try {
     await autoUpdater.downloadUpdate()
   } catch (err) {
-    push({ state: 'error', message: (err as Error).message })
+    publishStatus({ state: 'error', message: (err as Error).message })
   }
   return status
 }

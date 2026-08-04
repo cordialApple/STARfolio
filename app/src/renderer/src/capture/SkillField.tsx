@@ -22,7 +22,7 @@ export function SkillField({
   const [kind, setKind] = useState<SkillKind>('technical')
   const listId = useId()
 
-  function add(raw: string): void {
+  function addSkill(raw: string): void {
     const name = raw.trim()
     if (!name) return
     if (value.some((v) => v.name.toLowerCase() === name.toLowerCase())) {
@@ -34,10 +34,10 @@ export function SkillField({
     setDraft('')
   }
 
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>): void {
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>): void {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault()
-      add(draft)
+      addSkill(draft)
     } else if (e.key === 'Backspace' && !draft && value.length) {
       onChange(value.slice(0, -1))
     }
@@ -77,8 +77,8 @@ export function SkillField({
           list={listId}
           placeholder="Add a skill and press Enter"
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          onBlur={() => add(draft)}
+          onKeyDown={handleKeyDown}
+          onBlur={() => addSkill(draft)}
           className="flex-1"
         />
         <Select
