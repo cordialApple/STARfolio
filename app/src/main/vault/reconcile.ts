@@ -11,6 +11,12 @@ function compareStamp(a: string | null | undefined, b: string | null | undefined
   return x < y ? -1 : x > y ? 1 : 0
 }
 
+// A note with no STAR content is a stub (e.g. an Obsidian `[[wiki-link]]` placeholder), not an
+// experience — importing it just mints a blank "Untitled" row that re-imports on every sync.
+function isExperienceNote(n: ParsedNote): boolean {
+  return Boolean(n.situation || n.task || n.action || n.result_text)
+}
+
 export function planReconcile(local: VaultExperience[], vault: ParsedNote[]): ReconcilePlan {
   const vaultById = new Map<string, ParsedNote>()
   const toStore: ParsedNote[] = []
@@ -37,5 +43,5 @@ export function planReconcile(local: VaultExperience[], vault: ParsedNote[]): Re
     if (n.id && !seen.has(n.id)) toStore.push(n)
   }
 
-  return { toVault, toStore }
+  return { toVault, toStore: toStore.filter(isExperienceNote) }
 }

@@ -94,6 +94,64 @@ describe('vault markdown round-trip', () => {
   })
 })
 
+describe('parseMarkdown — real Obsidian notes', () => {
+  it('reads a title from the H1 when frontmatter has none', () => {
+    const n = parseMarkdown('# Led the migration\n\nMoved 200 services to k8s.')
+    expect(n.id).toBeNull()
+    expect(n.title).toBe('Led the migration')
+  })
+
+  it('prefers a frontmatter title over the H1', () => {
+    expect(parseMarkdown('---\ntitle: "FM"\n---\n\n# H1\n\nbody').title).toBe('FM')
+  })
+
+  it('parses skills and metrics written as YAML block lists, ignoring unknown keys', () => {
+    const md = [
+      '---',
+      'id: 2025-tiger-racing-postgres-rls-cicd',
+      'title: "built the Formula SAE database with RLS and CI/CD"',
+      'context: project',
+      'status: draft',
+      'confidence:',
+      '  situation: high',
+      '  result: medium',
+      'skills:',
+      '  - name: "PostgreSQL"',
+      '    kind: "technical"',
+      '  - name: "Row-Level Security"',
+      '    kind: "technical"',
+      'tags: ["tiger-racing", "postgres"]',
+      'metrics:',
+      '  - label: "tables"',
+      '    value: 10',
+      '    unit: "tables (10+)"',
+      'entities: ["[[LSU Formula SAE]]"]',
+      '---',
+      '',
+      '## Situation',
+      'team data needed per-user isolation.',
+      '',
+      '## Result',
+      'per-user isolation enforced by the database.',
+      '',
+      '## Gaps',
+      '- [ ] confirm scope'
+    ].join('\n')
+    const n = parseMarkdown(md)
+    expect(n.id).toBe('2025-tiger-racing-postgres-rls-cicd')
+    expect(n.title).toBe('built the Formula SAE database with RLS and CI/CD')
+    expect(n.context).toBe('project')
+    expect(n.situation).toBe('team data needed per-user isolation.')
+    expect(n.result_text).toBe('per-user isolation enforced by the database.')
+    expect(n.skills).toEqual([
+      { name: 'PostgreSQL', kind: 'technical' },
+      { name: 'Row-Level Security', kind: 'technical' }
+    ])
+    expect(n.tags).toEqual(['tiger-racing', 'postgres'])
+    expect(n.metrics).toEqual([{ label: 'tables', value: 10, unit: 'tables (10+)' }])
+  })
+})
+
 function memFs(): { fs: VaultFs; store: Map<string, string> } {
   const store = new Map<string, string>()
   const fs: VaultFs = {
@@ -107,8 +165,11 @@ function memFs(): { fs: VaultFs; store: Map<string, string> } {
       if (v == null) throw new Error(`missing ${path}`)
       return v
     },
-    readdir: async (dir) =>
-      [...store.keys()].filter((k) => k.startsWith(`${dir}/`)).map((k) => k.slice(dir.length + 1)),
+    walk: async (dir) =>
+      [...store.keys()]
+        .filter((k) => k.startsWith(`${dir}/`))
+        .map((k) => k.slice(dir.length + 1))
+        .filter((p) => !p.split('/').some((s) => s.startsWith('.'))),
     unlink: async (path) => {
       if (!store.delete(path)) throw new Error(`missing ${path}`)
     }
@@ -135,5 +196,18 @@ describe('vault sync', () => {
     await removeNote(fs, '/vault', a)
     expect(store.size).toBe(0)
     await expect(removeNote(fs, '/vault', a)).resolves.toBeUndefined()
+  })
+
+  it('reads notes from subfolders and skips dotfolders like .obsidian', async () => {
+    const { fs, store } = memFs()
+    store.set(
+      '/vault/experiences/2026-07-12-win.md',
+      '---\nid: x1\ntitle: "A real win"\n---\n\n## Situation\nsomething happened.'
+    )
+    store.set('/vault/.obsidian/workspace.json', '{}')
+    const notes = await readVault(fs, '/vault')
+    expect(notes).toHaveLength(1)
+    expect(notes[0].title).toBe('A real win')
+    expect(notes[0].situation).toBe('something happened.')
   })
 })

@@ -10,7 +10,7 @@ export interface VaultFs {
   mkdir(dir: string): Promise<void>
   writeFile(path: string, data: string): Promise<void>
   readFile(path: string): Promise<string>
-  readdir(dir: string): Promise<string[]>
+  walk(dir: string): Promise<string[]>
   unlink(path: string): Promise<void>
   join(...parts: string[]): string
 }
@@ -30,7 +30,7 @@ export async function exportVault(
 }
 
 export async function readVault(fs: VaultFs, dir: string): Promise<ParsedNote[]> {
-  const names = (await fs.readdir(dir)).filter((n) => n.toLowerCase().endsWith('.md'))
+  const names = (await fs.walk(dir)).filter((n) => n.toLowerCase().endsWith('.md'))
   const notes: ParsedNote[] = []
   for (const name of names) {
     notes.push(parseMarkdown(await fs.readFile(fs.join(dir, name))))

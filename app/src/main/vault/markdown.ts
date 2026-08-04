@@ -163,13 +163,61 @@ function parseFrontmatter(block: string): Record<string, string> {
   return out
 }
 
+function assignKv(target: Record<string, string>, s: string): void {
+  const idx = s.indexOf(':')
+  if (idx > 0) target[s.slice(0, idx).trim()] = unquote(s.slice(idx + 1).trim())
+  else if (s) target._ = unquote(s)
+}
+
+// Frontmatter carries skills/metrics as YAML block sequences (a `key:` line, then indented `- `
+// items); the flat key:value scan can't see those, so pull them straight from the raw block.
+function parseBlockSeq(fmText: string, key: string): Record<string, string>[] {
+  const items: Record<string, string>[] = []
+  let inKey = false
+  let cur: Record<string, string> | null = null
+  for (const line of fmText.split('\n')) {
+    if (!inKey) {
+      if (line.trim() === `${key}:`) inKey = true
+      continue
+    }
+    if (line.trim() === '') continue
+    if (!/^\s/.test(line)) break
+    const body = line.trim()
+    if (body.startsWith('- ')) {
+      cur = {}
+      items.push(cur)
+      assignKv(cur, body.slice(2).trim())
+    } else if (cur) {
+      assignKv(cur, body)
+    }
+  }
+  return items
+}
+
+function skillFromMap(m: Record<string, string>): VaultSkill | null {
+  const name = (m.name ?? m._ ?? '').trim()
+  if (!name) return null
+  const kind = (SKILL_KINDS as readonly string[]).includes(m.kind)
+    ? (m.kind as SkillKind)
+    : 'technical'
+  return { name, kind }
+}
+
+function metricFromMap(m: Record<string, string>): VaultMetric | null {
+  const label = (m.label ?? m._ ?? '').trim()
+  if (!label) return null
+  const n = m.value != null && m.value !== '' ? Number(m.value) : null
+  return { label, value: n != null && Number.isFinite(n) ? n : null, unit: m.unit?.trim() || null }
+}
+
 export function parseMarkdown(md: string): ParsedNote {
   const normalized = md.replace(/\r\n/g, '\n')
   let fm: Record<string, string> = {}
   let body = normalized
   const fmMatch = normalized.match(/^---\n([\s\S]*?)\n---\n?/)
+  const fmText = fmMatch ? fmMatch[1] : ''
   if (fmMatch) {
-    fm = parseFrontmatter(fmMatch[1])
+    fm = parseFrontmatter(fmText)
     body = normalized.slice(fmMatch[0].length)
   }
 
@@ -197,11 +245,26 @@ export function parseMarkdown(md: string): ParsedNote {
     ? (fm.status as Status)
     : 'draft'
 
+  // Fall back to the first H1 when a hand-authored note carries no frontmatter title.
+  const h1 = (parts[0] ?? '').match(/^#\s+(.+?)\s*$/m)
+  const title = fm.title ? unquote(fm.title) : h1 ? h1[1].trim() : ''
+
+  const skills = fm.skills
+    ? parseFlowList(fm.skills).map(skillFromText)
+    : parseBlockSeq(fmText, 'skills')
+        .map(skillFromMap)
+        .filter((s): s is VaultSkill => s != null)
+  if (!metrics.length) {
+    metrics = parseBlockSeq(fmText, 'metrics')
+      .map(metricFromMap)
+      .filter((m): m is VaultMetric => m != null)
+  }
+
   return {
     id: fm.id ? fm.id.trim() : null,
     created_at: fm.created_at || null,
     updated_at: fm.updated_at || null,
-    title: fm.title ? unquote(fm.title) : '',
+    title,
     situation: sections.situation ?? '',
     task: sections.task ?? '',
     action: sections.action ?? '',
@@ -210,7 +273,7 @@ export function parseMarkdown(md: string): ParsedNote {
     happened_start: fm.happened_start || null,
     happened_end: fm.happened_end || null,
     status,
-    skills: fm.skills ? parseFlowList(fm.skills).map(skillFromText) : [],
+    skills,
     tags: fm.tags ? parseFlowList(fm.tags) : [],
     metrics
   }
