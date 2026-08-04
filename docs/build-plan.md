@@ -1,6 +1,6 @@
 # STARfolio — Build Plan (index)
 
-Companion docs: [concept & user stories](starfolio-concept.md) · [architecture spec](architecture.md). Each stage lives in its own file under [`stages/`](stages/) — when working a stage, load **that stage's file plus the architecture topic files its header names; nothing else**. This index is for orientation and status.
+Companion docs: [concept & user stories](starfolio-concept.md) · [architecture spec](architecture.md) · [roadmap](roadmap.md) — this index is what was built and in what order, the roadmap is what remains and why it is next. Each stage lives in its own file under [`stages/`](stages/) — when working a stage, load **that stage's file plus the architecture topic files its header names; nothing else**. This index is for orientation and status.
 
 Ordering logic: walking skeleton with all risk spikes first; then a lean design system — tokens, ~10 primitives, the STAR 4-beat signature, and an a11y + reduced-motion floor — that every later stage composes so features ship polished, not restyled; local-only bank next (usable with zero AI); then the AI spine (brain dump + NL find); mode B completes the **MVP** (the full logger→job-seeker loop); practice and voice immediately after; then ingestion breadth + the knowledge-graph layer, the technical layer, written materials, and upkeep. Every stage ends with the app runnable and packageable.
 
@@ -15,7 +15,7 @@ Ordering logic: walking skeleton with all risk spikes first; then a lean design 
 | 6 | [Voice](stages/stage-06-voice.md) | push-to-talk STT (core), TTS toggle | ☑ |
 | 6b | [Streaming voice (whisper)](stages/stage-06b-streaming-voice.md) | whisper sliding-window streaming + VAD; superseded by 6c | ◐ |
 | 6c | [Streaming-STT swap (Stage A)](stages/stage-06c-streaming-stt-swap.md) | Kyutai STT replaces the whisper streaming front end: committed tokens, semantic end-of-turn, ~500 ms; tiers unchanged | ☐ |
-| 6d | [Cascade streaming TTS (Stage B)](stages/stage-06d-cascade-streaming-tts.md) | Unmute-style cascade: streaming TTS, tiers verbatim, retire TTFT-guard/stall-watchdog; still turn-gated | ☐ |
+| 6d | [Cascade streaming TTS (Stage B)](stages/stage-06d-cascade-streaming-tts.md) | Unmute-style cascade: streaming TTS, tiers verbatim, retire TTFT-guard/stall-watchdog; still turn-gated | ◐ |
 | 6e | [Native full-duplex (Stage C)](stages/stage-06e-native-full-duplex.md) | Moshi/MoshiRAG: barge-in/overlap ~200 ms, tiers as async gap-scoring sidecar; gated on the rubric-rigor spike | ☐ |
 | 7 | [Narrative ingestion](stages/stage-07-narrative-ingestion.md) | files/resume/URLs → drafts with attached sources | ☑ |
 | 8 | [Evidence ingestion + knowledge graph](stages/stage-08-evidence-ingestion.md) | spreadsheets/code/repos; entities/edges layer | ☑ |
