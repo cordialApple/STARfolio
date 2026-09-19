@@ -32,6 +32,7 @@ export const prefsPatch = z
     storageMode: z.enum(STORAGE_MODES),
     vaultPath: z.string().nullable(),
     loopbackEnabled: z.boolean(),
+    experimentalRemoteMoshiEnabled: z.boolean(),
     providerArchitect: z.enum(PROVIDERS),
     providerEvaluator: z.enum(PROVIDERS),
     providerConversation: z.enum(PROVIDERS),
@@ -57,6 +58,7 @@ export interface Prefs {
   storageMode: StorageMode
   vaultPath: string | null
   loopbackEnabled: boolean
+  experimentalRemoteMoshiEnabled: boolean
   providerArchitect: Provider
   providerEvaluator: Provider
   providerConversation: Provider
@@ -80,6 +82,7 @@ const DEFAULTS: Prefs = {
   storageMode: 'sqlite',
   vaultPath: null,
   loopbackEnabled: false,
+  experimentalRemoteMoshiEnabled: false,
   providerArchitect: 'anthropic',
   providerEvaluator: 'anthropic',
   providerConversation: 'anthropic',
@@ -142,6 +145,7 @@ const CODECS: { [K in keyof Prefs]: Codec<Prefs[K]> } = {
   storageMode: createEnumCodec('pref.storage.mode', STORAGE_MODES),
   vaultPath: createNullableStringCodec('pref.storage.vault_path'),
   loopbackEnabled: createBoolCodec('pref.loopback.enabled'),
+  experimentalRemoteMoshiEnabled: createBoolCodec('pref.experimental.remote_moshi.enabled'),
   providerArchitect: createEnumCodec('pref.ai.provider.architect', PROVIDERS),
   providerEvaluator: createEnumCodec('pref.ai.provider.evaluator', PROVIDERS),
   providerConversation: createEnumCodec('pref.ai.provider.conversation', PROVIDERS),
@@ -156,15 +160,12 @@ const CODECS: { [K in keyof Prefs]: Codec<Prefs[K]> } = {
 
 function readRaw(key: string): string | null {
   const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
-    | { value: string }
-    | undefined
+    { value: string } | undefined
   return row?.value ?? null
 }
 
 function writeRaw(key: string, value: string): void {
-  getDb()
-    .prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
-    .run(key, value)
+  getDb().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value)
 }
 
 export function getPrefs(): Prefs {

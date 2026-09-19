@@ -1,3 +1,5 @@
+import type { MoshiInterviewSnapshot, MoshiRigorResult } from '../main/ai/moshi-interview'
+export type { MoshiInterviewSnapshot, MoshiRigorResult } from '../main/ai/moshi-interview'
 export interface DbApi {
   selfTest: () => Promise<{ ok: boolean; fts: number; knn: number }>
 }
@@ -422,11 +424,7 @@ export interface TechnicalApi {
 
 export type InterviewPhase = 'intro' | 'exploration' | 'closing' | 'done'
 export type InterviewCoverageDimension =
-  | 'motivation'
-  | 'architecture'
-  | 'tradeoffs'
-  | 'failures'
-  | 'ownership'
+  'motivation' | 'architecture' | 'tradeoffs' | 'failures' | 'ownership'
 export type InterviewAction =
   | { kind: 'ask_intro' }
   | { kind: 'probe'; topicId: string; dimension: InterviewCoverageDimension; reason: string }
@@ -578,6 +576,7 @@ export interface Prefs {
   storageMode: StorageMode
   vaultPath: string | null
   loopbackEnabled: boolean
+  experimentalRemoteMoshiEnabled: boolean
   providerArchitect: Provider
   providerEvaluator: Provider
   providerConversation: Provider
@@ -657,7 +656,37 @@ export interface UpdateApi {
   onStatus: (cb: (status: UpdateStatus) => void) => () => void
 }
 
+export type MoshiDemoEvent = { sessionId: string } & (
+  | { type: 'interview'; snapshot: MoshiInterviewSnapshot }
+  | { type: 'conditioning'; revision: number; status: string; reason?: string }
+  | { type: 'ready'; mode: 'moshi' | 'fixture' }
+  | { type: 'audio'; samples: Float32Array }
+  | { type: 'text'; speaker: 'assistant' | 'user'; text: string }
+  | { type: 'error'; message: string }
+  | { type: 'ended'; reason: string }
+)
+
 export interface IpcApi {
+  moshiDemo: {
+    audit: (sessionId: string) => Promise<MoshiInterviewSnapshot | null>
+    rigor: (sessionId: string) => Promise<MoshiRigorResult>
+    health: (
+      endpoint: string
+    ) => Promise<{ mode: 'moshi' | 'fixture'; upstreamReady: boolean; busy: boolean }>
+    start: (request: {
+      sessionId: string
+      endpoint: string
+      experienceIds: string[]
+      durationSeconds: number
+      resumeText: string
+      jobDescription?: string
+      candidateName?: string
+      consent: true
+    }) => Promise<'moshi' | 'fixture'>
+    audio: (sessionId: string, samples: Float32Array) => void
+    end: (sessionId: string, reason?: string) => Promise<void>
+    onEvent: (callback: (event: MoshiDemoEvent) => void) => () => void
+  }
   ping: () => Promise<string>
   db: DbApi
   embed: EmbedApi

@@ -14,6 +14,7 @@ const BASE: Prefs = {
   storageMode: 'sqlite',
   vaultPath: null,
   loopbackEnabled: false,
+  experimentalRemoteMoshiEnabled: false,
   providerArchitect: 'anthropic',
   providerEvaluator: 'anthropic',
   providerConversation: 'anthropic',
@@ -100,4 +101,18 @@ describe('interviewRuntime', () => {
     expect(interviewRuntime(BASE)).not.toHaveProperty('evaluator')
     expect(MODELS.conversation).toBeTruthy()
   })
+})
+
+it('resolves only brain roles when Moshi supplies the conversation mouth', () => {
+  const runtime = interviewRuntime(
+    prefs({
+      providerConversation: 'gemini',
+      geminiModelConversation: 'gemini-2.5-flash',
+      providerEvaluator: 'openai',
+      openaiModelEvaluator: 'llama3.1'
+    }),
+    { conversation: false }
+  )
+  expect(runtime.conversation).toBeUndefined()
+  expect(runtime.evaluator?.model).toBe('llama3.1')
 })

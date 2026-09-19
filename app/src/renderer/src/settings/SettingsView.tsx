@@ -493,6 +493,23 @@ export function SettingsView(): React.JSX.Element {
             selected={prefs?.voiceModel ?? 'base.en'}
             onSelect={(m) => void savePrefs({ voiceModel: m })}
           />
+          {prefs === null ? (
+            <Skeleton className="h-12 w-full" />
+          ) : (
+            <div className="space-y-2 border-t border-line pt-4">
+              <Toggle
+                label="Enable experimental remote MoshiRAG interviews"
+                checked={prefs.experimentalRemoteMoshiEnabled}
+                onCheckedChange={(enabled) =>
+                  void savePrefs({ experimentalRemoteMoshiEnabled: enabled })
+                }
+              />
+              <p className="text-xs text-muted">
+                Uses your configured remote GPU worker. STARfolio keeps evidence, scoring, and
+                reports on this computer.
+              </p>
+            </div>
+          )}
         </div>
       </Card>
       )}

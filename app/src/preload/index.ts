@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   IpcApi,
+  MoshiDemoEvent,
   ModelStatus,
   WhisperModelInfo,
   UpdateStatus,
@@ -9,6 +10,19 @@ import type {
 } from './index.d'
 
 const api: IpcApi = {
+  moshiDemo: {
+    audit: (sessionId) => ipcRenderer.invoke('moshiDemo:audit', { sessionId }),
+    rigor: (sessionId) => ipcRenderer.invoke('moshiDemo:rigor', { sessionId }),
+    health: (endpoint) => ipcRenderer.invoke('moshiDemo:health', { endpoint }),
+    start: (request) => ipcRenderer.invoke('moshiDemo:start', request),
+    audio: (sessionId, samples) => ipcRenderer.send('moshiDemo:audio', { sessionId, samples }),
+    end: (sessionId, reason) => ipcRenderer.invoke('moshiDemo:end', { sessionId, reason }),
+    onEvent: (callback) => {
+      const handler = (_: Electron.IpcRendererEvent, event: MoshiDemoEvent): void => callback(event)
+      ipcRenderer.on('moshiDemo:event', handler)
+      return () => ipcRenderer.removeListener('moshiDemo:event', handler)
+    }
+  },
   ping: () => ipcRenderer.invoke('ping'),
   db: {
     selfTest: () => ipcRenderer.invoke('db:selfTest')

@@ -1,3 +1,5 @@
+import { SavedNativeInterviewAudit } from '../demo/NativeInterviewAudit'
+import { MoshiDemoView } from '../demo/MoshiDemoView'
 import { useEffect, useRef, useState } from 'react'
 import {
   Send,
@@ -74,7 +76,9 @@ const PHASE_LABEL: Record<InterviewPhase, string> = {
 const PHASE_STEPS: InterviewPhase[] = ['intro', 'exploration', 'closing']
 
 export function InterviewView(): React.JSX.Element {
-  const [stage, setStage] = useState<'setup' | 'live' | 'history' | 'debrief' | 'insights'>('setup')
+  const [stage, setStage] = useState<
+    'setup' | 'live' | 'history' | 'debrief' | 'insights' | 'native'
+  >('setup')
   const [debriefId, setDebriefId] = useState<string | null>(null)
   const [resumeText, setResumeText] = useState('')
   const [candidateName, setCandidateName] = useState('')
@@ -88,6 +92,7 @@ export function InterviewView(): React.JSX.Element {
   const [streaming, setStreaming] = useState<string | null>(null)
   const activeRequestId = useRef<string | null>(null)
   const [voiceModel, setVoiceModel] = useState<WhisperModelName>('base.en')
+  const [remoteMoshiEnabled, setRemoteMoshiEnabled] = useState(false)
   const [voiceMode, setVoiceMode] = useState<TurnMode>('auto')
   const [models, setModels] = useState<WhisperModelInfo[]>([])
   const [dragOver, setDragOver] = useState(false)
@@ -99,9 +104,16 @@ export function InterviewView(): React.JSX.Element {
 
   useEffect(() => {
     void window.api.voice.models().then(setModels)
-    void window.api.prefs.get().then((p) => setVoiceModel(p.voiceModel))
+    void window.api.prefs.get().then((prefs) => {
+      setVoiceModel(prefs.voiceModel)
+      setRemoteMoshiEnabled(prefs.experimentalRemoteMoshiEnabled)
+    })
     return window.api.voice.onModelStatus(setModels)
   }, [])
+
+  useEffect(() => {
+    if (!remoteMoshiEnabled && stage === 'native') setStage('setup')
+  }, [remoteMoshiEnabled, stage])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -130,7 +142,12 @@ export function InterviewView(): React.JSX.Element {
   const voiceReady = models.find((m) => m.name === voiceModel)?.downloaded ?? false
 
   const stream = useStreamingVoice((text) => void submit(text), !busy, sessionId)
-  const { error: voiceError, clearError: clearVoiceError, listening: voiceListening, stop: stopVoice } = stream
+  const {
+    error: voiceError,
+    clearError: clearVoiceError,
+    listening: voiceListening,
+    stop: stopVoice
+  } = stream
 
   useEffect(() => {
     if (voiceError) {
@@ -139,8 +156,7 @@ export function InterviewView(): React.JSX.Element {
     }
   }, [voiceError, clearVoiceError, toast])
 
-  const autoVoiceOpen =
-    voiceReady && voiceMode === 'auto' && stage === 'live' && phase !== 'done'
+  const autoVoiceOpen = voiceReady && voiceMode === 'auto' && stage === 'live' && phase !== 'done'
 
   useEffect(() => {
     if (!autoVoiceOpen && voiceListening) void stopVoice()
@@ -233,6 +249,16 @@ export function InterviewView(): React.JSX.Element {
     setPhase('intro')
   }
 
+  if (stage === 'native')
+    return (
+      <MoshiDemoView
+        resumeText={resumeText}
+        candidateName={candidateName}
+        onBack={() => setStage('setup')}
+        onHistory={() => setStage('history')}
+      />
+    )
+
   if (stage === 'history')
     return (
       <HistoryList
@@ -245,7 +271,13 @@ export function InterviewView(): React.JSX.Element {
     )
 
   if (stage === 'debrief' && debriefId)
-    return <Debrief id={debriefId} onBack={() => setStage('history')} />
+    return (
+      <Debrief
+        id={debriefId}
+        remoteMoshiEnabled={remoteMoshiEnabled}
+        onBack={() => setStage('history')}
+      />
+    )
 
   if (stage === 'insights') return <InsightsView onBack={() => setStage('setup')} />
 
@@ -340,6 +372,15 @@ export function InterviewView(): React.JSX.Element {
                 onChange={(e) => setCandidateName(e.target.value)}
               />
             </label>
+            {remoteMoshiEnabled && (
+              <Button
+                variant="secondary"
+                onClick={() => setStage('native')}
+                disabled={busy || !resumeText.trim()}
+              >
+                Native duplex (remote MoshiRAG)
+              </Button>
+            )}
             <Button onClick={() => void start()} loading={busy} disabled={!resumeText.trim()}>
               <Sparkles className="size-4" />
               Start interview
@@ -399,7 +440,9 @@ export function InterviewView(): React.JSX.Element {
                 <PushToTalk
                   model={voiceModel}
                   disabled={busy}
-                  onTranscript={(t) => setAnswer((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
+                  onTranscript={(t) =>
+                    setAnswer((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))
+                  }
                   onError={(m) => toast(m, 'danger')}
                 />
               )}
@@ -532,7 +575,9 @@ function ThinkingBubble(): React.JSX.Element {
 
 function CandidateBubble({ text }: { text: string }): React.JSX.Element {
   return (
-    <p className="ml-8 whitespace-pre-wrap rounded-lg bg-canvas px-4 py-3 text-sm text-ink">{text}</p>
+    <p className="ml-8 whitespace-pre-wrap rounded-lg bg-canvas px-4 py-3 text-sm text-ink">
+      {text}
+    </p>
   )
 }
 
@@ -678,7 +723,10 @@ function ReportCard({ report }: { report: InterviewReport }): React.JSX.Element 
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    void copy(report.starStories.map(starStoryToText).join('\n\n'), 'All STAR stories')
+                    void copy(
+                      report.starStories.map(starStoryToText).join('\n\n'),
+                      'All STAR stories'
+                    )
                   }
                 >
                   <Copy className="size-3.5" />
@@ -896,12 +944,13 @@ function HistoryList({
   const visible = (sessions ?? []).filter((s) => {
     const name = (s.candidateName ?? 'Anonymous candidate').toLowerCase()
     const matchesStatus =
-      statusFilter === 'all' ||
-      (statusFilter === 'done' ? s.phase === 'done' : s.phase !== 'done')
+      statusFilter === 'all' || (statusFilter === 'done' ? s.phase === 'done' : s.phase !== 'done')
     return matchesStatus && name.includes(needle)
   })
   visible.sort((a, b) =>
-    sort === 'newest' ? b.startedAt.localeCompare(a.startedAt) : a.startedAt.localeCompare(b.startedAt)
+    sort === 'newest'
+      ? b.startedAt.localeCompare(a.startedAt)
+      : a.startedAt.localeCompare(b.startedAt)
   )
 
   async function remove(): Promise<void> {
@@ -988,7 +1037,11 @@ function HistoryList({
           description="Run a mock interview and it'll show up here."
         />
       ) : visible.length === 0 ? (
-        <EmptyState icon={Inbox} title="No matches" description="No interviews match your search." />
+        <EmptyState
+          icon={Inbox}
+          title="No matches"
+          description="No interviews match your search."
+        />
       ) : (
         <ul className="space-y-2">
           {visible.map((s) => (
@@ -1043,7 +1096,15 @@ function HistoryList({
   )
 }
 
-function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.Element {
+function Debrief({
+  id,
+  remoteMoshiEnabled,
+  onBack
+}: {
+  id: string
+  remoteMoshiEnabled: boolean
+  onBack: () => void
+}): React.JSX.Element {
   const [detail, setDetail] = useState<InterviewSessionDetail | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const { copy, exportAs, busy } = useExport(
@@ -1119,9 +1180,7 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
               {PHASE_LABEL[detail.phase]}
             </Badge>
           </div>
-          <p className="text-sm text-muted">
-            {new Date(detail.startedAt + 'Z').toLocaleString()}
-          </p>
+          <p className="text-sm text-muted">{new Date(detail.startedAt + 'Z').toLocaleString()}</p>
           <div className="space-y-4">
             {detail.transcript.map((t, i) =>
               t.speaker === 'interviewer' ? (
@@ -1133,6 +1192,7 @@ function Debrief({ id, onBack }: { id: string; onBack: () => void }): React.JSX.
               )
             )}
           </div>
+          {remoteMoshiEnabled && <SavedNativeInterviewAudit id={id} />}
           {detail.report && <ReportCard report={detail.report} />}
         </>
       )}
