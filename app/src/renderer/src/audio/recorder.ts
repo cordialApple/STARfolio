@@ -1,18 +1,31 @@
-// Push-to-talk mic capture: getUserMedia + AudioWorklet at a 16 kHz mono AudioContext
-// (Chromium resamples the mic to 16 kHz for us), collecting Float32 frames and converting
-// to Int16 PCM on stop — the format whisper.cpp expects.
-
-export interface Recording {
-  stop: () => Promise<Int16Array>
+export interface Recording<T = Int16Array> {
+  stop: () => Promise<T>
 }
 
-export interface RecordOptions {
+interface RecordOptions {
+  sampleRate?: number
   onLevel?: (level: number) => void
-  onFrames?: (frames: Float32Array) => void
+}
+
+export interface BufferedRecordOptions extends RecordOptions {
+  onFrames?: never
+  batchSamples?: never
+}
+
+export interface StreamingRecordOptions extends RecordOptions {
+  onFrames: (frames: Float32Array) => void
   batchSamples?: number
 }
 
+export interface FrameSink<T> {
+  push: (frame: Float32Array) => void
+  finish: () => T
+}
+
+type ProcessorMessage = { type: 'frames'; frames: Float32Array } | { type: 'drained' }
+
 const DEFAULT_BATCH_SAMPLES = 4000
+const DRAIN_TIMEOUT_MS = 250
 
 function concatFloat32(chunks: Float32Array[], total: number): Float32Array {
   const out = new Float32Array(total)
@@ -44,52 +57,157 @@ function floatChunksToInt16(chunks: Float32Array[]): Int16Array {
   return out
 }
 
-export async function startRecording(opts: RecordOptions = {}): Promise<Recording> {
+function createLevelReporter(onLevel?: (level: number) => void): (frame: Float32Array) => void {
+  if (!onLevel) return () => {}
+
+  let frameCount = 0
+  return (frame) => {
+    if (frameCount++ % 4 === 0) onLevel(rms(frame))
+  }
+}
+
+export function createBufferedFrameSink(
+  opts: Pick<BufferedRecordOptions, 'onLevel'> = {}
+): FrameSink<Int16Array> {
+  const chunks: Float32Array[] = []
+  const reportLevel = createLevelReporter(opts.onLevel)
+
+  return {
+    push(frame): void {
+      chunks.push(frame)
+      reportLevel(frame)
+    },
+    finish(): Int16Array {
+      return floatChunksToInt16(chunks)
+    }
+  }
+}
+
+export function createStreamingFrameSink(
+  opts: Pick<StreamingRecordOptions, 'onFrames' | 'batchSamples' | 'onLevel'>
+): FrameSink<void> {
+  const batchSamples = opts.batchSamples ?? DEFAULT_BATCH_SAMPLES
+  if (!Number.isInteger(batchSamples) || batchSamples <= 0) {
+    throw new RangeError('batchSamples must be a positive integer')
+  }
+  const reportLevel = createLevelReporter(opts.onLevel)
+  let pendingFrames: Float32Array[] = []
+  let pendingSampleCount = 0
+
+  function flushBatch(): void {
+    if (pendingSampleCount === 0) return
+    const frames = concatFloat32(pendingFrames, pendingSampleCount)
+    pendingFrames = []
+    pendingSampleCount = 0
+    opts.onFrames(frames)
+  }
+
+  return {
+    push(frame): void {
+      reportLevel(frame)
+      pendingFrames.push(frame)
+      pendingSampleCount += frame.length
+      if (pendingSampleCount >= batchSamples) flushBatch()
+    },
+    finish(): void {
+      flushBatch()
+    }
+  }
+}
+
+function stopTracks(stream: MediaStream): void {
+  stream.getTracks().forEach((track) => track.stop())
+}
+
+async function waitForDrain(drained: Promise<void>): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      drained,
+      new Promise<void>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Audio worklet drain timed out')),
+          DRAIN_TIMEOUT_MS
+        )
+      })
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
+export function startRecording(opts: StreamingRecordOptions): Promise<Recording<void>>
+export function startRecording(opts?: BufferedRecordOptions): Promise<Recording<Int16Array>>
+export async function startRecording(
+  opts: BufferedRecordOptions | StreamingRecordOptions = {}
+): Promise<Recording<Int16Array | void>> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
   })
   let audioContext: AudioContext | undefined
   try {
-    audioContext = new AudioContext({ sampleRate: 16000 })
+    audioContext = new AudioContext({ sampleRate: opts.sampleRate ?? 16000 })
     await audioContext.audioWorklet.addModule(new URL('./pcm-processor.js', import.meta.url))
 
     const source = audioContext.createMediaStreamSource(stream)
     const node = new AudioWorkletNode(audioContext, 'pcm-processor')
-    const chunks: Float32Array[] = []
-    const batchSamples = opts.batchSamples ?? DEFAULT_BATCH_SAMPLES
-    let batch: Float32Array[] = []
-    let batchLen = 0
-    // Worklet posts ~125 frames/sec; meter every 4th (~30 Hz) to avoid a React state update per frame.
-    let frame = 0
-    node.port.onmessage = (e: MessageEvent<Float32Array>) => {
-      chunks.push(e.data)
-      if (opts.onLevel && frame++ % 4 === 0) opts.onLevel(rms(e.data))
-      if (opts.onFrames) {
-        batch.push(e.data)
-        batchLen += e.data.length
-        if (batchLen >= batchSamples) {
-          opts.onFrames(concatFloat32(batch, batchLen))
-          batch = []
-          batchLen = 0
-        }
-      }
+    const sink = opts.onFrames
+      ? createStreamingFrameSink(opts)
+      : createBufferedFrameSink({ onLevel: opts.onLevel })
+    let resolveDrain: () => void
+    const drained = new Promise<void>((resolve) => {
+      resolveDrain = resolve
+    })
+    node.port.onmessage = (event: MessageEvent<ProcessorMessage>) => {
+      if (event.data.type === 'frames') sink.push(event.data.frames)
+      else if (event.data.type === 'drained') resolveDrain()
     }
     source.connect(node)
     const openContext = audioContext
 
+    let stopPromise: Promise<Int16Array | void> | undefined
     return {
-      async stop(): Promise<Int16Array> {
-        source.disconnect()
-        node.disconnect()
-        stream.getTracks().forEach((t) => t.stop())
-        await openContext.close()
-        if (opts.onFrames && batchLen > 0) opts.onFrames(concatFloat32(batch, batchLen))
-        return floatChunksToInt16(chunks)
+      stop(): Promise<Int16Array | void> {
+        if (stopPromise) return stopPromise
+        stopPromise = (async () => {
+          let cleanupError: unknown
+          const retainCleanupError = (error: unknown): void => {
+            cleanupError ??= error
+          }
+          const attemptCleanup = (cleanup: () => void): void => {
+            try {
+              cleanup()
+            } catch (error) {
+              retainCleanupError(error)
+            }
+          }
+          attemptCleanup(() => source.disconnect())
+          attemptCleanup(() => stopTracks(stream))
+          try {
+            node.port.postMessage({ type: 'stop' })
+            await waitForDrain(drained)
+          } catch (error) {
+            retainCleanupError(error)
+          }
+          node.port.onmessage = null
+          attemptCleanup(() => node.disconnect())
+          try {
+            await openContext.close()
+          } catch (error) {
+            retainCleanupError(error)
+          }
+          const result = sink.finish()
+          if (cleanupError) throw cleanupError
+          return result
+        })()
+        return stopPromise
       }
     }
   } catch (err) {
-    stream.getTracks().forEach((t) => t.stop())
-    await audioContext?.close()
+    await Promise.allSettled([
+      Promise.resolve().then(() => stopTracks(stream)),
+      Promise.resolve().then(() => audioContext?.close())
+    ])
     throw err
   }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { startRecording, type Recording } from '../audio/recorder'
+import { startRecording } from '../audio/recorder'
 import { micErrorMessage } from './mic-error'
+import { StreamingRecordingSession } from './streaming-recording-session'
 import { TurnController } from './turn-controller'
 import type { TranscriptEvent } from '../lib/bank-types'
 
@@ -28,7 +29,17 @@ export function useStreamingVoice(
   const [utteranceActive, setUtteranceActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const recordingRef = useRef<Recording | null>(null)
+  const sessionRef = useRef<StreamingRecordingSession | null>(null)
+  if (!sessionRef.current) {
+    sessionRef.current = new StreamingRecordingSession(
+      (onFrames) => startRecording({ onFrames, batchSamples: STREAM_BATCH_SAMPLES }),
+      {
+        start: (id) => window.api.voice.streamStart(id),
+        send: (frames) => window.api.voice.streamFrames(frames),
+        stop: () => window.api.voice.streamStop()
+      }
+    )
+  }
   const submitRef = useRef(submit)
   submitRef.current = submit
   const sessionIdRef = useRef(sessionId)
@@ -43,31 +54,27 @@ export function useStreamingVoice(
   }
 
   const stop = useCallback(async () => {
-    const recording = recordingRef.current
-    recordingRef.current = null
     setListening(false)
     setStarting(false)
     setUtteranceActive(false)
     setPartial(null)
     controllerRef.current?.reset()
-    window.api.voice.streamStop()
-    await recording?.stop()
+    try {
+      await sessionRef.current?.stop()
+    } catch (err) {
+      setError(micErrorMessage(err))
+    }
   }, [])
 
   const start = useCallback(async () => {
-    if (recordingRef.current || starting) return
+    if (starting) return
     setStarting(true)
     setError(null)
     controllerRef.current?.reset()
     try {
-      window.api.voice.streamStart(sessionIdRef.current ?? undefined)
-      recordingRef.current = await startRecording({
-        onFrames: (frames) => window.api.voice.streamFrames(frames),
-        batchSamples: STREAM_BATCH_SAMPLES
-      })
-      setListening(true)
+      const started = await sessionRef.current?.start(sessionIdRef.current ?? undefined)
+      if (started) setListening(true)
     } catch (err) {
-      window.api.voice.streamStop()
       setError(micErrorMessage(err))
     } finally {
       setStarting(false)
@@ -91,14 +98,12 @@ export function useStreamingVoice(
   }, [])
 
   useEffect(() => {
-    if (ready && recordingRef.current) controllerRef.current?.reset()
-  }, [ready])
+    if (ready && listening) controllerRef.current?.reset()
+  }, [ready, listening])
 
   useEffect(() => {
     return () => {
-      window.api.voice.streamStop()
-      void recordingRef.current?.stop()
-      recordingRef.current = null
+      void sessionRef.current?.stop().catch(() => undefined)
     }
   }, [])
 
