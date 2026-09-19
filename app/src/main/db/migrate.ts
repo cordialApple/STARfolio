@@ -11,6 +11,7 @@ import sql005 from './migrations/005_entities_edges.sql?raw'
 import sql006 from './migrations/006_corpus_practice.sql?raw'
 import sql007 from './migrations/007_contract_views.sql?raw'
 import sql008 from './migrations/008_interview_sessions.sql?raw'
+import sql009 from './migrations/009_moshi_interview_audit.sql?raw'
 
 export const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: sql001 },
@@ -20,7 +21,8 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 5, sql: sql005 },
   { version: 6, sql: sql006 },
   { version: 7, sql: sql007 },
-  { version: 8, sql: sql008 }
+  { version: 8, sql: sql008 },
+  { version: 9, sql: sql009 }
 ]
 
 export function loadVecExtension(db: Database.Database): void {

@@ -17,6 +17,13 @@ describe('prefsPatch', () => {
     expect(prefsPatch.parse({ reminderEnabled: true })).toEqual({ reminderEnabled: true })
   })
 
+  it('accepts only a boolean remote Moshi experiment gate', () => {
+    expect(prefsPatch.parse({ experimentalRemoteMoshiEnabled: true })).toEqual({
+      experimentalRemoteMoshiEnabled: true
+    })
+    expect(() => prefsPatch.parse({ experimentalRemoteMoshiEnabled: 'yes' })).toThrow()
+  })
+
   it('rejects unknown keys under strict mode', () => {
     expect(() => prefsPatch.parse({ bogus: 1 })).toThrow()
   })

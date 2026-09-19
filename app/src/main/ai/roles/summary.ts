@@ -62,7 +62,8 @@ export async function summarizeInterview(input: SummaryInput, opts: RoleOptions 
   if (stubEnabled(opts.stub)) return stubSummary(input)
   return parseStructured({
     provider: opts.provider,
-    model: MODELS.summary,
+    model: opts.model ?? MODELS.summary,
+    usageId: opts.usageId,
     system: SUMMARY_SYSTEM,
     userText: userText(input),
     schema: summaryOut,

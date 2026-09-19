@@ -21,6 +21,7 @@ describe('getPrefs', () => {
       storageMode: 'sqlite',
       vaultPath: null,
       loopbackEnabled: false,
+      experimentalRemoteMoshiEnabled: false,
       providerArchitect: 'anthropic',
       providerEvaluator: 'anthropic',
       providerConversation: 'anthropic',
@@ -70,6 +71,15 @@ describe('setPrefs', () => {
   it('round-trips the loopback gate flag', () => {
     expect(setPrefs({ loopbackEnabled: true }).loopbackEnabled).toBe(true)
     expect(setPrefs({ loopbackEnabled: false }).loopbackEnabled).toBe(false)
+  })
+
+  it('round-trips the remote Moshi experiment gate', () => {
+    expect(setPrefs({ experimentalRemoteMoshiEnabled: true }).experimentalRemoteMoshiEnabled).toBe(
+      true
+    )
+    expect(setPrefs({ experimentalRemoteMoshiEnabled: false }).experimentalRemoteMoshiEnabled).toBe(
+      false
+    )
   })
 
   it('merges partial patches over prior values', () => {

@@ -1,5 +1,12 @@
 import { getPrefs, type Prefs } from '../settings/prefs'
-import { resolveSpec, toUsageId, type ModelSpec, type RouteEntry, type RoutableRole, type RoutingConfig } from './routing'
+import {
+  resolveSpec,
+  toUsageId,
+  type ModelSpec,
+  type RouteEntry,
+  type RoutableRole,
+  type RoutingConfig
+} from './routing'
 import { structuredProviderFor, transportFor } from './registry'
 import type { RoleOptions } from './roles/parse'
 import type { InterviewRuntime } from './session'
@@ -32,7 +39,9 @@ function resolveRoleEntry(role: RoutableRole, prefs: Prefs): RouteEntry | undefi
   const keys = ROLE_PREF_KEYS[role]
   const provider = prefs[keys.provider] as RouteEntry['provider']
   if (provider === 'anthropic') return undefined
-  const model = (provider === 'openai' ? prefs[keys.openaiModel] : prefs[keys.geminiModel]) as string
+  const model = (
+    provider === 'openai' ? prefs[keys.openaiModel] : prefs[keys.geminiModel]
+  ) as string
   // Half-configured install: non-anthropic provider with no model would ship a claude id
   // to openai/gemini — fall back to anthropic instead of crashing the interview.
   if (!model) return undefined
@@ -61,7 +70,10 @@ function resolveRoleOptions(role: RoutableRole, cfg: RoutingConfig): RoleOptions
   return { provider: structuredProviderFor(spec), model: spec.model, usageId: toUsageId(spec) }
 }
 
-export function interviewRuntime(prefs: Prefs = getPrefs()): InterviewRuntime {
+export function interviewRuntime(
+  prefs: Prefs = getPrefs(),
+  options: { conversation?: boolean } = {}
+): InterviewRuntime {
   const cfg = routingConfigFromPrefs(prefs)
   const runtime: InterviewRuntime = {}
 
@@ -72,8 +84,12 @@ export function interviewRuntime(prefs: Prefs = getPrefs()): InterviewRuntime {
   if (evaluator) runtime.evaluator = evaluator
 
   const conversation = resolveRoleSpec('conversation', cfg)
-  if (conversation) {
-    runtime.conversation = { transport: transportFor(conversation), model: conversation.model, usageId: toUsageId(conversation) }
+  if (conversation && options.conversation !== false) {
+    runtime.conversation = {
+      transport: transportFor(conversation),
+      model: conversation.model,
+      usageId: toUsageId(conversation)
+    }
   }
 
   return runtime

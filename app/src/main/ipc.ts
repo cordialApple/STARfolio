@@ -1,3 +1,4 @@
+import { registerMoshiDemo } from './ipc/moshi-demo'
 import { type IpcMain } from 'electron'
 import { type IpcHooks } from './ipc/shared'
 import { registerSystem } from './ipc/system'
@@ -14,6 +15,7 @@ export type { IpcHooks }
 export function registerIpcHandlers(ipcMain: IpcMain, hooks: IpcHooks = {}): void {
   registerSystem(ipcMain, hooks)
   registerVoice(ipcMain)
+  registerMoshiDemo(ipcMain)
   registerAi(ipcMain)
   registerIngest(ipcMain)
   registerContent(ipcMain)
