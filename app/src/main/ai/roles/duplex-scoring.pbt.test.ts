@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runProperty } from '../../voice/pbt/pbt'
+import { defineSyntheticOrganicProperty, runProperty } from '../../voice/pbt/pbt'
 import { COVERAGE_STATUSES } from '../roadmap'
 import { scoreAnswerDeterministic } from './evaluator'
 import { candidateAnswer, evaluatorInputFrom, type AnswerContext } from './scorer-input'
@@ -17,46 +17,88 @@ const jsonEq = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.s
 
 describe('Sonnet survives duplex (6d.2d)', () => {
   it('candidate answer never leaks interviewer speech (no barge-in bleed)', () => {
-    runProperty('no-cross-speaker-bleed', duplexCaseArb, ({ transcript }) => {
-      const tokens = candidateAnswer(transcript).text.split(/\s+/).filter(Boolean)
-      return tokens.every((t) => !INTERVIEWER_TOKEN.test(t))
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'no-cross-speaker-bleed',
+        '1',
+        'candidate answers exclude interviewer speech'
+      ),
+      duplexCaseArb,
+      ({ transcript }) => {
+        const tokens = candidateAnswer(transcript).text.split(/\s+/).filter(Boolean)
+        return tokens.every((t) => !INTERVIEWER_TOKEN.test(t))
+      }
+    )
   })
 
   it('scored answer depends only on candidate words, not on overlap/segmentation/truncation', () => {
-    runProperty('duplex-invariance', duplexCaseArb, ({ transcript, candidateWords }) => {
-      const clean = cleanCandidateTranscript(candidateWords.map((w) => [w]))
-      const expected = candidateWords.join(' ')
-      if (candidateAnswer(transcript).text !== expected) return false
-      if (candidateAnswer(clean).text !== expected) return false
-      const duplexScore = scoreAnswerDeterministic(evaluatorInputFrom(transcript, CTX))
-      const cleanScore = scoreAnswerDeterministic(evaluatorInputFrom(clean, CTX))
-      return jsonEq(duplexScore, cleanScore)
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'duplex-invariance',
+        '1',
+        'scoring depends only on candidate words'
+      ),
+      duplexCaseArb,
+      ({ transcript, candidateWords }) => {
+        const clean = cleanCandidateTranscript(candidateWords.map((w) => [w]))
+        const expected = candidateWords.join(' ')
+        if (candidateAnswer(transcript).text !== expected) return false
+        if (candidateAnswer(clean).text !== expected) return false
+        const duplexScore = scoreAnswerDeterministic(evaluatorInputFrom(transcript, CTX))
+        const cleanScore = scoreAnswerDeterministic(evaluatorInputFrom(clean, CTX))
+        return jsonEq(duplexScore, cleanScore)
+      }
+    )
   })
 
   it('truncation is preserved so the scorer can calibrate', () => {
-    runProperty('truncation-visible', duplexCaseArb, ({ transcript, truncatedAny }) => {
-      return candidateAnswer(transcript).truncated === truncatedAny
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'truncation-visible',
+        '1',
+        'candidate truncation remains visible to scoring'
+      ),
+      duplexCaseArb,
+      ({ transcript, truncatedAny }) => {
+        return candidateAnswer(transcript).truncated === truncatedAny
+      }
+    )
   })
 
   it('scoring is total and in-range on any duplex-shaped input', () => {
-    runProperty('rigor-totality', duplexCaseArb, ({ transcript }) => {
-      const evalOut = scoreAnswerDeterministic(evaluatorInputFrom(transcript, CTX))
-      const { demonstratedSkill, confidence } = evalOut.candidateDelta
-      const skillOk = demonstratedSkill! >= 0 && demonstratedSkill! <= 1
-      const confOk = confidence! >= 0 && confidence! <= 1
-      const coverageOk = Object.values(evalOut.coverageDeltas).every((s) => COVERAGE_STATUSES.includes(s!))
-      return skillOk && confOk && coverageOk
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'rigor-totality',
+        '1',
+        'duplex scoring remains total and in range'
+      ),
+      duplexCaseArb,
+      ({ transcript }) => {
+        const evalOut = scoreAnswerDeterministic(evaluatorInputFrom(transcript, CTX))
+        const { demonstratedSkill, confidence } = evalOut.candidateDelta
+        const skillOk = demonstratedSkill! >= 0 && demonstratedSkill! <= 1
+        const confOk = confidence! >= 0 && confidence! <= 1
+        const coverageOk = Object.values(evalOut.coverageDeltas).every((s) =>
+          COVERAGE_STATUSES.includes(s!)
+        )
+        return skillOk && confOk && coverageOk
+      }
+    )
   })
 
   it('scoring is deterministic — same duplex input scores identically twice', () => {
-    runProperty('rigor-deterministic', duplexCaseArb, ({ transcript }) => {
-      const input = evaluatorInputFrom(transcript, CTX)
-      return jsonEq(scoreAnswerDeterministic(input), scoreAnswerDeterministic(input))
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'rigor-deterministic',
+        '1',
+        'identical duplex input produces identical scores'
+      ),
+      duplexCaseArb,
+      ({ transcript }) => {
+        const input = evaluatorInputFrom(transcript, CTX)
+        return jsonEq(scoreAnswerDeterministic(input), scoreAnswerDeterministic(input))
+      }
+    )
   })
 
   it('rejects an empty candidate answer', () => {

@@ -1,74 +1,306 @@
+import { randomUUID } from 'crypto'
 import fc from 'fast-check'
-import { mkdirSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { createIncidentFingerprint, hashTaggedValue, toTaggedValue } from './observation-canonical'
+import type {
+  ObservationClass,
+  PropertyIdentity,
+  PublicationClass,
+  RawObservation
+} from './observation-schema'
+import {
+  appendRawObservation,
+  collectObservationProvenance,
+  resolveObservationRoot
+} from './observation-store'
 
 export const PBT_SEED = Number(process.env.PBT_SEED ?? 202607)
 export const PBT_RUNS = Number(process.env.PBT_RUNS ?? 200)
+export const PBT_HARNESS_VERSION = '3'
 
-const ARTIFACT_DIR = join(process.cwd(), 'test-results', 'pbt')
+export interface PropertyMetadata extends PropertyIdentity {
+  observationClass: ObservationClass
+  publicationClass: PublicationClass
+}
 
 export interface PropertyOptions {
   runs?: number
   seed?: number
+  observationRoot?: string
 }
 
-function slug(name: string): string {
-  return name.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()
+type TextCapture = Pick<
+  RawObservation,
+  'failureText' | 'failureTextCaptureStatus' | 'failureTextCaptureError'
+>
+
+function captureConversionError(error: unknown): string {
+  try {
+    return String(error)
+  } catch {
+    return 'Text conversion threw'
+  }
 }
 
-function writeArtifact(name: string, payload: unknown): string {
-  const file = join(ARTIFACT_DIR, `${slug(name)}.failure.json`)
-  mkdirSync(ARTIFACT_DIR, { recursive: true })
-  writeFileSync(file, JSON.stringify(payload, null, 2))
-  return file
+function captureText(value: unknown): TextCapture {
+  try {
+    return {
+      failureText: String(value),
+      failureTextCaptureStatus: 'captured',
+      failureTextCaptureError: null
+    }
+  } catch (error) {
+    return {
+      failureText: null,
+      failureTextCaptureStatus: 'failed',
+      failureTextCaptureError: captureConversionError(error)
+    }
+  }
+}
+
+function captureRunFailure<T>(details: fc.RunDetails<T>): TextCapture {
+  if (details.errorInstance !== null) return captureText(details.errorInstance)
+  try {
+    return captureText(fc.defaultReportMessage(details))
+  } catch (error) {
+    const captured = captureText(error)
+    return {
+      failureText: null,
+      failureTextCaptureStatus: 'failed',
+      failureTextCaptureError: captured.failureText ?? captured.failureTextCaptureError
+    }
+  }
+}
+
+export function defineSyntheticProperty(
+  id: string,
+  version: string,
+  invariant: string,
+  observationClass: ObservationClass
+): PropertyMetadata {
+  return { id, version, invariant, observationClass, publicationClass: 'synthetic' }
+}
+
+export function defineSyntheticOrganicProperty(
+  id: string,
+  version: string,
+  invariant: string
+): PropertyMetadata {
+  return defineSyntheticProperty(id, version, invariant, 'organic')
+}
+
+function createEvent(
+  metadata: PropertyMetadata,
+  campaignId: string,
+  seed: number,
+  requestedRuns: number,
+  overrides: Partial<RawObservation>
+): RawObservation {
+  return {
+    schemaVersion: 1,
+    eventId: randomUUID(),
+    campaignId,
+    eventKind: 'campaign-started',
+    observedAt: new Date().toISOString(),
+    ...collectObservationProvenance(),
+    property: { id: metadata.id, version: metadata.version, invariant: metadata.invariant },
+    harnessVersion: PBT_HARNESS_VERSION,
+    observationClass: metadata.observationClass,
+    publicationClass: metadata.publicationClass,
+    seed,
+    replayPath: null,
+    requestedRuns,
+    executedRuns: null,
+    generatedCases: null,
+    skippedCases: null,
+    shrinkCount: null,
+    counterexample: null,
+    counterexampleHash: null,
+    counterexampleCaptureStatus: null,
+    counterexampleCaptureError: null,
+    incidentFingerprint: null,
+    failureText: null,
+    failureTextCaptureStatus: null,
+    failureTextCaptureError: null,
+    terminationStatus: 'started',
+    summary: null,
+    ...overrides
+  }
+}
+
+function appendObservedEvent(
+  root: string,
+  event: RawObservation,
+  persistenceErrors: string[]
+): boolean {
+  try {
+    appendRawObservation(root, event)
+    return true
+  } catch (error) {
+    const captured = captureText(error)
+    persistenceErrors.push(captured.failureText ?? captured.failureTextCaptureError ?? 'unknown')
+    return false
+  }
+}
+
+function throwObservedFailure(message: string, persistenceErrors: string[]): never {
+  const persistence = persistenceErrors.length
+    ? `\nPBT observation persistence failed: ${persistenceErrors.join(' | ')}`
+    : ''
+  throw new Error(`${message}${persistence}`)
 }
 
 export function runProperty<T>(
-  name: string,
+  metadata: PropertyMetadata,
   arb: fc.Arbitrary<T>,
   check: (value: T) => void | boolean,
-  opts: PropertyOptions = {}
+  options: PropertyOptions = {}
 ): void {
-  const seed = opts.seed ?? PBT_SEED
-  const numRuns = opts.runs ?? PBT_RUNS
+  const seed = (options.seed ?? PBT_SEED) | 0
+  const requestedRuns = options.runs ?? PBT_RUNS
+  const observationRoot = options.observationRoot ?? resolveObservationRoot()
+  const campaignId = randomUUID()
+  appendRawObservation(observationRoot, createEvent(metadata, campaignId, seed, requestedRuns, {}))
+
   const realRandom = Math.random
   const realNow = Date.now
   Math.random = () => {
-    throw new Error(`pbt(${name}): Math.random() is banned inside a property — inject determinism`)
+    throw new Error(
+      `pbt(${metadata.id}): Math.random() is banned inside a property: inject determinism`
+    )
   }
   Date.now = () => {
-    throw new Error(`pbt(${name}): Date.now() is banned inside a property — inject a clock`)
+    throw new Error(`pbt(${metadata.id}): Date.now() is banned inside a property: inject a clock`)
   }
+
+  let details: fc.RunDetails<[T]> | null = null
+  let executionError: unknown = null
   try {
-    const details = fc.check(fc.property(arb, check), { seed, numRuns })
-    if (details.failed) {
-      const reason = String((details as { errorInstance?: unknown }).errorInstance ?? '')
-      const file = writeArtifact(name, {
-        name,
-        seed,
-        numRuns,
-        numShrinks: details.numShrinks,
-        counterexample: details.counterexample,
-        counterexamplePath: details.counterexamplePath,
-        error: reason
-      })
-      throw new Error(
-        `pbt(${name}) failed after ${details.numShrinks} shrinks (seed=${seed}, ` +
-          `path=${details.counterexamplePath}). Counterexample written to ${file}\n` +
-          `counterexample=${JSON.stringify(details.counterexample)}\n${reason}`
-      )
-    }
+    details = fc.check(fc.property(arb, check), { seed, numRuns: requestedRuns })
+  } catch (error) {
+    executionError = error
   } finally {
     Math.random = realRandom
     Date.now = realNow
   }
+
+  if (executionError !== null || details === null) {
+    const persistenceErrors: string[] = []
+    const capturedFailure = captureText(executionError)
+    appendObservedEvent(
+      observationRoot,
+      createEvent(metadata, campaignId, seed, requestedRuns, {
+        eventKind: 'campaign-completed',
+        ...capturedFailure,
+        terminationStatus: 'unknown'
+      }),
+      persistenceErrors
+    )
+    throwObservedFailure(
+      capturedFailure.failureText ?? 'PBT failure text unavailable',
+      persistenceErrors
+    )
+  }
+
+  if (details.failed) {
+    const persistenceErrors: string[] = []
+    let counterexample: RawObservation['counterexample'] = null
+    let counterexampleHash: string | null = null
+    let counterexampleCaptureStatus: RawObservation['counterexampleCaptureStatus'] = 'absent'
+    let counterexampleCaptureError: string | null = null
+    if (details.counterexample !== null) {
+      try {
+        const taggedCounterexample = toTaggedValue(details.counterexample)
+        const taggedCounterexampleHash = hashTaggedValue(taggedCounterexample)
+        counterexample = taggedCounterexample
+        counterexampleHash = taggedCounterexampleHash
+        counterexampleCaptureStatus = 'captured'
+      } catch (error) {
+        const captured = captureText(error)
+        counterexampleCaptureStatus = 'failed'
+        counterexampleCaptureError = captured.failureText ?? captured.failureTextCaptureError
+      }
+    }
+    const capturedFailure = captureRunFailure(details)
+    const incidentFingerprint =
+      counterexampleCaptureStatus === 'captured'
+        ? createIncidentFingerprint(metadata, counterexampleHash)
+        : null
+    const generatedCases = details.numRuns + details.numSkips
+    const failureEvent = createEvent(metadata, campaignId, details.seed, requestedRuns, {
+      eventKind: 'failure-observed',
+      replayPath: details.counterexamplePath,
+      executedRuns: details.numRuns,
+      generatedCases,
+      skippedCases: details.numSkips,
+      shrinkCount: details.numShrinks,
+      counterexample,
+      counterexampleHash,
+      counterexampleCaptureStatus,
+      counterexampleCaptureError,
+      incidentFingerprint,
+      ...capturedFailure,
+      terminationStatus: details.interrupted ? 'interrupted' : 'failed'
+    })
+    const failureRecorded = appendObservedEvent(observationRoot, failureEvent, persistenceErrors)
+    appendObservedEvent(
+      observationRoot,
+      createEvent(metadata, campaignId, details.seed, requestedRuns, {
+        eventKind: 'campaign-completed',
+        replayPath: details.counterexamplePath,
+        executedRuns: details.numRuns,
+        generatedCases,
+        skippedCases: details.numSkips,
+        shrinkCount: details.numShrinks,
+        ...capturedFailure,
+        terminationStatus: details.interrupted ? 'interrupted' : 'failed',
+        summary: {
+          requestedRuns,
+          executedRuns: details.numRuns,
+          generatedCases,
+          skippedCases: details.numSkips,
+          failureCount: 1
+        }
+      }),
+      persistenceErrors
+    )
+    throwObservedFailure(
+      `pbt(${metadata.id}) failed after ${details.numShrinks} shrinks ` +
+        `(seed=${details.seed}, path=${details.counterexamplePath}, event=${failureRecorded ? failureEvent.eventId : 'unwritten'})\n` +
+        `counterexample=${JSON.stringify(counterexample)}\n${capturedFailure.failureText ?? 'PBT failure text unavailable'}`,
+      persistenceErrors
+    )
+  }
+
+  const generatedCases = details.numRuns + details.numSkips
+  appendRawObservation(
+    observationRoot,
+    createEvent(metadata, campaignId, details.seed, requestedRuns, {
+      eventKind: 'campaign-completed',
+      executedRuns: details.numRuns,
+      generatedCases,
+      skippedCases: details.numSkips,
+      shrinkCount: details.numShrinks,
+      terminationStatus: details.interrupted ? 'interrupted' : 'passed',
+      summary: {
+        requestedRuns,
+        executedRuns: details.numRuns,
+        generatedCases,
+        skippedCases: details.numSkips,
+        failureCount: 0
+      }
+    })
+  )
 }
 
-export function replayRegression<T>(name: string, cases: T[], check: (value: T) => void | boolean): void {
-  for (const [i, value] of cases.entries()) {
-    const ok = check(value)
-    if (ok === false) {
-      throw new Error(`pbt-regression(${name}) case ${i} still fails: ${JSON.stringify(value)}`)
+export function replayRegression<T>(
+  name: string,
+  cases: T[],
+  check: (value: T) => void | boolean
+): void {
+  for (const [index, value] of cases.entries()) {
+    const result = check(value)
+    if (result === false) {
+      throw new Error(`pbt-regression(${name}) case ${index} still fails: ${JSON.stringify(value)}`)
     }
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { runProperty } from '../../voice/pbt/pbt'
+import { defineSyntheticOrganicProperty, runProperty } from '../../voice/pbt/pbt'
 import { authorityOf, directAction, selectAction } from './policy'
 import { AUTHORITIES, type InterviewAction } from './types'
 import { interviewStateArb } from './pbt/arbitraries'
@@ -18,30 +18,62 @@ describe('authority seam (6d.2a)', () => {
   })
 
   it('directAction never throws and tags a valid authority for any state', () => {
-    runProperty('authority/totality', interviewStateArb, (state) => {
-      const directed = directAction(state)
-      return AUTHORITIES.includes(directed.authority)
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'authority/totality',
+        '1',
+        'every interview state produces a valid authority'
+      ),
+      interviewStateArb,
+      (state) => {
+        const directed = directAction(state)
+        return AUTHORITIES.includes(directed.authority)
+      }
+    )
   })
 
   it('directed intent is the selected intent verbatim — the wrapper never rephrases', () => {
-    runProperty('authority/intent-identity', interviewStateArb, (state) => {
-      const directed = directAction(state)
-      return JSON.stringify(directed.intent) === JSON.stringify(selectAction(state))
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'authority/intent-identity',
+        '1',
+        'authority wrapping preserves selected intent'
+      ),
+      interviewStateArb,
+      (state) => {
+        const directed = directAction(state)
+        return JSON.stringify(directed.intent) === JSON.stringify(selectAction(state))
+      }
+    )
   })
 
   it('authority is a pure function of intent kind — same kind, same authority', () => {
-    runProperty('authority/kind-pure', interviewStateArb, (state) => {
-      const directed = directAction(state)
-      return directed.authority === authorityOf({ kind: directed.intent.kind } as InterviewAction)
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'authority/kind-pure',
+        '1',
+        'authority depends only on intent kind'
+      ),
+      interviewStateArb,
+      (state) => {
+        const directed = directAction(state)
+        return directed.authority === authorityOf({ kind: directed.intent.kind } as InterviewAction)
+      }
+    )
   })
 
   it('probes steer, structural moves command', () => {
-    runProperty('authority/probe-steers', interviewStateArb, (state) => {
-      const { intent, authority } = directAction(state)
-      return intent.kind === 'probe' ? authority === 'steer' : authority === 'command'
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'authority/probe-steers',
+        '1',
+        'probes steer while structural actions command'
+      ),
+      interviewStateArb,
+      (state) => {
+        const { intent, authority } = directAction(state)
+        return intent.kind === 'probe' ? authority === 'steer' : authority === 'command'
+      }
+    )
   })
 })
