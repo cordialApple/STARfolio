@@ -97,6 +97,9 @@ describe('PBT CI retention workflows', () => {
     expect(capture).toContain('ref: main')
     expect(capture).toContain('candidate:/candidate:ro')
     expect(capture).toContain('docker run --rm')
+    expect(capture).toContain('--user "$(id -u):$(id -g)"')
+    expect(capture).toContain('--env HOME=/tmp/pbt-home')
+    expect(capture).toContain('mkdir -p /tmp/pbt-home /tmp/pbt-work')
     expect(capture).toContain('npm run pbt:stage')
     expect(capture).toContain('PBT_RETENTION_MODE: encrypt')
     expectEncryptedArtifact(
@@ -148,6 +151,9 @@ describe('PBT CI retention workflows', () => {
     expect(capture).toContain('ref: main')
     expect(capture).toContain('candidate:/candidate:ro')
     expect(capture).toContain('docker run --rm')
+    expect(capture).toContain('--user "$(id -u):$(id -g)"')
+    expect(capture).toContain('--env HOME=/tmp/pbt-home')
+    expect(capture).toContain('mkdir -p /tmp/pbt-home /tmp/pbt-work')
     expect(capture).toContain('npm run pbt:stage')
     expect(capture).toContain('PBT_RETENTION_MODE: encrypt')
     expectEncryptedArtifact(

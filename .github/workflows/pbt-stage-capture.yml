@@ -47,8 +47,10 @@ jobs:
         run: |
           mkdir -p "$PBT_SPOOL_DIR"
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             --volume "$GITHUB_WORKSPACE/candidate:/candidate:ro" \
             --volume "$PBT_SPOOL_DIR:/pbt" \
+            --env HOME=/tmp/pbt-home \
             --env PBT_SPOOL_DIR=/pbt \
             --env PBT_REPOSITORY_SHA \
             --env PBT_REPOSITORY_BRANCH \
@@ -61,7 +63,7 @@ jobs:
             --env GITHUB_JOB \
             --env CI \
             node:22-bookworm \
-            bash -lc 'mkdir /work && cp -a /candidate/. /work/ && cd /work/app && npm ci && npm run test:unit -- pbt.test.ts'
+            bash -lc 'mkdir -p /tmp/pbt-home /tmp/pbt-work && cp -a /candidate/. /tmp/pbt-work/ && cd /tmp/pbt-work/app && npm ci && npm run test:unit -- pbt.test.ts'
 
       - name: Install trusted capture code
         if: always()
