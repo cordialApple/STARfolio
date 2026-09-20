@@ -1,10 +1,12 @@
 # Stage 6b — Streaming voice (deferrable)
 
+> Historical design. Stage 6c replaced the whisper sliding-window path and removed its streaming-only modules. Push-to-talk whisper remains supported.
+
 Part of the [build plan](../build-plan.md) · Context to load: [voice](../architecture/voice.md) · [process-and-ipc](../architecture/process-and-ipc.md)
 
 Goal: upgrade [Stage 6](stage-06-voice.md)'s push-to-talk to hands-free — live partial transcripts while you speak, auto end-of-utterance turn-taking. Push-to-talk stays as a fallback mode; nothing here is on the MVP path, so this stage floats freely after Stage 6 (can land after Stages 7–8). Built on the Stage 1 design system: composes existing primitives, ships each screen's empty/loading/error/keyboard states, and honors the a11y + reduced-motion floor.
 
-> **Superseded (planned)**: this whisper-era streaming approach (energy-RMS VAD + sliding-window re-decode + LocalAgreement-2) is being replaced by a native-streaming Kyutai STT swap — Stage A of the [full-duplex migration](../architecture/full-duplex-migration.md), planned as [Stage 6c](stage-06c-streaming-stt-swap.md). Everything below remains the shipped state until 6c lands.
+> **Superseded:** this whisper-era streaming approach was replaced by the Kyutai seams in [Stage 6c](stage-06c-streaming-stt-swap.md). The unchecked items below document the abandoned design, not active debt.
 
 Why its own stage: "chunked PCM + VAD" hides five subsystems whisper's batch model does not give for free. Whisper is not a streaming model — live partials mean sliding-window re-decode with local-agreement stabilization, and partials get *revised*, which the IPC contract and UI must model. This stage front-loads a spike, exactly like Stage 0 did for the batch risks, before any feature work.
 

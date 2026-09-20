@@ -1,15 +1,37 @@
-# Stage 6e — Native full-duplex (Stage C, planned)
+# Stage 6e: remote native full duplex
 
-Part of the [build plan](../build-plan.md) · Context to load: [full-duplex-migration](../architecture/full-duplex-migration.md) · [voice](../architecture/voice.md) · [ai-layer](../architecture/ai-layer.md) · [process-and-ipc](../architecture/process-and-ipc.md)
+Part of the [build plan](../build-plan.md). Read with [full-duplex migration](../architecture/full-duplex-migration.md), [voice](../architecture/voice.md), and [privacy and risks](../architecture/privacy-and-risks.md).
 
-Goal: native full-duplex conversation — Stage C of the [full-duplex migration](../architecture/full-duplex-migration.md) (see it for the Stage-C diagram, the tiered-reasoning avenues, and the cost/benefit ledger). A parallel branch after [Stage 6c](stage-06c-streaming-stt-swap.md): Moshi owns the conversational surface — always listening, always speaking, true barge-in/overlap/backchannels at ~200 ms — and the tiered brain becomes an **async out-of-band scorer/steerer**: Sonnet rubric scoring + the deterministic reducer run over Moshi's Inner Monologue text, fired in conversational gaps, with the reducer's chosen next action injected back as conditioning (the MoshiRAG pattern). Nothing here is built yet.
+Goal: optional MoshiRAG conversation with barge-in, overlap, and asynchronous gap-scoring, without requiring a GPU-capable PC.
 
-Be clear about what this is: per the ledger, **the high-risk research bet**. It trades the live, hot-path, fully-auditable rubric for interaction realism — barge-in and overlap that [Stage 6d](stage-06d-cascade-streaming-tts.md) literally cannot do. MoshiRAG shows async-in-the-gaps recovers factual/structured parity in general, but *for our specific coverage-dimension rubric scoring* that is unproven — which is why the measurement is the stage's headline task and gates everything after it. Failure mode if it goes wrong: the model rambles off-rubric and is harder to constrain; the fallback is 6d. Grounding posture holds: audio is data, never instructions; everything runs locally on the GPU.
+## Boundary
 
-- [ ] 6e.1 **Go/no-go spike (gate — this measurement IS the stage):** measure whether async gap-scoring preserves coverage-dimension rubric rigor. Run Sonnet scoring over Moshi's Inner Monologue transcript, fired in conversational gaps, and compare the coverage-dimension scores against the turn-based tiers scoring the same answers. Rigor holds → proceed. Rigor doesn't hold → the stage stops here; fall back to 6d, or to the observer-scoring C-lite avenue (post-hoc Sonnet evaluation report, no live steering) from the migration doc.
-- [ ] 6e.2 Moshi/Mimi runtime on the local GPU, behind the `app/src/main/voice/` seam.
-- [ ] 6e.3 Async evaluator-sidecar bridge: Inner Monologue text → Sonnet scoring + deterministic reducer, running out-of-band so the conversational surface never blocks on the tiers.
-- [ ] 6e.4 Steering injection: the reducer's chosen next `InterviewAction` fed back to Moshi as conditioning — steering, not scripting; the exact wording is Moshi's, not Haiku's.
-- [ ] 6e.5 Barge-in/overlap surface + on-hardware sustained pass: interrupt the interviewer mid-question, get interrupted mid-ramble, backchannels land naturally; the evaluation report still shows auditable per-dimension scores.
+STARfolio still runs on a normal local machine. It owns the experience bank, retrieval, interview plan,
+scoring, reducer state, report, and audit history. SSM forwards a desktop port to the loopback gateway
+on temporary AWS GPU compute. The worker receives live session audio and selected interview context, returns audio and
+transcript events, and terminates after the session deadline.
 
-**Checkpoint 6e**: a mock interview that feels alive — you can cut the interviewer off and it rolls with it — while the session report still carries the structured, per-dimension rubric scores that are the product's credibility. If 6e.1 said no, this checkpoint is intentionally never reached and the branch is closed with the measurement written up.
+This mode is default off. It is an optional realism path, not the only way to interview. Local
+push-to-talk remains available when remote compute is unavailable or unwanted.
+
+## Status
+
+- [x] 6e.1 Recorder streaming preserves sample order and drains final PCM before shutdown.
+- [x] 6e.2 Gateway and temporary AWS worker implement pinned source/model inputs, loopback-only runtime,
+  heartbeat, deadline, disconnect, and teardown behavior.
+- [x] 6e.3 Default-off desktop integration keeps planning, evidence selection, scoring, reducer state,
+  persistence, reporting, and audit local.
+- [x] 6e.4 Unit, integration, lifecycle, production-build, and packaged Electron tests cover the control
+  path without requiring a GPU.
+- [ ] 6e.5 Live GPU gate: run a real microphone interview, verify returned audio and transcript quality,
+  compare gap-scoring with the turn-based baseline, and prove teardown on success, timeout, disconnect,
+  and failure. Tracked in issue #312.
+
+## Decision rule
+
+Remote full duplex passes only if it preserves the per-dimension rubric and local audit trail. If it
+does not, keep the implementation experimental and use the cascade or local push-to-talk path. A no-go
+result is valid evidence; weakening the scorer is not.
+
+**Checkpoint 6e:** issue #312 records a live interview and every teardown path, with an explicit rigor
+verdict against the same-answer turn-based baseline.

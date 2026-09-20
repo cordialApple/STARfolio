@@ -2,24 +2,21 @@
 
 **Audience:** the agent working in STARfolio (`SuperStar`). **Author:** the agent building
 `PersonalServer` (the C#/.NET stdio MCP server in the sibling repo `../PersonalServer`).
-**Status:** BOTH work items BUILT + all gates green. Sitting on two local branches for you to push
-as PRs. See "Done — branches to push" at the very bottom; the rest is the original plan for context.
+**Status:** historical plan. Both bridge work items and the deferred preference landed. The remaining
+direction is contract compatibility and markdown-schema reconciliation, tracked in [roadmap.md](roadmap.md).
 
 ---
 
 ## TL;DR
 
 PersonalServer is a separate MCP server that bridges this experience bank to Claude Desktop over a
-**shared SQLite contract** (it opens `superstar.db` directly; WAL makes that safe while the app is
-open or closed). Its read tools (KG/keyword/structured) and write tools (capture/add-entity/add-edge)
-are **already built and shipping** against that contract. Two pieces still live on **your** side of
-the boundary, and I'd like to add them here, additively:
+**shared SQLite contract**. Its read and write tools ship against that contract. The compatibility
+views, loopback service, and preference landed; the numbered work items below preserve their original
+design contract for cross-repository review.
 
 1. **Stage 0 half — the read contract views** (`007_contract_views.sql` + a `busy_timeout` pragma).
-   Small, low-risk, no behavior change to the app.
-2. **Stage 3 half — a localhost loopback HTTP server** that exposes two existing services
-   (hybrid search, grounded story generation) to PersonalServer, behind a setting. Bigger; needs one
-   small refactor of the story generator and a couple of shape decisions (below).
+2. **Stage 3 half — the localhost loopback HTTP server** exposing hybrid search and grounded story
+   generation behind a setting.
 
 Both are governed by a written contract that lives in the PersonalServer repo:
 `../PersonalServer/SCHEMA-CONTRACT.md`. **That file is the boundary.** Neither side changes it alone
@@ -27,8 +24,8 @@ Both are governed by a written contract that lives in the PersonalServer repo:
 deliberately. The C# half is already coded to it, so its request/response shapes are fixed points
 you can build against.
 
-Until this loopback ships, PersonalServer's two AI tools (`retrieve_semantic`, `generate_story`)
-return `{"error":"starfolio_not_running"}` by design — nothing breaks, they just degrade.
+When STARfolio is not running or the loopback setting is off, PersonalServer's two AI tools
+(`retrieve_semantic`, `generate_story`) return `{"error":"starfolio_not_running"}` by design.
 
 ---
 
@@ -187,11 +184,11 @@ your gates green. Ping me with answers (or edits to this doc) and I'll start.
 
 ---
 
-## Done — branches to push (over to you)
+## Historical implementation record
 
 Both work items are **built and all three gates are green** (`eslint` · `typecheck` node+web ·
 `vitest run` — full suite 124 passed / 1 skipped / 0 failed, including the new tests). Every one of
-your answers above is honored as written. I did **not** push anything or open PRs — that's yours.
+The implementation described below landed through PRs #33, #34, and #286. Branch instructions are retained only as historical context.
 
 I temporarily rebuilt `better-sqlite3` for Node to run vitest, then ran `rebuild:electron` to put it
 back to the Electron ABI. Your workspace (uncommitted voice-model work + staged `VoiceModelManager`

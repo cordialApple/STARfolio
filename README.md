@@ -4,9 +4,15 @@ A private, single-user desktop app: a longitudinal bank of accomplishments in ST
 (Situation / Task / Action / Result), with an LLM assistant that runs live mock interviews
 with feedback and generates polished, provenance-linked STAR stories on demand.
 
-Local-first, no account, no server. Windows-first (cross-platform capable). Your Anthropic
-API key is stored in the OS credential store and never leaves your machine except to call
-the Anthropic API directly.
+Local-first, no STARfolio account, and no managed STARfolio backend. The desktop app and
+its data stay on a normal local machine. Model calls go directly to the provider selected
+for each role, using credentials stored in the OS credential store.
+
+The experimental MoshiRAG interview mode is the exception to the local speech path. It sends
+session audio and selected interview context through an SSM port forward to a loopback gateway
+on a temporary AWS GPU worker, then tears that worker down. It does not assume a GPU-capable PC,
+and it does not move STARfolio's database, scoring, reducer, reports, or audit history off
+the local machine.
 
 - **Concept & user stories:** [docs/starfolio-concept.md](docs/starfolio-concept.md)
 - **Architecture spec:** [docs/architecture.md](docs/architecture.md)
@@ -31,9 +37,10 @@ and run it over the existing install.
 ## Stack
 
 Electron + React + TypeScript + Tailwind, SQLite (`better-sqlite3`) with FTS5 keyword search
-and `sqlite-vec` vector KNN, `transformers.js` embeddings and `smart-whisper` speech-to-text
-running in worker processes, and the Anthropic SDK in the main process. Packaged with
-electron-builder (NSIS).
+and `sqlite-vec` vector KNN, `transformers.js` embeddings, and `smart-whisper`
+speech-to-text running in worker processes. Anthropic, OpenAI-compatible, and Gemini
+providers are routed by role in the main process. The optional MoshiRAG path adds an SSM tunnel
+to a loopback-only gateway on a temporary AWS GPU worker. Packaged with electron-builder (NSIS).
 
 ## Develop
 
