@@ -1,63 +1,133 @@
 # Property-based testing in CI
 
-Property tests protect state-evolution contracts that example tests miss: stable transcript prefixes,
-single end-of-turn delivery, codec round trips, resampler continuity, transport ordering, and intent
-realization under duplicated or reordered events.
+Property tests protect state-evolution contracts that example tests miss. STARfolio has 45 property
+calls across 11 files. The default 200-run campaign requests 9,000 executions per full pass. Failed
+preconditions increase the generated-case count without inflating executed runs.
 
-## Landed
+## Observation contract
 
-- `fast-check` 4.9.0 is pinned.
-- `voice/pbt/pbt.ts` owns the deterministic seed and run count.
-- Rolling transcript, Kyutai mapping, codec, resampler, and TTS adapter properties run inside the
-  normal Vitest suite.
-- Kyutai protocol, codec, resampler, mapping, transport, adapter, session, and stub files exist.
-- CI runs these properties through the combined unit and integration gate.
-- Tests use the modelled wire only. They do not claim live service compatibility, speech quality,
-  latency, or hardware teardown.
+Every `runProperty` call carries an explicit property ID, property version, invariant, observation
+class, and publication class. The harness records three raw event kinds:
 
-## Remaining CI work
+- `campaign-started`
+- `failure-observed`
+- `campaign-completed`
 
-### Tiered campaigns
+Campaign completion records requested runs, executed runs, generated cases, skipped cases, and
+failure count. A green campaign still produces start and completion events. Generated cases are
+counted per campaign, not stored one by one.
 
-Keep pull requests deterministic and short. Add a larger push campaign only after its runtime and
-failure handling are measured.
+Failure events include the seed, replay path, requested and executed runs, generated and skipped
+cases, shrink count, tagged raw counterexample, counterexample hash, exact failure text, environment,
+termination status, and allowlisted Git and CI provenance. Counterexample and failure-text capture
+status distinguish absent values from failed conversion. Capture failures keep their error and do
+not mint a false fingerprint. Unavailable provenance is `null`. It is not reconstructed later.
 
-- Pull request: fixed seed and the current 200-run default.
-- Main push: fixed campaign plus a rotating run-number seed with a documented upper time bound.
-- Every failing log prints seed, path, and run count so it can be replayed locally.
+Every occurrence gets a unique event ID. The incident fingerprint groups repeats by property ID,
+property version, invariant, and counterexample hash. Repeated failures remain separate events.
 
-Do not auto-merge from a green property run. Properties are one merge gate inside the normal review,
-inspection, adjudication, and current-base CI flow.
+Organic, mutation, and sabotage observations are distinct. Mutation and sabotage measure harness
+sensitivity. They are not evidence of realized organic defect yield.
 
-### Failure artifacts
+## Append-only storage
 
-When shrinking finds a counterexample, write a small value-based artifact containing the initial state,
-operations, expected value, observed value, seed, and path. Upload it on CI failure. After review,
-promote the minimized case into a committed seed-independent regression fixture.
+Raw observations and annotations are separate layers. Raw files are never rewritten. Each event is
+written to a unique temporary file, flushed, and atomically renamed under an exclusive event lock.
+Concurrent workers cannot share or truncate one JSONL file.
 
-CI must never commit to the repository. A developer or follow-up PR owns fixture promotion.
+Annotations have their own ID, timestamp, author, target event, and publication class. Their kind
+strictly selects a correction, classification, duplicate link, or disposition payload. Confirmed
+code bugs require typed review or adjudication evidence. Supported dispositions are:
 
-### Coverage ledger
+- `confirmed-code-bug`
+- `oracle-bug`
+- `generator-bug`
+- `duplicate`
+- `flake`
+- `expected-sabotage`
+- `unresolved`
 
-Track useful structural coverage, such as event-kind pairs, without treating run count as proof. A
-property becomes load-bearing only when it pins a real contract, catches its sabotage case, and remains
-stable across repeated campaigns. The ledger is review evidence, not a bot-authored source of truth.
+Capture never assigns a disposition. A confirmed classification requires later review or
+adjudication evidence. An annotation may target an event from an earlier retained cycle. Cycle
+validation preserves that link. Writers reject unknown references by default; cross-cycle writers
+must supply event IDs from the retained ledger. Ledger-wide readers and the observer verify links
+against the same retained set.
 
-### AI-authored cases
+The reader sorts valid records deterministically and reports malformed files, incomplete temporary
+writes, stale locks, and broken annotation links. It does not move, repair, delete, or reinterpret
+those bytes.
 
-Models may propose fixtures, generators, or invariants offline. CI only replays committed deterministic
-artifacts and never calls a model. New AI-authored oracles remain exploratory until a reviewer can
-justify why the invariant is true and an adjudicator accepts it.
+## Retention behavior
 
-### Hardware boundary
+Local observations default to the repository Git common directory at
+`.git/pbt-observations`. This survives test reruns, source branch deletion, squash merge, and worktree
+removal. It does not survive deletion of the repository itself. `PBT_SPOOL_DIR` can select another
+durable local path.
 
-Modelled-wire properties do not prove the real Kyutai or MoshiRAG service. Stage 6c needs an explicit
-accelerator target before live protocol and endpoint tests. Stage 6e live interview, rigor, and teardown
-evidence remains issue #312. Hardware tests must report unavailable or failed explicitly; they never
-silently skip and appear green.
+CI stages each run and attempt as one encrypted cycle. The source job takes a bounded snapshot and
+puts every exact raw, annotation, malformed, and partial byte into one AES-256-GCM payload. A random
+content key encrypts each cycle. RSA-OAEP-SHA256 wraps that key with the committed public key at
+`.github/pbt-observation-public.pem`. The envelope records a SHA-256 public-key ID so retained cycles
+remain attributable if keys rotate. Every historical private key must remain available for its key
+ID in the JSON keyring stored as `PBT_OBSERVATION_PRIVATE_KEYS`. Private keys never enter source
+control.
 
-## Next slice
+The uploaded artifact contains only `payload.enc` and a public manifest. The manifest exposes cycle
+identity, encryption parameters, ciphertext size and hash, and safe diagnostics. A diagnostic has an
+opaque ID, layer, reason category, safe issue codes, and byte count. It does not expose a source
+filename, evidence hash, raw text, event ID, or annotation ID. Credentials and interview text have no
+plaintext path into the artifact.
 
-Raise one focused issue for CI tiering and artifacts. Add the pull-request versus main-push budgets,
-rotating seed, replay metadata, and failure upload together, with repeated hosted runs proving the gate
-is stable before merge.
+Only captured paths execute property tests: `main` CI, the base-owned pull request workflow, and the
+trusted stage workflow. Ordinary pull request and `stage/**` CI still run unit and integration tests
+but exclude property files, preventing an uncaptured first PBT run. Main pushes encrypt with reviewed
+code from `main`. Pull requests use the base-owned
+`pull_request_target` workflow. Candidate PBT runs inside Docker with a read-only source mount, a
+writable spool, explicit provenance, and no secrets. Reviewed code and the committed public key then
+encrypt the spool outside that container. GitHub Actions uploads the encrypted cycle even when tests
+fail or the spool contains only malformed or partial evidence. Artifacts retain for 90 days. They
+are transport, not the permanent ledger. Deleting a workflow run also deletes its artifact.
+
+Same-repository pull requests validate and retain their encrypted cycle inside the base-owned
+workflow, using the pull request head SHA and branch directly. A separate `workflow_run` path handles
+`main` CI pushes. Another trusted `workflow_run` path reruns `stage/**` property tests in the same
+isolated candidate container before validation and retention. None depend on a pull request
+association. Trusted code from `main` reads the JSON keyring from
+`PBT_OBSERVATION_PRIVATE_KEYS`, decrypts the payload, and revalidates schemas, provenance, links,
+campaign consistency, counterexample hashes, incident fingerprints, diagnostics, and ciphertext
+integrity. A bad record or campaign is omitted from the validated ID lists and described by a safe
+diagnostic; its exact bytes remain in the ciphertext and valid peers still retain. The trusted
+manifest keeps the complete encryption envelope beside the same ciphertext, so the durable pair
+remains decryptable after transport expiry. The orphan `pbt-observations` branch keeps that pair
+outside product history. The tested appender retries from the latest branch tip and treats an
+identical cycle as idempotent. Retention jobs share one non-cancelling concurrency group, then retain
+their run ID and attempt as the immutable cycle key.
+
+The durable manifest can be reopened directly with the private-key keyring. Reopening verifies the
+ciphertext, selects the key by ID, decrypts the exact payload, and checks the trusted manifest against
+the decrypted evidence.
+
+The trusted manifest is not independently signed. Its provenance relies on the trusted validation
+job, GitHub artifact transfer, and repository branch history. Add separate attestation before using
+retained cycles outside that boundary.
+
+Real interview data, pasted career material, credentials, and unknown-origin fixtures still do not
+belong in the synthetic PBT harness. Encryption is the publication boundary if they appear anyway.
+Trusted validation excludes records not explicitly marked `synthetic` from validated event and
+annotation IDs while preserving their exact bytes inside the encrypted payload for diagnosis.
+
+## Current limits
+
+Property tests still use a fixed seed and 200-run default in pull requests and on `main`. A later
+slice may add measured PR and push budgets plus rotating seeds. That work must preserve the campaign
+denominator and replay metadata.
+
+Modelled-wire properties do not prove live Kyutai or MoshiRAG compatibility, speech quality, latency,
+rigor, or hardware teardown. Issue #312 remains the live GPU evidence gate.
+
+No dashboard, aggregate metric, yield estimate, or automated conclusion belongs in this capture
+layer. Analysis remains downstream work.
+
+The new default-branch workflow triggers cannot be proven by their introducing pull request. After
+merge, verify one retained `main` cycle and one same-repository pull request cycle, reopen their
+encrypted evidence from `pbt-observations`, and confirm `stage/**` retention before enabling Luna.

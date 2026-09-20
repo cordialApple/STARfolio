@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
-import { runProperty } from '../../voice/pbt/pbt'
+import { defineSyntheticOrganicProperty, runProperty } from '../../voice/pbt/pbt'
 import { cascadeMouth } from './cascade'
 import { conformsToSeam } from './conformance'
 import { TurnLoop, stubPhraser, type TtsMouthSink, type TurnBrain } from './turn-loop'
@@ -37,7 +37,10 @@ class Clock {
   now = (): number => this.t
 }
 
-function build(plans: DirectedAction[][], clock = new Clock()): { loop: TurnLoop; tts: FakeTts; clock: Clock } {
+function build(
+  plans: DirectedAction[][],
+  clock = new Clock()
+): { loop: TurnLoop; tts: FakeTts; clock: Clock } {
   const tts = new FakeTts()
   const loop = new TurnLoop({
     brain: new QueueBrain(plans),
@@ -65,67 +68,91 @@ const scheduleArb = fc.record({
 
 describe('turn loop (6d.2e)', () => {
   it('never opens capture while the interviewer could still be audible (no self-transcription)', () => {
-    runProperty('no-self-transcription', scheduleArb, ({ plans, ops }) => {
-      const { loop, clock } = build(plans)
-      let lastMarker: number | null = null
-      let speaking = false
-      let guardUntil = 0
-      const audible = (t: number): boolean => speaking || (guardUntil > 0 && t < guardUntil)
-      for (const op of ops) {
-        if (op.op === 'tick') clock.t += op.dt
-        else if (op.op === 'eot') {
-          const turn = loop.endOfTurn()
-          if (turn) {
-            lastMarker = turn.marker
-            speaking = true
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'no-self-transcription',
+        '1',
+        'capture never opens while interviewer audio remains audible'
+      ),
+      scheduleArb,
+      ({ plans, ops }) => {
+        const { loop, clock } = build(plans)
+        let lastMarker: number | null = null
+        let speaking = false
+        let guardUntil = 0
+        const audible = (t: number): boolean => speaking || (guardUntil > 0 && t < guardUntil)
+        for (const op of ops) {
+          if (op.op === 'tick') clock.t += op.dt
+          else if (op.op === 'eot') {
+            const turn = loop.endOfTurn()
+            if (turn) {
+              lastMarker = turn.marker
+              speaking = true
+            }
+          } else if (lastMarker !== null && speaking) {
+            loop.ttsEnded(lastMarker)
+            speaking = false
+            guardUntil = clock.t + GUARD_MS
           }
-        } else if (lastMarker !== null && speaking) {
-          loop.ttsEnded(lastMarker)
-          speaking = false
-          guardUntil = clock.t + GUARD_MS
+          if (loop.captureOpen(clock.t) && audible(clock.t)) return false
         }
-        if (loop.captureOpen(clock.t) && audible(clock.t)) return false
+        return true
       }
-      return true
-    })
+    )
   })
 
   it('a realized turn is produced exactly once per accepted end-of-turn; barge-in is ignored', () => {
-    runProperty('turn-per-eot', scheduleArb, ({ plans, ops }) => {
-      const { loop } = build(plans)
-      let accepted = 0
-      let lastMarker: number | null = null
-      let speaking = false
-      for (const op of ops) {
-        if (op.op === 'eot') {
-          const turn = loop.endOfTurn()
-          if (speaking && turn !== null) return false
-          if (turn) {
-            accepted++
-            lastMarker = turn.marker
-            speaking = true
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'turn-per-eot',
+        '1',
+        'each accepted end of turn produces exactly one realized turn'
+      ),
+      scheduleArb,
+      ({ plans, ops }) => {
+        const { loop } = build(plans)
+        let accepted = 0
+        let lastMarker: number | null = null
+        let speaking = false
+        for (const op of ops) {
+          if (op.op === 'eot') {
+            const turn = loop.endOfTurn()
+            if (speaking && turn !== null) return false
+            if (turn) {
+              accepted++
+              lastMarker = turn.marker
+              speaking = true
+            }
+          } else if (op.op === 'end' && lastMarker !== null && speaking) {
+            loop.ttsEnded(lastMarker)
+            speaking = false
           }
-        } else if (op.op === 'end' && lastMarker !== null && speaking) {
-          loop.ttsEnded(lastMarker)
-          speaking = false
         }
+        return loop.turns().length === accepted
       }
-      return loop.turns().length === accepted
-    })
+    )
   })
 
   it('every realized turn conforms to the intent seam', () => {
-    runProperty('seam-honored', scheduleArb, ({ plans, ops }) => {
-      const { loop } = build(plans)
-      let lastMarker: number | null = null
-      for (const op of ops) {
-        if (op.op === 'eot') {
-          const turn = loop.endOfTurn()
-          if (turn) lastMarker = turn.marker
-        } else if (op.op === 'end' && lastMarker !== null) loop.ttsEnded(lastMarker)
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'seam-honored',
+        '1',
+        'every realized turn conforms to the intent seam'
+      ),
+      scheduleArb,
+      ({ plans, ops }) => {
+        const { loop } = build(plans)
+        let lastMarker: number | null = null
+        for (const op of ops) {
+          if (op.op === 'eot') {
+            const turn = loop.endOfTurn()
+            if (turn) lastMarker = turn.marker
+          } else if (op.op === 'end' && lastMarker !== null) loop.ttsEnded(lastMarker)
+        }
+        return loop.turns().every((t) => conformsToSeam(t.plan, t.realized))
       }
-      return loop.turns().every((t) => conformsToSeam(t.plan, t.realized))
-    })
+    )
   })
 })
 

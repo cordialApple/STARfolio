@@ -20,6 +20,8 @@
     "build:win": "npm run rebuild:electron && npm run build && electron-builder --win",
     "test:unit": "node scripts/test-unit.mjs",
     "test:unit:watch": "vitest",
+    "pbt:stage": "tsx src/main/voice/pbt/retention-cli.ts",
+    "pbt:retain": "tsx src/main/voice/pbt/retention-append-cli.ts",
     "test:e2e": "npm run build:unpack && playwright test",
     "test:e2e:dev": "npm run rebuild:electron && npm run build && playwright test"
   },

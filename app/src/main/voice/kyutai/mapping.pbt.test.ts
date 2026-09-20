@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest'
 import type { TranscriptEvent } from '../streaming/types'
-import { runProperty } from '../pbt/pbt'
+import { defineSyntheticOrganicProperty, runProperty } from '../pbt/pbt'
 import { outSchedule, toWire } from '../pbt/events'
 import { KyutaiSttAdapter } from './adapter'
 import { FakeTransport } from './transport'
@@ -31,29 +31,55 @@ function referenceReducer(schedule: OutMsg[]): string[] {
 //  see docs/plans/pbt-in-ci.md §7 R3]
 describe('TranscriptAssembler — transport-adversary spine (PBT)', () => {
   it('every emitted event has stableUpTo === text.length (all committed)', () => {
-    runProperty('mapping/stableUpTo-eq-length', outSchedule, (schedule) => {
-      for (const e of drive(schedule)) if (e.stableUpTo !== e.text.length) return false
-      return true
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'mapping/stableUpTo-eq-length',
+        '1',
+        'emitted transcript text is fully committed'
+      ),
+      outSchedule,
+      (schedule) => {
+        for (const e of drive(schedule)) if (e.stableUpTo !== e.text.length) return false
+        return true
+      }
+    )
   })
 
   it('within a turn the prior text is a prefix of the next (never rewritten backward)', () => {
-    runProperty('mapping/within-turn-prefix-monotone', outSchedule, (schedule) => {
-      let prev = ''
-      for (const e of drive(schedule)) {
-        if (!e.text.startsWith(prev)) return false
-        prev = e.isFinal ? '' : e.text
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'mapping/within-turn-prefix-monotone',
+        '1',
+        'within turn transcript text never rewrites backward'
+      ),
+      outSchedule,
+      (schedule) => {
+        let prev = ''
+        for (const e of drive(schedule)) {
+          if (!e.text.startsWith(prev)) return false
+          prev = e.isFinal ? '' : e.text
+        }
+        return true
       }
-      return true
-    })
+    )
   })
 
   it('finals match an independent reference reducer over the delivered order', () => {
-    runProperty('mapping/finals-match-reference', outSchedule, (schedule) => {
-      const finals = drive(schedule).filter((e) => e.isFinal).map((e) => e.text)
-      const ref = referenceReducer(schedule)
-      if (finals.length !== ref.length) return false
-      return finals.every((t, i) => t === ref[i])
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'mapping/finals-match-reference',
+        '1',
+        'final transcripts match the independent delivery order reducer'
+      ),
+      outSchedule,
+      (schedule) => {
+        const finals = drive(schedule)
+          .filter((e) => e.isFinal)
+          .map((e) => e.text)
+        const ref = referenceReducer(schedule)
+        if (finals.length !== ref.length) return false
+        return finals.every((t, i) => t === ref[i])
+      }
+    )
   })
 })

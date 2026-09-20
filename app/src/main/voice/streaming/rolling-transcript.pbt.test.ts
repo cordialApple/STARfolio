@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest'
 import type { TranscriptEvent } from './types'
-import { runProperty, fc } from '../pbt/pbt'
+import { defineSyntheticOrganicProperty, runProperty, fc } from '../pbt/pbt'
 import { RollingTranscript } from './rolling-transcript'
 
 interface Step {
@@ -47,38 +47,66 @@ function joinView(segs: OracleSeg[], live: string): string {
 
 describe('RollingTranscript (PBT)', () => {
   it('full() reproduces an independent reducer over the delivered order', () => {
-    runProperty('rolling/full-matches-oracle', steps, (schedule) => {
-      const rt = new RollingTranscript()
-      for (const { event, at } of schedule) rt.push(event, at)
-      const { segments, live } = oracle(schedule)
-      const view = rt.full()
-      return view.segmentCount === segments.length && view.text === joinView(segments, live)
-    })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'rolling/full-matches-oracle',
+        '1',
+        'full rolling transcript matches the independent reducer'
+      ),
+      steps,
+      (schedule) => {
+        const rt = new RollingTranscript()
+        for (const { event, at } of schedule) rt.push(event, at)
+        const { segments, live } = oracle(schedule)
+        const view = rt.full()
+        return view.segmentCount === segments.length && view.text === joinView(segments, live)
+      }
+    )
   })
 
   it('segmentCount never decreases as events arrive', () => {
-    runProperty('rolling/segment-count-monotone', steps, (schedule) => {
-      const rt = new RollingTranscript()
-      let prev = 0
-      for (const { event, at } of schedule) {
-        rt.push(event, at)
-        if (rt.segmentCount < prev) return false
-        prev = rt.segmentCount
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'rolling/segment-count-monotone',
+        '1',
+        'rolling transcript segment count never decreases'
+      ),
+      steps,
+      (schedule) => {
+        const rt = new RollingTranscript()
+        let prev = 0
+        for (const { event, at } of schedule) {
+          rt.push(event, at)
+          if (rt.segmentCount < prev) return false
+          prev = rt.segmentCount
+        }
+        return true
       }
-      return true
-    })
+    )
   })
 
   it('recent(window,now) is exactly the committed segments inside the window', () => {
-    const withWindow = fc.record({ schedule: steps, windowMs: fc.nat({ max: 20_000 }), now: fc.nat({ max: 20_000 }) })
-    runProperty('rolling/recent-window-subset', withWindow, ({ schedule, windowMs, now }) => {
-      const rt = new RollingTranscript()
-      for (const { event, at } of schedule) rt.push(event, at)
-      const { segments, live } = oracle(schedule)
-      const inWindow = segments.filter((s) => s.at >= now - windowMs)
-      const view = rt.recent(windowMs, now)
-      if (view.segmentCount > rt.full().segmentCount) return false
-      return view.segmentCount === inWindow.length && view.text === joinView(inWindow, live)
+    const withWindow = fc.record({
+      schedule: steps,
+      windowMs: fc.nat({ max: 20_000 }),
+      now: fc.nat({ max: 20_000 })
     })
+    runProperty(
+      defineSyntheticOrganicProperty(
+        'rolling/recent-window-subset',
+        '1',
+        'recent transcript contains exactly committed segments in the window'
+      ),
+      withWindow,
+      ({ schedule, windowMs, now }) => {
+        const rt = new RollingTranscript()
+        for (const { event, at } of schedule) rt.push(event, at)
+        const { segments, live } = oracle(schedule)
+        const inWindow = segments.filter((s) => s.at >= now - windowMs)
+        const view = rt.recent(windowMs, now)
+        if (view.segmentCount > rt.full().segmentCount) return false
+        return view.segmentCount === inWindow.length && view.text === joinView(inWindow, live)
+      }
+    )
   })
 })
