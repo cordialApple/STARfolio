@@ -4,17 +4,17 @@ Part of the [architecture spec](../architecture.md) · supersedes the whisper fr
 
 Research basis: Moshi (arXiv:2410.00037, kyutai.org/Moshi.pdf), Mimi codec (HF `kyutai/mimi`), Delayed Streams Modeling + Kyutai STT (github.com/kyutai-labs/delayed-streams-modeling, kyutai.org/stt), Unmute (github.com/kyutai-labs/unmute), MoshiRAG (arXiv:2604.12928). All architecture claims here passed 3-vote adversarial verification against those primary sources.
 
-The whole current voice stack is scaffolding around two facts: **whisper can't stream**, and **the LLM tier is turn-based**. Kyutai's stack dissolves the first fact cleanly and standalone; the second is a design choice we get to keep or shed. This doc commits Stage A, and frames Stage B vs Stage C for parallel branches.
+The original streaming voice stack was scaffolding around two facts: **whisper can't stream**, and **the LLM tier is turn-based**. The Stage A seam and local contract landed; its real service remains unverified. Stage B keeps the turn-based reasoning path, while Stage C now has an experimental remote control plane.
 
-**Framing correction (read this first):** B and C are **not** a migration where C replaces B. This is a local desktop app on candidate hardware; GPU-less laptops are the majority install base *permanently*. So the **cascade (Stage B) is the flagship** — it earns full polish — and native full-duplex (Stage C) is an optional realism layer gated on a GPU. See ["Capability tiers, not a migration"](#capability-tiers-not-a-migration) below; it also records the one real leak (the reducer contract forks under duplex) and how the intent-level seam absorbs it.
+**Current framing:** B and C are **not** a migration where C replaces B. STARfolio runs on a normal local machine. The cascade remains the auditable assessment path; native full duplex is an optional realism mode. GPU-only MoshiRAG compute runs on a temporary AWS worker; SSM forwards a desktop port to its loopback gateway. Neither path may assume a GPU-capable PC. See [Stage 6e](../stages/stage-06e-native-full-duplex.md) for the implemented boundary and live gate.
 
 ---
 
 ## Stage A — swap the ASR front end (committed)
 
-Replace batch whisper + all its streaming prostheses with **Kyutai STT** (`stt-1b-en_fr`, 500ms fixed delay, or `stt-2.6b-en` at 2.5s if WER demands). Kyutai STT is native-streaming, emits committed word tokens with timestamps, and carries a **semantic VAD** that predicts end-of-turn probability — on par with SOTA *non-streaming* accuracy, so no WER tax. The tiered LLM brain is untouched; this is a text-in/text-out swap behind the existing voice seam.
+Replace batch whisper + all its streaming prostheses with **Kyutai STT** behind the existing voice seam. The local contract models committed word tokens, timestamps, and semantic end-of-turn. Published model delays inform the target, but real wire behavior, accuracy, and latency remain open until a compute target is selected.
 
-### Current pipeline (what Stage A deletes)
+### Historical pre-Stage A pipeline (deleted)
 
 ```mermaid
 flowchart LR
@@ -33,9 +33,9 @@ flowchart LR
   class rb,fs,vad,win,dec,la del
 ```
 
-Red nodes exist **only** because whisper is batch. Stage A removes all six.
+The red nodes existed **only** because whisper is batch. Stage A removed all six from the streaming path.
 
-### Stage A pipeline (proposed)
+### Stage A contract (implemented; live service gate open)
 
 ```mermaid
 flowchart LR
@@ -49,11 +49,11 @@ flowchart LR
   class stt new
 ```
 
-**One green node replaces six red ones.** The energy-RMS VAD + fixed 1.28s hangover → a *semantic* end-of-turn signal (kills the "paused mid-thought, got cut off" failure class). Sliding-window re-decode + LocalAgreement-2 → committed streaming tokens (no diffing guesswork). Endpoint latency 1.28s → ~500ms.
+**One service seam replaces six deleted modules.** The intended change is energy-RMS endpointing to semantic end-of-turn, and sliding-window revisions to committed tokens. The code contract is landed; the real endpoint behavior and latency target are not yet proven.
 
 ### The seam
 
-Stage A lives entirely behind `app/src/main/voice/`. The renderer capture (`recorder.ts` / `pcm-processor.js`) and the downstream `RollingTranscript` → IPC → LLM tiers are unchanged. Net-new is a Kyutai STT adapter (local server / websocket, GPU) implementing the same partial/final event shape the voice IPC already speaks (`voice:partial { text, stableUpTo }`, final on endpoint). `stableUpTo` becomes "all committed tokens" instead of "the LocalAgreement-frozen prefix" — the UI contract holds. Cost paid: GPU required (fine — demo target has one).
+Stage A lives entirely behind `app/src/main/voice/`. The renderer capture (`recorder.ts` / `pcm-processor.js`) and the downstream `RollingTranscript` → IPC → LLM tiers are unchanged. Net-new is a Kyutai STT service adapter implementing the same partial/final event shape the voice IPC already speaks (`voice:partial { text, stableUpTo }`, final on endpoint). `stableUpTo` becomes "all committed tokens" instead of "the LocalAgreement-frozen prefix" — the UI contract holds. If Stage A resumes, its GPU service must use an explicit remote-compute boundary; the desktop is not assumed to have an accelerator.
 
 Stage A is **one user surface**. B and C fork from it.
 
@@ -72,7 +72,7 @@ Our tiers are not a chatbot — they're a structured evaluation engine:
 
 That structure *is* the product's credibility. Any full-duplex move must preserve it. Four avenues, in order of how much they keep:
 
-1. **Cascade keeps it verbatim (= Stage B).** Unmute proves the text LLM is a swappable module (it runs GPT-OSS-120B in prod). Our entire Opus→Sonnet→reducer→Haiku pipeline drops in unchanged; we only upgrade STT/TTS. Zero reasoning loss. This is the "mimic = don't mimic, just keep it" answer.
+1. **Cascade keeps the role pipeline contract (= Stage B).** The design retains architect→evaluator→reducer→conversation while changing STT and TTS. Real service integration and provider behavior remain unverified.
 
 2. **Async evaluator sidecar (= the MoshiRAG pattern, core of Stage C).** Let the full-duplex model own the *conversational surface* (listen, backchannel, phrase, barge-in). Its **Inner Monologue** emits time-aligned text for free — feed that transcript to our Sonnet-scoring tier running **asynchronously in conversational gaps**, exactly as MoshiRAG fires retrieval in natural pauses and reaches factual parity with turn-based models. The reducer's chosen next action is injected back as steering/conditioning. Our current 15s cache-and-hope steering poll is a crude version of precisely this; MoshiRAG is the principled one.
 
@@ -104,39 +104,44 @@ Streaming STT + streaming TTS wrapping our exact tiers over a socket. LLM fires 
 
 ```mermaid
 flowchart LR
-  mic --> moshi["Moshi full-duplex<br/>two parallel audio streams<br/>always listens + always speaks<br/>160ms theo / 200ms practical"]
-  moshi <-->|Inner Monologue text| side["async evaluator sidecar<br/>Sonnet scoring + reducer<br/>fires in conversational gaps"]
-  side -->|next action as conditioning| moshi
-  moshi --> spk["speaker · barge-in native"]
+  subgraph desktop["normal local machine"]
+    mic["mic"] --> app["STARfolio session controller"]
+    app <-->|"transcript + next intent"| side["scoring · reducer · audit"]
+    app --> spk["speaker · barge-in native"]
+  end
+  subgraph worker["temporary AWS GPU worker"]
+    gateway["loopback gateway"] <-->|"session stream"| moshi["MoshiRAG"]
+  end
+  app <-->|"SSM port forward<br/>audio + selected context + conditioning"| gateway
   classDef new fill:#122a12,stroke:#3a3,color:#d5f5d5
   classDef bet fill:#2a2312,stroke:#aa3,color:#f5f0d5
   class moshi new
   class side bet
 ```
 
-True barge-in, overlap, backchannels, ~200ms. The tiered brain becomes an **async out-of-band scorer/steerer** over Moshi's Inner Monologue, MoshiRAG-style. Yellow node is the unproven-but-exciting part.
+Design target: barge-in, overlap, backchannels, and low conversational latency. The tiered brain becomes an **async out-of-band scorer/steerer** over Moshi's Inner Monologue, MoshiRAG-style. Live behavior and latency remain unverified under issue #312.
 
 ### Cost / benefit ledger
 
 | Dimension | Stage B — cascade | Stage C — native full-duplex |
 |---|---|---|
-| **Latency (end of speech → first audio)** | STT 500ms + tier round-trips + TTS start | ~200ms, no turn boundary |
-| **Barge-in / overlap / backchannel** | ❌ none (turn-gated) | ✅ native |
+| **Latency (end of speech → first audio)** | target: STT + tier round-trips + TTS start | target: low conversational latency; unverified |
+| **Barge-in / overlap / backchannel** | ❌ none (turn-gated) | target: native; unverified |
 | **Tiered reasoning** | ✅ **kept verbatim** (swappable LLM slot) | ⚠️ becomes async sidecar over Inner Monologue |
 | **Auditability / testable reducer** | ✅ full — we own every tier | ⚠️ live steering emergent; observer-scoring stays testable |
-| **Structured rubric scoring** | ✅ live, on the hot path | ✅ but async (in gaps) — parity shown by MoshiRAG |
+| **Structured rubric scoring** | ✅ live, on the hot path | async in gaps; STARfolio parity unverified |
 | **Controllability of exact wording** | ✅ Haiku phrases every line | ⚠️ Moshi phrases; we steer, don't script |
-| **Conversational naturalness** | good (streamed) | ✅ best — indistinguishable-from-human turn dynamics |
+| **Conversational naturalness** | streamed but turn-gated | target: more fluid; unverified |
 | **Build risk** | low–medium (evolution of today) | high (research-y; Avenue 2/4 unproven for us) |
 | **New infra** | STT server + TTS server | Moshi + Mimi runtime + sidecar bridge + steering-injection |
-| **Demo "wow"** | "it's fast and natural" | "it interrupts, gets interrupted, feels alive" |
+| **Demo evidence** | sustained service pass open | live interaction pass open in issue #312 |
 | **Failure mode if it goes wrong** | degrades to today's feel | model rambles off-rubric; harder to constrain |
 
 ### The decision, sharpened
 
-- **Stage B is the safe capture of ~90% of the perceived win** (streaming both ends) with **0% reasoning loss**. If the demo goal is "fast, natural, obviously better than the whisper build," B alone delivers it.
+- **Stage B targets streamed speech while preserving the auditable role contract.** Its real wire, latency, and perceived quality remain open measurements.
 - **Stage C is the bet that pays in *interaction realism*** — barge-in and overlap are things B literally cannot do. It costs the live, hot-path, fully-auditable rubric; MoshiRAG is the evidence that async-in-the-gaps recovers the factual/structured parity, but *for our specific rubric-scoring* that's unproven and is the research to actually do on the C branch.
-- Parallel-branch plan: land A, then **B branch = productionize the cascade**, **C branch = spike the MoshiRAG-style async sidecar** and measure whether async gap-scoring holds our coverage-dimension rigor. The go/no-go for C is that single measurement.
+- Current state: B's adapter and intent seams are partial; C's remote control plane landed in PRs #313–#315. C remains experimental until issue #312 measures live gap-scoring rigor and teardown.
 
 ---
 
@@ -144,8 +149,8 @@ True barge-in, overlap, backchannels, ~200ms. The tiered brain becomes an **asyn
 
 C does **not** replace B. Both live behind one seam, permanently:
 
-- **Cascade (B) is the flagship.** This ships on candidate laptops. **GPU-less is the majority install base forever** — that's the entry-level job-seeker. So the cascade is not a stepping-stone we throw away; it's the primary product tier and earns full polish + hardening.
-- **Native full-duplex (C) is an optional realism layer**, gated on a GPU. It's a *mode*, not the destination.
+- **Cascade (B) is the assessment path.** Its value is exact wording and a directly auditable transcript, not local GPU availability.
+- **Native full-duplex (C) is an optional realism layer** backed by temporary remote GPU compute. It is a mode, not the destination.
 
 There's a product reason C is a mode and not the goal, too: **AI-interrupts-candidate is destructive for entry-level assessment.** Nervous first-jobbers need think-time; an interviewer that barges in on a pause is indefensible as an *assessor*, however "alive" it feels. Candidate-interrupts-AI is mildly nice; AI-interrupts-candidate is a demo trick that damages the actual measurement. So B is the correct **assessment** model and C is a **"realism practice"** mode — framing them as hardware tiers undersells that B is the product.
 
@@ -169,6 +174,6 @@ This is the same "the model is a runtime-resolved slot, not a hardcode" principl
 ### Cheapest GPU-free de-risk (do it inside Stage B, on CPU, now)
 
 1. A **property-based conformance suite** at the seam that both mouths must pass (same intent sequence in → realization guarantees out).
-2. Cascade emits the **full canonical transcript format today** (overlap markers just empty), and we **test Sonnet against synthetic truncated/overlapped transcripts now** — proving the rubric brain survives duplex-shaped input *before any GPU exists*.
+2. Cascade emits the **full canonical transcript format today** (overlap markers just empty). Deterministic stub properties exercise truncated and overlapped input shape, totality, invariance, and score ranges. Provider rigor remains part of the assessment-validity and live comparison work.
 
-Verdict: **cascade is permanent — as the flagship, not a tier below C.** Polish B fully, buy the intent-level seam now for cheap, and spend zero on Moshi failover infrastructure until the async-scoring go/no-go (above) actually runs on a GPU. This is folded into [Stage 6d.2](../stages/stage-06d-cascade-streaming-tts.md#design--the-intent-seam-6d2).
+Verdict: **cascade is permanent as the auditable assessment path, not a tier below C.** Remote MoshiRAG remains experimental until the async-scoring and teardown gate runs on temporary GPU compute. This is folded into [Stage 6d.2](../stages/stage-06d-cascade-streaming-tts.md#design--the-intent-seam-6d2).

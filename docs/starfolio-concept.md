@@ -1,7 +1,7 @@
 # STARfolio — concept & user stories
 
 Working name (earlier: SuperSTAR). A private, single-user desktop app: your
-experience bank lives locally, with no account and no server to run. This is the
+experience bank lives locally, with no STARfolio account or managed backend to run. This is the
 concept and the intended user experience only; the tech stack, the internal
 architecture, and the exact stage breakdown are Fable's to choose. Build it in
 stages to a working MVP first, then extend it feature by feature, tracked against

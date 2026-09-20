@@ -13,15 +13,15 @@ Ordering logic: walking skeleton with all risk spikes first; then a lean design 
 | 4 | [Mode B: on-demand stories — **MVP**](stages/stage-04-stories-mvp.md) | JD/genre → grounded, provenance-linked STAR story; tag `v0.1` | ☑ |
 | 5 | [Mode A: live practice (text)](stages/stage-05-practice.md) | interviewer engine, feedback rubric, drill-downs, session history | ☑ |
 | 6 | [Voice](stages/stage-06-voice.md) | push-to-talk STT (core), TTS toggle | ☑ |
-| 6b | [Streaming voice (whisper)](stages/stage-06b-streaming-voice.md) | whisper sliding-window streaming + VAD; superseded by 6c | ◐ |
-| 6c | [Streaming-STT swap (Stage A)](stages/stage-06c-streaming-stt-swap.md) | Kyutai STT replaces the whisper streaming front end: committed tokens, semantic end-of-turn, ~500 ms; tiers unchanged | ☐ |
+| 6b | [Streaming voice (whisper)](stages/stage-06b-streaming-voice.md) | whisper sliding-window streaming + VAD; superseded by 6c | — |
+| 6c | [Streaming-STT swap (Stage A)](stages/stage-06c-streaming-stt-swap.md) | Kyutai seams and wiring landed; compute target, real wire, endpoint quality, and sustained mic pass remain | ◐ |
 | 6d | [Cascade streaming TTS (Stage B)](stages/stage-06d-cascade-streaming-tts.md) | Unmute-style cascade: streaming TTS, tiers verbatim, retire TTFT-guard/stall-watchdog; still turn-gated | ◐ |
-| 6e | [Native full-duplex (Stage C)](stages/stage-06e-native-full-duplex.md) | Moshi/MoshiRAG: barge-in/overlap ~200 ms, tiers as async gap-scoring sidecar; gated on the rubric-rigor spike | ☐ |
+| 6e | [Native full-duplex (Stage C)](stages/stage-06e-native-full-duplex.md) | Experimental remote MoshiRAG: local control/scoring with temporary AWS GPU speech compute; live rigor and teardown gate remains | ◐ |
 | 7 | [Narrative ingestion](stages/stage-07-narrative-ingestion.md) | files/resume/URLs → drafts with attached sources | ☑ |
 | 8 | [Evidence ingestion + knowledge graph](stages/stage-08-evidence-ingestion.md) | spreadsheets/code/repos; entities/edges layer | ☑ |
 | 9 | [Technical-interview layer (bonus)](stages/stage-09-technical-layer.md) | practice over your own reference corpus | ☑ |
 | 10 | [Written materials (bonus)](stages/stage-10-written-materials.md) | JD-tailored resume bullets + resume export | ☑ |
 | 11 | [Maintain, polish, distribute](stages/stage-11-maintain.md) | nudges, export/backup, updater, onboarding | ◐ |
-| 12 | [SOLID refactor sweep](stages/stage-12-solid-refactor.md) | 19 behavior-preserving PRs carving pure/injectable seams for node-testability | ◐ |
+| 12 | [SOLID refactor sweep](stages/stage-12-solid-refactor.md) | 19 behavior-preserving PRs carving pure/injectable seams for node-testability | ☑ |
 
-Status legend: ☐ not started · ◐ in progress · ☑ checkpoint passed. Mark stage status here; check off individual steps inside the stage file.
+Status legend: ☐ not started · ◐ in progress · ☑ checkpoint passed · — superseded. Mark stage status here; check off individual steps inside the stage file.
