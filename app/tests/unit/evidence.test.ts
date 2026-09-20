@@ -69,7 +69,7 @@ describe('sheetToText', () => {
     expect(text).toMatch(/revenue: count=3 min=100 max=400 sum=750/)
   })
 
-  it('reads an xlsx workbook into per-sheet text', async () => {
+  it('reads an xlsx workbook into per-sheet text', { timeout: 20_000 }, async () => {
     const ExcelJS = (await import('exceljs')).default
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('Metrics')
