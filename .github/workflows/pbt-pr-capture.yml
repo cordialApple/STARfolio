@@ -1,0 +1,183 @@
+name: PBT PR capture
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      PBT_SPOOL_DIR: ${{ runner.temp }}/starfolio-pbt/${{ github.run_id }}-${{ github.run_attempt }}
+      PBT_REPOSITORY_SHA: ${{ github.event.pull_request.head.sha }}
+      PBT_REPOSITORY_BRANCH: ${{ github.event.pull_request.head.ref }}
+      PBT_WORKFLOW: ${{ github.workflow }}
+      PBT_JOB: capture
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          path: candidate
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: trusted
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: trusted/app/package-lock.json
+
+      - name: Run candidate property tests
+        shell: bash
+        run: |
+          mkdir -p "$PBT_SPOOL_DIR"
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE/candidate:/candidate:ro" \
+            --volume "$PBT_SPOOL_DIR:/pbt" \
+            --env PBT_SPOOL_DIR=/pbt \
+            --env PBT_REPOSITORY_SHA \
+            --env PBT_REPOSITORY_BRANCH \
+            --env PBT_WORKFLOW \
+            --env PBT_JOB \
+            --env GITHUB_ACTIONS \
+            --env GITHUB_RUN_ID \
+            --env GITHUB_RUN_ATTEMPT \
+            --env GITHUB_WORKFLOW \
+            --env GITHUB_JOB \
+            --env CI \
+            node:22-bookworm \
+            bash -lc 'mkdir /work && cp -a /candidate/. /work/ && cd /work/app && npm ci && npm run test:unit -- pbt.test.ts'
+
+      - name: Install trusted capture code
+        if: always()
+        working-directory: trusted/app
+        run: npm ci
+
+      - name: Encrypt PBT observations
+        if: always()
+        working-directory: trusted/app
+        run: npm run pbt:stage
+        env:
+          PBT_RETENTION_MODE: encrypt
+          PBT_PUBLIC_KEY_PATH: ${{ github.workspace }}/trusted/.github/pbt-observation-public.pem
+          PBT_PUBLICATION_DIR: ${{ runner.temp }}/pbt-publication
+
+      - name: Upload encrypted PBT observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pbt-pr-observations-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/pbt-publication/${{ github.run_id }}-${{ github.run_attempt }}/manifest.json
+            ${{ runner.temp }}/pbt-publication/${{ github.run_id }}-${{ github.run_attempt }}/payload.enc
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+
+  validate:
+    needs: capture
+    if: always() && needs.capture.result != 'skipped'
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install trusted validation code
+        working-directory: app
+        run: npm ci
+
+      - name: Download encrypted cycle
+        uses: actions/download-artifact@v4
+        with:
+          name: pbt-pr-observations-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pbt-incoming
+
+      - name: Revalidate source cycle
+        working-directory: app
+        run: npm run pbt:stage
+        env:
+          PBT_RETENTION_MODE: validate
+          PBT_OBSERVATION_PRIVATE_KEYS: ${{ secrets.PBT_OBSERVATION_PRIVATE_KEYS }}
+          PBT_SPOOL_DIR: ${{ runner.temp }}/pbt-incoming
+          PBT_PUBLICATION_DIR: ${{ runner.temp }}/pbt-validated
+          PBT_RUN_ID: ${{ github.run_id }}
+          PBT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          PBT_REPOSITORY_SHA: ${{ github.event.pull_request.head.sha }}
+          PBT_REPOSITORY_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PBT_WORKFLOW: ${{ github.workflow }}
+          PBT_JOB: capture
+
+      - name: Transfer validated cycle
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-pbt-pr-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/pbt-validated/${{ github.run_id }}-${{ github.run_attempt }}/manifest.json
+            ${{ runner.temp }}/pbt-validated/${{ github.run_id }}-${{ github.run_attempt }}/payload.enc
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+  retain:
+    needs: validate
+    concurrency:
+      group: pbt-observation-retention
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install trusted retention code
+        working-directory: app
+        run: npm ci
+
+      - name: Download validated cycle
+        uses: actions/download-artifact@v4
+        with:
+          name: validated-pbt-pr-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pbt-validated
+
+      - name: Append durable cycle
+        working-directory: app
+        run: npm run pbt:retain
+        env:
+          GIT_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PBT_RETENTION_WORKSPACE: ${{ runner.temp }}/pbt-retention-workspace
+          PBT_RETENTION_REMOTE: https://github.com/${{ github.repository }}.git
+          PBT_VALIDATED_CYCLE_DIR: ${{ runner.temp }}/pbt-validated
+          PBT_RUN_ID: ${{ github.run_id }}
+          PBT_RUN_ATTEMPT: ${{ github.run_attempt }}

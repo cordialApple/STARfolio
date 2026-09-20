@@ -6,15 +6,26 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: windows-latest
+    env:
+      PBT_SPOOL_DIR: ${{ runner.temp }}/starfolio-pbt/${{ github.run_id }}-${{ github.run_attempt }}
+      PBT_REPOSITORY_SHA: ${{ github.sha }}
+      PBT_REPOSITORY_BRANCH: ${{ github.head_ref || github.ref_name }}
+      PBT_WORKFLOW: ${{ github.workflow }}
+      PBT_JOB: build-and-test
     defaults:
       run:
         working-directory: app
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -31,8 +42,33 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit and integration tests
+      - name: Unit and integration tests with PBT capture
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: npm run test:unit
+
+      - name: Unit and integration tests
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+        run: npm run test:unit -- --exclude '**/*.pbt.test.ts' --exclude '**/pbt.self.test.ts'
+
+      - name: Stage safe PBT observations
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm run pbt:stage
+        env:
+          PBT_RETENTION_MODE: encrypt
+          PBT_PUBLIC_KEY_PATH: ${{ github.workspace }}/.github/pbt-observation-public.pem
+          PBT_PUBLICATION_DIR: ${{ runner.temp }}/pbt-publication
+
+      - name: Upload PBT observations
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pbt-observations-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/pbt-publication/${{ github.run_id }}-${{ github.run_attempt }}/manifest.json
+            ${{ runner.temp }}/pbt-publication/${{ github.run_id }}-${{ github.run_attempt }}/payload.enc
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
 
       - name: Build unpackaged (rebuilds native for Electron, then packs)
         run: npm run build:unpack
