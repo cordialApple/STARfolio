@@ -1,9 +1,12 @@
 import { defineConfig } from 'vitest/config'
 import { resolve } from 'path'
 
+const isCi = process.env.CI === 'true'
+
 export default defineConfig({
   test: {
     environment: 'node',
+    maxWorkers: isCi ? 1 : undefined,
     include: [
       'src/**/*.{test,spec}.{ts,tsx}',
       'tests/unit/**/*.{test,spec}.{ts,tsx}',
