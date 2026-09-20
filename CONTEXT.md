@@ -1,14 +1,15 @@
 # CONTEXT.md
 
-_Last updated: 2026-09-20 07:04 · branch: docs/pbt-retention-handoff · session: PBT retention bootstrap_
+_Last updated: 2026-09-20 09:35 · branch: docs/pbt-observation-procedure · session: agent checkpoint validation_
 
 ## 1. What changed this session
 
-- PR #320 merged append-only PBT raw events, separate annotations, encrypted CI artifacts, and durable orphan-branch retention. Issue #319 is closed.
-- PR #322 merged runner UID/GID ownership for Docker-written PBT spools. Issue #321 is closed.
-- Main and stage retention are verified. Runs `35508941238` and `35509297694` retain cycles under `pbt-observations`.
-- Temporary branch `stage/pbt-retention-bootstrap` is deleted. Its retained manifest and payload remain available.
-- Observer choice changed from Luna to `gpt-5.6-sol` with low reasoning. Observer creation still waits on same-repository PR proof.
+- PRs #320, #322, and #324 established append-only PBT evidence, encrypted CI transport, durable `pbt-observations` retention, and the retention handoff.
+- PR #327 closed issue #326 with pre-command step journals, per-step spools, agent provenance, encrypted local publication, atomic receipts, recovery, and failure-to-fix lifecycle tests.
+- PR #329 closed issue #328 after the first real Windows invocation exposed `spawn npm ENOENT`. Windows now launches the active npm CLI through Node without a shell.
+- Same-repository PR capture, trusted validation, and durable retention passed for PRs #327 and #329.
+- The first real local agent cycle retained 90 unique events across 45 complete campaigns. It recorded 9,000 requested and executed cases, zero failures, and zero diagnostics.
+- Issues #330 and #331 track PID-reuse-safe orphan ownership and same-checkpoint concurrent publication reuse.
 
 ## 2. Decisions made and why
 
@@ -17,24 +18,26 @@ _Last updated: 2026-09-20 07:04 · branch: docs/pbt-retention-handoff · session
 - Development uses issue-first slices, human branch names, one-line Conventional Commits, short PR statements, focused tests, inspection, adjudication, and squash merge.
 - PBT capture records facts only. Raw events never change; corrections, duplicate links, classifications, and dispositions append separately.
 - Organic, mutation, and sabotage observations stay separate. Capture produces no dashboard, aggregate metric, yield estimate, or conclusion.
-- Sol observes retained data only. Deterministic code and CI remain solely responsible for capture and preservation.
+- Observation is an invoked read-only procedure, not scheduled automation. Sol may be used later for the analysis stage, but deterministic code remains solely responsible for capture and preservation.
 
 ## 3. What was tested and how
 
-- PR #322 passed hosted lint, typecheck, unit/integration, production packaging, packaged Electron E2E, and AWS checks.
-- Main CI run `35508941238` uploaded an encrypted artifact. Retention run `35509263433` validated and durably appended it.
-- Stage CI run `35508962520` passed lint, typecheck, unit/integration, production packaging, and packaged Electron E2E.
-- Stage PBT run `35509297694` passed candidate property tests, encryption, artifact upload, decryption, schema revalidation, and durable append.
-- GitHub API confirmed encrypted artifact `pbt-stage-observations-35509297694-1` and retained `manifest.json` plus `payload.enc`.
-- Deleting `stage/pbt-retention-bootstrap` did not remove retained cycle `35509297694/1`.
+- PR #327 passed hosted build/test, gateway/lifecycle, encrypted capture, trusted validation, and durable retain. PBT run `35515454155` completed the capture-to-retention path.
+- PR #329 passed the same gates. PBT run `35516369874` retained the Windows-launcher regression branch.
+- Local serial validation passed 983 tests with one skipped before PR #327.
+- The real command `npm run pbt:checkpoint -- npm run test:unit -- pbt.test.ts --maxWorkers=1` passed 51 tests across 11 PBT files.
+- Retained cycle `agent-8c6b8db391f5baf7acc64665a23ecb68` reopened with 45 starts, 45 matching completions, 90 unique event IDs, 9,000 executed cases, no failures, no annotations, and no diagnostics.
+- That cycle kept 42 organic campaigns separate from 3 sabotage campaigns and recorded matching before/after worktree-state hashes.
 
 ## 4. Files needing attention
 
-- `.github/workflows/pbt-pr-capture.yml` needs one successful same-repository PR capture, validation, and durable append on fixed `main`.
+- `docs/pbt-observation-procedure.md` defines the read-only review contract. Its external cursor and append-only observer ledger are intentionally not implemented; later data engineering owns them.
+- Issue #330 should bind step ownership to process-start identity or lease expiry.
+- Issue #331 should reuse winning ciphertext or serialize concurrent publication of the same checkpoint.
 - `docs/plans/pbt-in-ci.md` remains the retention and privacy contract. PR/push budgets and rotating seeds remain later work.
 - `docs/stages/stage-06e-native-full-duplex.md` still needs issue #312 live GPU and teardown evidence.
 - `docs/personalserver-config-handshake.md` still needs external PersonalServer reader confirmation for the shipped config shape.
 
 ## 5. Next step
 
-Open issue #323's same-repository docs PR and verify its encrypted PBT cycle is retained before creating the read-only Sol observer.
+Continue the next issue-first development slice. Run property tests through `pbt:checkpoint` before and after fixes, then invoke the read-only observation procedure when a retained delta needs review. Keep README free of yield claims until the user completes the later analysis stage.
