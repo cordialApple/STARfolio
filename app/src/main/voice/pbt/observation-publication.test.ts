@@ -13,7 +13,7 @@ import { join } from 'path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { hashCanonicalValue, stringifyCanonical, toTaggedValue } from './observation-canonical'
 import type { RawObservation } from './observation-schema'
-import { appendRawObservation } from './observation-store'
+import { appendAnnotation, appendRawObservation } from './observation-store'
 import {
   decryptAndValidateObservationCycle,
   decryptObservationCycle,
@@ -75,7 +75,7 @@ function makeEvent(overrides: Partial<RawObservation> = {}): RawObservation {
 
 function decryptTestPayload(
   payload: Buffer,
-  manifest: ReturnType<typeof encryptObservationCycle>['manifest'],
+  manifest: { encryption: ReturnType<typeof encryptObservationCycle>['manifest']['encryption'] },
   privateKey: string
 ): Array<{ path: string; bytes: string }> {
   const contentKey = privateDecrypt(
@@ -230,6 +230,197 @@ describe('PBT observation publication', () => {
         privateKeys: { ['f'.repeat(64)]: privateKey }
       })
     ).toThrow(/key/i)
+  })
+
+  it('validates a version 2 campaign under local agent authority', () => {
+    const agent = {
+      runId: 'agent-run-1',
+      stepId: 'step-1',
+      worktreeState: 'dirty' as const,
+      worktreeStateHash: 'b'.repeat(64)
+    }
+    const repository = {
+      sha: 'c'.repeat(40),
+      branch: 'feat/pbt-agent-checkpoints',
+      worktree: 'C:/worktree'
+    }
+    const ci = {
+      provider: null,
+      runId: null,
+      runAttempt: null,
+      workflow: null,
+      job: null
+    }
+    const start = makeEvent({ schemaVersion: 2, agent, repository, ci })
+    const complete = makeEvent({
+      schemaVersion: 2,
+      agent,
+      repository,
+      ci,
+      eventKind: 'campaign-completed',
+      executedRuns: 200,
+      generatedCases: 200,
+      skippedCases: 0,
+      terminationStatus: 'passed',
+      summary: {
+        requestedRuns: 200,
+        executedRuns: 200,
+        generatedCases: 200,
+        skippedCases: 0,
+        failureCount: 0
+      }
+    })
+    appendRawObservation(sourceRoot, start)
+    appendRawObservation(sourceRoot, complete)
+    const encrypted = encrypt()
+    const trusted = decryptAndValidateObservationCycle({
+      sourceRoot: encrypted.cyclePath,
+      destinationRoot: trustedRoot,
+      privateKeys: {
+        [sha256(createPublicKey(privateKey).export({ type: 'spki', format: 'der' }))]: privateKey
+      },
+      runId: '101',
+      runAttempt: '2',
+      repositorySha: repository.sha,
+      repositoryBranch: repository.branch,
+      workflow: null,
+      job: null,
+      authority: {
+        kind: 'local-agent',
+        runId: agent.runId,
+        stepId: agent.stepId,
+        worktreeStateHash: agent.worktreeStateHash,
+        completedWorktreeStateHash: agent.worktreeStateHash,
+        worktreeChanged: false
+      }
+    })
+
+    expect(trusted.manifest).toMatchObject({
+      schemaVersion: 2,
+      authority: {
+        kind: 'local-agent',
+        runId: agent.runId,
+        stepId: agent.stepId,
+        worktreeStateHash: agent.worktreeStateHash,
+        completedWorktreeStateHash: agent.worktreeStateHash,
+        worktreeChanged: false
+      },
+      rawEventIds: [start.eventId, complete.eventId].sort()
+    })
+    expect(
+      decryptObservationCycle({
+        sourceRoot: trusted.cyclePath,
+        privateKeys: {
+          [trusted.manifest.encryption.keyId]: privateKey
+        }
+      }).manifest
+    ).toEqual(trusted.manifest)
+  })
+
+  it.each([
+    { completedWorktreeStateHash: null, worktreeChanged: false },
+    { completedWorktreeStateHash: 'd'.repeat(64), worktreeChanged: false },
+    { completedWorktreeStateHash: 'b'.repeat(64), worktreeChanged: true }
+  ])(
+    'rejects contradictory local agent authority %#',
+    ({ completedWorktreeStateHash, worktreeChanged }) => {
+      appendRawObservation(sourceRoot, makeEvent())
+      const encrypted = encrypt()
+
+      expect(() =>
+        decryptAndValidateObservationCycle({
+          sourceRoot: encrypted.cyclePath,
+          destinationRoot: trustedRoot,
+          privateKeys: {
+            [sha256(createPublicKey(privateKey).export({ type: 'spki', format: 'der' }))]:
+              privateKey
+          },
+          runId: '101',
+          runAttempt: '2',
+          repositorySha: 'a'.repeat(40),
+          repositoryBranch: 'main',
+          workflow: null,
+          job: null,
+          authority: {
+            kind: 'local-agent',
+            runId: 'agent-run-1',
+            stepId: 'step-1',
+            worktreeStateHash: 'b'.repeat(64),
+            completedWorktreeStateHash,
+            worktreeChanged
+          }
+        })
+      ).toThrow(/authority/i)
+    }
+  )
+
+  it('quarantines both evidence layers when worktree identity changes', () => {
+    const agent = {
+      runId: 'agent-run-1',
+      stepId: 'step-1',
+      worktreeState: 'dirty' as const,
+      worktreeStateHash: 'b'.repeat(64)
+    }
+    const repository = {
+      sha: 'c'.repeat(40),
+      branch: 'feat/pbt-agent-checkpoints',
+      worktree: 'C:/worktree'
+    }
+    const event = makeEvent({
+      schemaVersion: 2,
+      agent,
+      repository,
+      ci: { provider: null, runId: null, runAttempt: null, workflow: null, job: null }
+    })
+    appendRawObservation(sourceRoot, event)
+    const annotationId = randomUUID()
+    appendAnnotation(sourceRoot, {
+      schemaVersion: 1,
+      annotationId,
+      targetEventId: event.eventId,
+      recordedAt: '2026-09-19T12:01:00.000Z',
+      author: { kind: 'agent', id: agent.runId },
+      publicationClass: 'synthetic',
+      annotationKind: 'disposition',
+      disposition: 'unresolved',
+      duplicateOfEventId: null,
+      evidence: null,
+      note: null
+    })
+    const encrypted = encrypt()
+    const trusted = decryptAndValidateObservationCycle({
+      sourceRoot: encrypted.cyclePath,
+      destinationRoot: trustedRoot,
+      privateKeys: {
+        [sha256(createPublicKey(privateKey).export({ type: 'spki', format: 'der' }))]: privateKey
+      },
+      runId: '101',
+      runAttempt: '2',
+      repositorySha: repository.sha,
+      repositoryBranch: repository.branch,
+      workflow: null,
+      job: null,
+      authority: {
+        kind: 'local-agent',
+        runId: agent.runId,
+        stepId: agent.stepId,
+        worktreeStateHash: agent.worktreeStateHash,
+        completedWorktreeStateHash: 'd'.repeat(64),
+        worktreeChanged: true
+      }
+    })
+
+    expect(trusted.manifest.rawEventIds).toEqual([])
+    expect(trusted.manifest.annotationIds).toEqual([])
+    expect(trusted.manifest.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          layer: 'annotations',
+          reasonCategory: 'invalid-provenance',
+          issueCodes: ['worktree-changed-during-command']
+        })
+      ])
+    )
   })
 
   it('rejects ciphertext tampering', () => {
