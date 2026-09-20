@@ -1,43 +1,40 @@
 # CONTEXT.md
 
-_Last updated: 2026-09-20 01:58 · branch: feat/pbt-observation-store · session: PBT observation preservation_
+_Last updated: 2026-09-20 07:04 · branch: docs/pbt-retention-handoff · session: PBT retention bootstrap_
 
 ## 1. What changed this session
 
-- PRs #313, #314, and #315 split and merged recorder integrity, temporary AWS GPU compute, and the default-off remote interview path.
-- PR #317 stabilizes cold-start extractor tests with CI-only serialization and a scoped XLSX timeout.
-- Project docs now state that STARfolio and durable data stay on a normal local machine while MoshiRAG alone uses temporary AWS GPU compute.
-- Roadmap, stage status, provider routing, privacy egress, CI direction, PersonalServer status, and Git conventions are reconciled.
-- Superseded worktrees and branches are gone. Current worktrees are clean `main` plus the issue #319 feature branch.
-- Issue #319 adds append-only PBT raw events, separate annotations, encrypted CI artifact upload, and trusted same-repository cycle retention.
+- PR #320 merged append-only PBT raw events, separate annotations, encrypted CI artifacts, and durable orphan-branch retention. Issue #319 is closed.
+- PR #322 merged runner UID/GID ownership for Docker-written PBT spools. Issue #321 is closed.
+- Main and stage retention are verified. Runs `35508941238` and `35509297694` retain cycles under `pbt-observations`.
+- Temporary branch `stage/pbt-retention-bootstrap` is deleted. Its retained manifest and payload remain available.
+- Observer choice changed from Luna to `gpt-5.6-sol` with low reasoning. Observer creation still waits on same-repository PR proof.
 
 ## 2. Decisions made and why
 
-- AWS is compute, not a STARfolio backend. No local GPU is assumed, while storage, retrieval, planning, scoring, reducer state, reports, and audit remain local.
-- Live GPU quality is a separate evidence gate. Fixture CI proves contracts and lifecycle, not model fit, transcript quality, latency, rigor, or real teardown.
-- Money estimates do not drive the roadmap. Budget policy can be configured operationally later.
-- Development uses issue-first slices, human branch names, one-line Conventional Commits, short PR statements, focused tests, simplification, inspection, adjudication, and squash merge.
-- PBT capture records facts only. Raw events never change; later corrections, duplicate links, classifications, and dispositions append separately.
+- AWS supplies temporary GPU compute for MoshiRAG only. STARfolio, durable data, retrieval, planning, scoring, reports, and audit stay on a normal local machine.
+- Money estimates do not drive development. CloudWatch budget policy can be configured later.
+- Development uses issue-first slices, human branch names, one-line Conventional Commits, short PR statements, focused tests, inspection, adjudication, and squash merge.
+- PBT capture records facts only. Raw events never change; corrections, duplicate links, classifications, and dispositions append separately.
 - Organic, mutation, and sabotage observations stay separate. Capture produces no dashboard, aggregate metric, yield estimate, or conclusion.
+- Sol observes retained data only. Deterministic code and CI remain solely responsible for capture and preservation.
 
 ## 3. What was tested and how
 
-- Remote interview PR #315 passed hosted lint, typecheck, 878 unit/integration tests, production package, and full packaged Electron E2E. PR #317 fixed its repeated extractor timeout.
-- CI stability PR #317 passed two local CI-mode suites, focused config/extractor tests, lint, typecheck, hosted unit/integration, production package, packaged Electron E2E, and post-merge `main` CI.
-- AWS worker PR #314 passed source/build contract, gateway integration, lifecycle unit, shell, CloudFormation, and bundle gates in hosted CI.
-- Documentation branch passed `git diff --check`, local-link resolution, and stale-status scans before review.
-- PBT recorder slice keeps 45 calls across 11 files. Focused gates cover schema, semantic quarantine, harness capture, encrypted publication, durable reopen, key selection, concurrent branch append, and trusted workflow contracts.
-- Final local gates pass lint, node/web typecheck, 953 unit/integration tests with 1 skip, production packaging, and 35 packaged Electron E2E tests. The exact captured PBT command passes 51 tests and produces 90 start/completion events.
-- The generated repository key pair encrypted, validated, and reopened a synthetic 90-entry cycle. Trusted manifests rely on the trusted GitHub job and branch history; they are not independently signed.
+- PR #322 passed hosted lint, typecheck, unit/integration, production packaging, packaged Electron E2E, and AWS checks.
+- Main CI run `35508941238` uploaded an encrypted artifact. Retention run `35509263433` validated and durably appended it.
+- Stage CI run `35508962520` passed lint, typecheck, unit/integration, production packaging, and packaged Electron E2E.
+- Stage PBT run `35509297694` passed candidate property tests, encryption, artifact upload, decryption, schema revalidation, and durable append.
+- GitHub API confirmed encrypted artifact `pbt-stage-observations-35509297694-1` and retained `manifest.json` plus `payload.enc`.
+- Deleting `stage/pbt-retention-bootstrap` did not remove retained cycle `35509297694/1`.
 
 ## 4. Files needing attention
 
-- `docs/roadmap.md` is the forward source of truth for broad active directions.
+- `.github/workflows/pbt-pr-capture.yml` needs one successful same-repository PR capture, validation, and durable append on fixed `main`.
+- `docs/plans/pbt-in-ci.md` remains the retention and privacy contract. PR/push budgets and rotating seeds remain later work.
 - `docs/stages/stage-06e-native-full-duplex.md` still needs issue #312 live GPU and teardown evidence.
-- `docs/plans/pbt-in-ci.md` now defines append-only capture, retention, privacy, and analysis boundaries. PR/push budgets and rotating seeds remain later work.
-- `.github/workflows/pbt-pr-capture.yml` isolates candidate PBT in Docker, then encrypts, validates, and retains same-repository PR evidence with trusted `main` code. `.github/workflows/pbt-retention.yml` retains `main` cycles, while `.github/workflows/pbt-stage-capture.yml` captures and retains `stage/**` cycles. The keyring secret still needs explicit upload approval. After merge, verify retained and reopenable cycles for all three paths before enabling Luna.
 - `docs/personalserver-config-handshake.md` still needs external PersonalServer reader confirmation for the shipped config shape.
 
 ## 5. Next step
 
-Finish issue #319 through hosted CI, then verify retained and reopenable `main`, same-repository PR, and `stage/**` cycles. Create the read-only Luna observer only after those bootstrap checks. Resume issue #312 afterward.
+Open issue #323's same-repository docs PR and verify its encrypted PBT cycle is retained before creating the read-only Sol observer.
