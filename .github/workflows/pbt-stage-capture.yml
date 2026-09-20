@@ -16,7 +16,6 @@ jobs:
       startsWith(github.event.workflow_run.head_branch, 'stage/')
     runs-on: ubuntu-latest
     env:
-      PBT_SPOOL_DIR: ${{ runner.temp }}/starfolio-pbt/${{ github.run_id }}-${{ github.run_attempt }}
       PBT_REPOSITORY_SHA: ${{ github.event.workflow_run.head_sha }}
       PBT_REPOSITORY_BRANCH: ${{ github.event.workflow_run.head_branch }}
       PBT_WORKFLOW: ${{ github.workflow }}
@@ -43,6 +42,8 @@ jobs:
 
       - name: Run candidate property tests
         shell: bash
+        env:
+          PBT_SPOOL_DIR: ${{ runner.temp }}/starfolio-pbt/${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir -p "$PBT_SPOOL_DIR"
           docker run --rm \
@@ -72,6 +73,7 @@ jobs:
         working-directory: trusted/app
         run: npm run pbt:stage
         env:
+          PBT_SPOOL_DIR: ${{ runner.temp }}/starfolio-pbt/${{ github.run_id }}-${{ github.run_attempt }}
           PBT_RETENTION_MODE: encrypt
           PBT_PUBLIC_KEY_PATH: ${{ github.workspace }}/trusted/.github/pbt-observation-public.pem
           PBT_PUBLICATION_DIR: ${{ runner.temp }}/pbt-publication

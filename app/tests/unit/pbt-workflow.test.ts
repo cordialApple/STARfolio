@@ -26,6 +26,10 @@ function expectEncryptedArtifact(workflow: string, name: string): void {
   expect(workflow).toContain('retention-days: 90')
 }
 
+function expectRunnerContextOnlyInSteps(workflow: string): void {
+  expect(workflow).not.toMatch(/^ {6}\S.*\$\{\{ runner\.temp \}\}/m)
+}
+
 function expectCleanRetentionPipeline(workflow: string, needsCapture = false): void {
   const validate = readJob(workflow, 'validate', 'retain')
   const retain = readJob(workflow, 'retain')
@@ -55,6 +59,7 @@ describe('PBT CI retention workflows', () => {
   it('uploads encrypted main CI cycles and exposes no private key', () => {
     const workflow = readWorkflow('ci.yml')
 
+    expectRunnerContextOnlyInSteps(workflow)
     expect(workflow).toContain("branches: [main, 'stage/**']")
     expect(workflow).toContain('permissions:\n  contents: read')
     expect(workflow).toContain(
@@ -81,6 +86,7 @@ describe('PBT CI retention workflows', () => {
     const capture = readJob(workflow, 'capture', 'validate')
     const validate = readJob(workflow, 'validate', 'retain')
 
+    expectRunnerContextOnlyInSteps(workflow)
     expect(workflow).toContain('pull_request_target:')
     expect(capture).toContain('github.event.pull_request.head.repo.full_name == github.repository')
     expect(capture).toContain('ref: ${{ github.event.pull_request.head.sha }}')
@@ -107,6 +113,7 @@ describe('PBT CI retention workflows', () => {
   it('retains only trusted main CI push cycles from workflow_run', () => {
     const workflow = readWorkflow('pbt-retention.yml')
 
+    expectRunnerContextOnlyInSteps(workflow)
     expect(workflow).toContain('workflows: [CI]')
     expect(workflow).toContain("github.event.workflow_run.event == 'push'")
     expect(workflow).toContain("github.event.workflow_run.head_branch == 'main'")
@@ -128,6 +135,7 @@ describe('PBT CI retention workflows', () => {
     const capture = readJob(workflow, 'capture', 'validate')
     const validate = readJob(workflow, 'validate', 'retain')
 
+    expectRunnerContextOnlyInSteps(workflow)
     expect(workflow).toContain('workflow_run:')
     expect(workflow).toContain('workflows: [CI]')
     expect(capture).toContain("github.event.workflow_run.event == 'push'")

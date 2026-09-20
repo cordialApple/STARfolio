@@ -13,7 +13,6 @@ jobs:
   build-and-test:
     runs-on: windows-latest
     env:
-      PBT_SPOOL_DIR: ${{ runner.temp }}/starfolio-pbt/${{ github.run_id }}-${{ github.run_attempt }}
       PBT_REPOSITORY_SHA: ${{ github.sha }}
       PBT_REPOSITORY_BRANCH: ${{ github.head_ref || github.ref_name }}
       PBT_WORKFLOW: ${{ github.workflow }}
@@ -45,6 +44,8 @@ jobs:
       - name: Unit and integration tests with PBT capture
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: npm run test:unit
+        env:
+          PBT_SPOOL_DIR: ${{ runner.temp }}/starfolio-pbt/${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Unit and integration tests
         if: github.event_name != 'push' || github.ref != 'refs/heads/main'
@@ -54,6 +55,7 @@ jobs:
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: npm run pbt:stage
         env:
+          PBT_SPOOL_DIR: ${{ runner.temp }}/starfolio-pbt/${{ github.run_id }}-${{ github.run_attempt }}
           PBT_RETENTION_MODE: encrypt
           PBT_PUBLIC_KEY_PATH: ${{ github.workspace }}/.github/pbt-observation-public.pem
           PBT_PUBLICATION_DIR: ${{ runner.temp }}/pbt-publication
