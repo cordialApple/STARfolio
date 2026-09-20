@@ -9,9 +9,10 @@ Capture stays deterministic. Model review remains downstream and optional.
 
 ## Contract
 
-- A command wrapper hashes the tracked and untracked worktree state before it starts a test command.
+- A command wrapper hashes the tracked and untracked worktree state before and after a test command.
 - Version 2 raw events record the agent run ID, command step ID, and worktree state hash. Missing values stay `null`.
 - Version 1 events remain readable.
+- A pre-command journal and step spool preserve bytes across interruption.
 - After the command exits, the wrapper snapshots only files not present in its durable local cursor.
 - Exact raw, annotation, malformed, and partial bytes enter the encrypted checkpoint.
 - The checkpoint is decrypted and validated before durable append.

@@ -107,6 +107,13 @@ The durable manifest can be reopened directly with the private-key keyring. Reop
 ciphertext, selects the key by ID, decrypts the exact payload, and checks the trusted manifest against
 the decrypted evidence.
 
+Agent development uses a separate on-demand checkpoint procedure. The wrapper records one worktree
+identity before and after each property-test command, publishes unseen exact step-spool bytes,
+verifies the durable remote cycle, then advances append-only local receipts. Pre-command journals
+recover interrupted steps under their original authority. Worktree drift preserves encrypted bytes
+but excludes them from trusted IDs. This preserves pre-commit failures before an agent fixes them. See
+[PBT agent checkpoints](../pbt-agent-checkpoints.md).
+
 The trusted manifest is not independently signed. Its provenance relies on the trusted validation
 job, GitHub artifact transfer, and repository branch history. Add separate attestation before using
 retained cycles outside that boundary.
