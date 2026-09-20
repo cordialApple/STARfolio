@@ -12,6 +12,7 @@ export interface AppendDurableObservationCycleOptions {
   attempts?: number
   retryDelayMs?: number
   beforePush?: (attempt: number) => Promise<void>
+  afterPush?: (attempt: number) => Promise<void>
 }
 
 function assertSegment(label: string, value: string): void {
@@ -24,6 +25,15 @@ function git(cwd: string, args: string[]): string {
 
 function tryGit(cwd: string, args: string[]): boolean {
   return spawnSync('git', args, { cwd, stdio: 'ignore' }).status === 0
+}
+
+function remoteContainsLocalCommit(cwd: string): boolean {
+  const remoteRef = 'refs/remotes/origin/pbt-observations'
+  return (
+    tryGit(cwd, ['fetch', 'origin', `+refs/heads/pbt-observations:${remoteRef}`]) &&
+    tryGit(cwd, ['show-ref', '--verify', '--quiet', remoteRef]) &&
+    tryGit(cwd, ['merge-base', '--is-ancestor', 'HEAD', remoteRef])
+  )
 }
 
 function listFiles(root: string, prefix = ''): string[] {
@@ -111,7 +121,9 @@ export async function appendDurableObservationCycle(
       if (existsSync(target)) {
         if (!directoriesEqual(target, options.cycleDirectory))
           throw new Error(`PBT cycle ${options.runId}-${options.runAttempt} already differs`)
-        return
+        if (remoteContainsLocalCommit(repository)) return
+        lastError = new Error('PBT durable cycle verification failed')
+        continue
       }
       mkdirSync(dirname(target), { recursive: true })
       cpSync(options.cycleDirectory, target, { recursive: true, errorOnExist: true })
@@ -126,7 +138,12 @@ export async function appendDurableObservationCycle(
         `chore(pbt): retain cycle ${options.runId}-${options.runAttempt}`
       ])
       await options.beforePush?.(attempt)
-      if (tryGit(repository, ['push', 'origin', 'HEAD:pbt-observations'])) return
+      if (tryGit(repository, ['push', 'origin', 'HEAD:pbt-observations'])) {
+        await options.afterPush?.(attempt)
+        if (remoteContainsLocalCommit(repository)) return
+        lastError = new Error('PBT durable cycle verification failed')
+        continue
+      }
       lastError = new Error('PBT durable cycle push failed')
     } catch (error) {
       lastError = error

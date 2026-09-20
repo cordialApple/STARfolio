@@ -117,4 +117,42 @@ describe('PBT durable cycle append', () => {
       )
     ).toBe('{"cycleId":"202-1"}\n')
   }, 15_000)
+
+  it('verifies the remote branch before reporting durable success', async () => {
+    const remote = join(root, 'remote.git')
+    const cycle = join(root, 'cycle-verified')
+    mkdirSync(cycle)
+    writeFileSync(join(cycle, 'manifest.json'), '{"cycleId":"verified-1"}\n')
+    writeFileSync(join(cycle, 'payload.enc'), Buffer.from([4, 5, 6]))
+    execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' })
+    let disruptions = 0
+
+    await appendDurableObservationCycle({
+      workspaceRoot: join(root, 'work-verified'),
+      remoteUrl: remote,
+      cycleDirectory: cycle,
+      runId: 'verified',
+      runAttempt: '1',
+      attempts: 3,
+      retryDelayMs: 0,
+      afterPush: async (attempt) => {
+        if (attempt !== 1) return
+        disruptions += 1
+        execFileSync(
+          'git',
+          ['--git-dir', remote, 'update-ref', '-d', 'refs/heads/pbt-observations'],
+          { stdio: 'ignore' }
+        )
+      }
+    })
+
+    expect(disruptions).toBe(1)
+    expect(
+      execFileSync(
+        'git',
+        ['--git-dir', remote, 'show', 'pbt-observations:cycles/verified/1/manifest.json'],
+        { encoding: 'utf8' }
+      )
+    ).toBe('{"cycleId":"verified-1"}\n')
+  })
 })

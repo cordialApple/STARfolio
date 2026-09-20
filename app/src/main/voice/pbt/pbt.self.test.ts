@@ -67,6 +67,52 @@ describe('pbt harness self-test', () => {
     })
   })
 
+  it('records one command-boundary provenance snapshot for a campaign', () => {
+    const names = [
+      'PBT_AGENT_RUN_ID',
+      'PBT_AGENT_STEP_ID',
+      'PBT_WORKTREE_STATE',
+      'PBT_WORKTREE_STATE_HASH'
+    ] as const
+    const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]))
+    process.env.PBT_AGENT_RUN_ID = 'agent-run-1'
+    process.env.PBT_AGENT_STEP_ID = 'step-1'
+    process.env.PBT_WORKTREE_STATE = 'dirty'
+    process.env.PBT_WORKTREE_STATE_HASH = 'a'.repeat(64)
+
+    try {
+      runProperty(metadata(), fc.integer(), () => true, {
+        runs: 2,
+        seed: 12,
+        observationRoot: root
+      })
+    } finally {
+      for (const name of names) {
+        const value = previous[name]
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+
+    const events = readObservationStore(root).rawEvents
+    expect(events).toHaveLength(2)
+    expect(events.every((event) => event.schemaVersion === 2)).toBe(true)
+    expect(events.map((event) => event.agent)).toEqual([
+      {
+        runId: 'agent-run-1',
+        stepId: 'step-1',
+        worktreeState: 'dirty',
+        worktreeStateHash: 'a'.repeat(64)
+      },
+      {
+        runId: 'agent-run-1',
+        stepId: 'step-1',
+        worktreeState: 'dirty',
+        worktreeStateHash: 'a'.repeat(64)
+      }
+    ])
+  })
+
   it('keeps repeated failures with stable fingerprints and unique occurrence ids', () => {
     const run = (): void =>
       runProperty(metadata(), fc.integer({ min: 1, max: 100 }), (value) => value < 0, {

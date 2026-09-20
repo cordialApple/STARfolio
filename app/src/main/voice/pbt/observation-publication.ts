@@ -91,25 +91,64 @@ const publicManifestSchema = z
   })
   .strict()
 
-const trustedManifestSchema = z
+const trustedManifestFields = {
+  cycleId: z.string(),
+  createdAt: z.string().datetime(),
+  runId: z.string(),
+  runAttempt: z.string(),
+  repositorySha: z.string().nullable(),
+  repositoryBranch: z.string().nullable(),
+  workflow: z.string().nullable(),
+  job: z.string().nullable(),
+  encryption: encryptionSchema,
+  payload: payloadReferenceSchema,
+  rawEventIds: z.array(z.string().uuid()),
+  annotationIds: z.array(z.string().uuid()),
+  stuckCampaignIds: z.array(z.string().uuid()),
+  diagnostics: z.array(diagnosticSchema)
+}
+
+function hasChangedWorktree(authority: {
+  worktreeStateHash: string
+  completedWorktreeStateHash: string | null
+}): boolean {
+  return (
+    authority.completedWorktreeStateHash === null ||
+    authority.completedWorktreeStateHash !== authority.worktreeStateHash
+  )
+}
+
+const localAgentAuthoritySchema = z
   .object({
-    schemaVersion: z.literal(1),
-    cycleId: z.string(),
-    createdAt: z.string().datetime(),
-    runId: z.string(),
-    runAttempt: z.string(),
-    repositorySha: z.string().nullable(),
-    repositoryBranch: z.string().nullable(),
-    workflow: z.string().nullable(),
-    job: z.string().nullable(),
-    encryption: encryptionSchema,
-    payload: payloadReferenceSchema,
-    rawEventIds: z.array(z.string().uuid()),
-    annotationIds: z.array(z.string().uuid()),
-    stuckCampaignIds: z.array(z.string().uuid()),
-    diagnostics: z.array(diagnosticSchema)
+    kind: z.literal('local-agent'),
+    runId: z.string().min(1),
+    stepId: z.string().min(1),
+    worktreeStateHash: z.string().regex(SHA256),
+    completedWorktreeStateHash: z.string().regex(SHA256).nullable(),
+    worktreeChanged: z.boolean()
   })
   .strict()
+  .superRefine((authority, context) => {
+    if (authority.worktreeChanged !== hasChangedWorktree(authority))
+      context.addIssue({
+        code: 'custom',
+        message: 'Local agent authority worktree state is contradictory'
+      })
+  })
+
+const trustedManifestV1Schema = z
+  .object({ schemaVersion: z.literal(1), ...trustedManifestFields })
+  .strict()
+
+const trustedManifestV2Schema = z
+  .object({
+    schemaVersion: z.literal(2),
+    ...trustedManifestFields,
+    authority: localAgentAuthoritySchema
+  })
+  .strict()
+
+const trustedManifestSchema = z.union([trustedManifestV1Schema, trustedManifestV2Schema])
 
 const payloadSchema = z
   .object({
@@ -150,6 +189,7 @@ export interface DecryptObservationCycleOptions extends CycleIdentity {
   repositoryBranch: string | null
   workflow: string | null
   job: string | null
+  authority?: { kind: 'github-actions' } | z.infer<typeof localAgentAuthoritySchema>
   maxFiles?: number
   maxBytes?: number
 }
@@ -178,6 +218,7 @@ interface ParsedEvidence {
   annotations: ObservationAnnotation[]
   diagnostics: PublicDiagnostic[]
   rawByteCounts: Map<string, number>
+  annotationByteCounts: Map<string, number>
 }
 
 interface EncryptedPayload {
@@ -316,6 +357,7 @@ function parseEvidence(entries: ByteSnapshot[], cycleId: string): ParsedEvidence
   const rawEvents: RawObservation[] = []
   const annotations: ObservationAnnotation[] = []
   const rawByteCounts = new Map<string, number>()
+  const annotationByteCounts = new Map<string, number>()
   const diagnostics: PublicDiagnostic[] = []
   const addDiagnostic = (
     layer: PublicDiagnostic['layer'],
@@ -381,10 +423,11 @@ function parseEvidence(entries: ByteSnapshot[], cycleId: string): ParsedEvidence
       continue
     }
     annotations.push(parsed.data)
+    annotationByteCounts.set(parsed.data.annotationId, entry.bytes.byteLength)
   }
 
   if (entries.length === 0) addDiagnostic('store', 'empty-spool', ['no-evidence'], 0)
-  return { rawEvents, annotations, diagnostics, rawByteCounts }
+  return { rawEvents, annotations, diagnostics, rawByteCounts, annotationByteCounts }
 }
 
 function encodePayload(entries: ByteSnapshot[]): Buffer {
@@ -461,6 +504,19 @@ function provenanceIssue(
   event: RawObservation,
   options: DecryptObservationCycleOptions
 ): string | null {
+  if (options.authority?.kind === 'local-agent') {
+    if (hasChangedWorktree(options.authority)) return 'worktree-changed-during-command'
+    const agent = event.schemaVersion === 2 ? event.agent : undefined
+    const localCi = Object.values(event.ci).every((value) => value === null)
+    return event.repository.sha === options.repositorySha &&
+      event.repository.branch === options.repositoryBranch &&
+      agent?.runId === options.authority.runId &&
+      agent.stepId === options.authority.stepId &&
+      agent.worktreeStateHash === options.authority.worktreeStateHash &&
+      localCi
+      ? null
+      : 'authoritative-agent-run-mismatch'
+  }
   const expected = {
     sha: options.repositorySha,
     branch: options.repositoryBranch,
@@ -510,6 +566,7 @@ function validateCampaign(campaignId: string, campaign: RawObservation[]): boole
   const provenance = JSON.stringify({
     repository: reference.repository,
     ci: reference.ci,
+    agent: reference.agent ?? null,
     environment: reference.environment
   })
   if (
@@ -532,6 +589,7 @@ function validateCampaign(campaignId: string, campaign: RawObservation[]): boole
         JSON.stringify({
           repository: event.repository,
           ci: event.ci,
+          agent: event.agent ?? null,
           environment: event.environment
         }) !== provenance
     )
@@ -629,9 +687,21 @@ function validateEvidence(
       )
     }
   }
+  const quarantineAnnotations =
+    options.authority?.kind === 'local-agent' && hasChangedWorktree(options.authority)
+  if (quarantineAnnotations) {
+    for (const annotation of parsed.annotations) {
+      addDiagnostic(
+        'annotations',
+        'invalid-provenance',
+        ['worktree-changed-during-command'],
+        parsed.annotationByteCounts.get(annotation.annotationId) ?? 0
+      )
+    }
+  }
   return {
     rawEvents,
-    annotations: parsed.annotations,
+    annotations: quarantineAnnotations ? [] : parsed.annotations,
     stuckCampaignIds: stuckCampaignIds.sort(),
     diagnostics
   }
@@ -749,6 +819,11 @@ export function decryptAndValidateObservationCycle(
 ): CycleResult<TrustedObservationCycleManifest> {
   assertSafeSegment('run id', options.runId)
   assertSafeSegment('run attempt', options.runAttempt)
+  const authority =
+    options.authority?.kind === 'local-agent'
+      ? localAgentAuthoritySchema.parse(options.authority)
+      : options.authority
+  const validatedOptions = { ...options, authority }
   const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES
   const cycleId = `${options.runId}-${options.runAttempt}`
@@ -773,9 +848,9 @@ export function decryptAndValidateObservationCycle(
   const parsed = parseEvidence(entries, cycleId)
   if (JSON.stringify(parsed.diagnostics) !== JSON.stringify(publicManifest.diagnostics))
     throw new Error('PBT public diagnostics mismatch decrypted evidence')
-  const validated = validateEvidence(parsed, cycleId, options)
+  const validated = validateEvidence(parsed, cycleId, validatedOptions)
   const manifest = trustedManifestSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: authority?.kind === 'local-agent' ? 2 : 1,
     cycleId,
     createdAt: publicManifest.createdAt,
     runId: options.runId,
@@ -789,7 +864,8 @@ export function decryptAndValidateObservationCycle(
     rawEventIds: validated.rawEvents.map((event) => event.eventId).sort(),
     annotationIds: validated.annotations.map((annotation) => annotation.annotationId).sort(),
     stuckCampaignIds: validated.stuckCampaignIds,
-    diagnostics: validated.diagnostics
+    diagnostics: validated.diagnostics,
+    ...(authority?.kind === 'local-agent' ? { authority } : {})
   })
   const cyclePath = writeCycle(options.destinationRoot, cycleId, snapshot.payloadBytes, manifest)
   return { cyclePath, manifest }
@@ -832,6 +908,7 @@ export function decryptObservationCycle(
       repositoryBranch: trustedManifest.repositoryBranch,
       workflow: trustedManifest.workflow,
       job: trustedManifest.job,
+      ...(trustedManifest.schemaVersion === 2 ? { authority: trustedManifest.authority } : {}),
       maxFiles,
       maxBytes
     })

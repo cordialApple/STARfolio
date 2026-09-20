@@ -10,6 +10,7 @@ import type { ObservationAnnotation, RawObservation } from './observation-schema
 import {
   appendAnnotation,
   appendRawObservation,
+  collectAgentProvenance,
   collectObservationProvenance,
   readObservationStore
 } from './observation-store'
@@ -465,6 +466,31 @@ describe('PBT observation store', () => {
       sha: 'head-sha',
       branch: 'feature/pbt',
       worktree: null
+    })
+  })
+
+  it('keeps unavailable agent provenance explicitly unknown', () => {
+    expect(collectAgentProvenance({})).toEqual({
+      runId: null,
+      stepId: null,
+      worktreeState: 'unknown',
+      worktreeStateHash: null
+    })
+  })
+
+  it('reads agent provenance only from the command boundary', () => {
+    expect(
+      collectAgentProvenance({
+        PBT_AGENT_RUN_ID: 'agent-run-1',
+        PBT_AGENT_STEP_ID: 'step-1',
+        PBT_WORKTREE_STATE: 'dirty',
+        PBT_WORKTREE_STATE_HASH: 'a'.repeat(64)
+      })
+    ).toEqual({
+      runId: 'agent-run-1',
+      stepId: 'step-1',
+      worktreeState: 'dirty',
+      worktreeStateHash: 'a'.repeat(64)
     })
   })
 })
