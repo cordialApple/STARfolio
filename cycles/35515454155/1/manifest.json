@@ -1,0 +1,839 @@
+{
+  "schemaVersion": 1,
+  "cycleId": "35515454155-1",
+  "createdAt": "2026-09-20T14:08:49.883Z",
+  "runId": "35515454155",
+  "runAttempt": "1",
+  "repositorySha": "95d4da82059e0565bcb3375a34c70c3f27f506db",
+  "repositoryBranch": "feat/pbt-agent-checkpoints",
+  "workflow": "PBT PR capture",
+  "job": "capture",
+  "encryption": {
+    "keyAlgorithm": "RSA-OAEP-SHA256",
+    "contentAlgorithm": "AES-256-GCM",
+    "keyId": "72722bcc74ca0b3d15419d0af7f3299f25eb52e9e49e2e5ee3137b66fba88181",
+    "wrappedKey": "SpVmjopbKl15CyNuLLP6QLyxg7BSBJz5LjH8MnKJ3Oq/6tRvXOAQ4g3eaiN6zJnoiWELNNukaWUs/q9NXvIfkIovMOi9OYhtnq4P1X3762bU/7lFdGilT/82WBjr1gGP3caMMB+v1drQzBjA47NC9XyUYgvIU/IcXCAoNsjUA6HCWQuVJyvBYK9Ra26V5EDCRtfW5Mov/zFTgrAHm0dzrjtkO3hwmX2BML5FPBJqbf/deIStlPONyTjAfv1v8FyWOYnBIJfbO3z36/M/Lqbby2i78oCSB3WdZqrdtY1yktJGN5eh3KyIcskJDHpC0C02pmdRmZb0o9NYlavsTpuqT3sxx1zG2qv504AJF/K3CLF7wIgL51wpvn2pOlB8+vPhBzmWFb9zxpL7KfGw2cJgbpj3oTkEettw02OtKYjAoY6+kDaRwIyfr/hgHWjjv0tMLBxtiMSlRMe7tjPePwcFTgAuYQCF8ABqA5EAoLVy2kQsYfV9jNthUiOzShHkhjOq",
+    "iv": "rWa0MA73rH8GAKY9",
+    "authTag": "15Mqgl4J4PUtVGPmpNEovw=="
+  },
+  "payload": {
+    "path": "payload.enc",
+    "sha256": "599960b18fe6cdd74f33094c20ae89de96f422fce85dc727fe2a2e21ae75bd7f",
+    "bytes": 189243
+  },
+  "rawEventIds": [],
+  "annotationIds": [],
+  "stuckCampaignIds": [],
+  "diagnostics": [
+    {
+      "diagnosticId": "44e58f05a8ef94c411f943054b3575beda2423bce58f1529145604db9c3b50b0",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1576
+    },
+    {
+      "diagnosticId": "9a5fa25fdc5d76c705acfc65214e62f6d136c80346b1ba2db1b4cb7e195d44be",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1578
+    },
+    {
+      "diagnosticId": "500e096518423f70d9c890cc1fc1ab672b7a9acdddcf9cf0374cabff385b01ed",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1459
+    },
+    {
+      "diagnosticId": "cac3997e4f7af80b49c17f4b38a425beffbe468b73075a1519ef9e9d732aa720",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1604
+    },
+    {
+      "diagnosticId": "27b0f94bf7270ccf85e91854f1aeb4f2bd6f2d1ccae4c5d304f1e9b7ea41520a",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1472
+    },
+    {
+      "diagnosticId": "30d3e26fcd0d81b92c7d97f6d85da6d01d9ba1c96aef92aa9c5b1289950c9767",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1465
+    },
+    {
+      "diagnosticId": "37fd949524f75dc3bfad216943b555fbf073bb0b9184792bddea4222f6a04008",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1462
+    },
+    {
+      "diagnosticId": "de5fb1761f33392f6cdeef44cd569a094a394758b132485cf11be6918ecad7bd",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1465
+    },
+    {
+      "diagnosticId": "f3c1157f64557b96a949ba89bc948e3304bdac5ed905442fc82901a3420b64e7",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1568
+    },
+    {
+      "diagnosticId": "0b9d23e0bf15f941b77503027e486aacad5004cd73201439238b53191fa3b3c5",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1460
+    },
+    {
+      "diagnosticId": "06bb2b153a9ef797a5b12045c4855784c89a86aaf0b3da7487ef09e25e548b1d",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1571
+    },
+    {
+      "diagnosticId": "eb01c1c08740a74d4f15f268b10ac7f15c0a1b6cc72bc53e81e052cc0666f113",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1584
+    },
+    {
+      "diagnosticId": "ffa7d78ed1e8516c2aa758661e38a8090ca086de675d07ebca8221baceb15af2",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1482
+    },
+    {
+      "diagnosticId": "628d640cdd77dd43df9282cac98647f27ea5dd132dd634f6b32e8c26cb4e0b6a",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1473
+    },
+    {
+      "diagnosticId": "f584e4249d65c5f70da60738f566a8b1839056da87bbe64188f0f3409f06c5e3",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1589
+    },
+    {
+      "diagnosticId": "9d103159b7f630cbdcd241881ab5fd50b0c494b873f00a31c9bf163c4bd9bde9",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1451
+    },
+    {
+      "diagnosticId": "eec0a914fa5154f0675cf2b787ed21c773296539bda1a05a05b7f0369bcc6736",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1457
+    },
+    {
+      "diagnosticId": "d75777cd5f95af3dac42f47609e9d9ae320b31634e8615c5b05aafd6d0b9c900",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1594
+    },
+    {
+      "diagnosticId": "45d8fbf8efe2c2c6b1b20ca87782845dcbcc2006b344161778b0c304b17471fb",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1487
+    },
+    {
+      "diagnosticId": "702686ea88fd02f438e21c993562305448c9870b964a350b9f194ba96e020946",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1476
+    },
+    {
+      "diagnosticId": "f3dd6931c8cfb44facdce7a96f94d788be959ae51f8621c7b34a5081fd5f511e",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1598
+    },
+    {
+      "diagnosticId": "8d7186be6c99d1d916443731edcdedee6b71b0510e3a42eb71925d5890fb83db",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1477
+    },
+    {
+      "diagnosticId": "e9218ba85bf93e6aaacade74be431f33bb747a11e5301620249822248eea6c74",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1593
+    },
+    {
+      "diagnosticId": "4da8b0bbe1bb545bbe05930d26e26fe4e324df2d1da5016c071fb444525cd36e",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1462
+    },
+    {
+      "diagnosticId": "5fbc0977d69db7b2db9a614781105d315ca1119972712add67aba7c1479d3bc3",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1464
+    },
+    {
+      "diagnosticId": "22655bd0d96254ba4a9b46c5641811bc532b0c168a20bd5a6964a28e7fb2c273",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1458
+    },
+    {
+      "diagnosticId": "3dcf61c0dd49e2a7d419c7592bb183c3c41a8854cd017b0b9d07e498fb24843f",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1592
+    },
+    {
+      "diagnosticId": "480bae0851a95722076908fc8bada64cf26ef545063ca0e59b23a8adea32ea24",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1480
+    },
+    {
+      "diagnosticId": "3b44bbbaa1f509b4e2595f1db414a78b9d8dc086a7e0f0eb61ec2383216572b5",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1598
+    },
+    {
+      "diagnosticId": "d3f0864eb2c4aa78217d002cca443258eb6f1c1aa6e88ff4bea324906d16ab5a",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1482
+    },
+    {
+      "diagnosticId": "9917275bdbc0b8b574c4b873a3247aa32d86d6c1da2ab69b2cb2a0dea5607960",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1481
+    },
+    {
+      "diagnosticId": "8ea2850002ab1c30d1bb39707bf16c189b4b9be21b272e25681862c5d89f0d36",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1481
+    },
+    {
+      "diagnosticId": "dcfba6fab54d19148f333fc8caccc925e77c736d43ef6a9f746feaf83a8b031c",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1582
+    },
+    {
+      "diagnosticId": "cafd609b393a48eabf79976bd16b2507d9196292dd1025603141ac5cfa7735e6",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1572
+    },
+    {
+      "diagnosticId": "6339c72a080c7e1fc7d21f6fb10653479c8723ddc2593893f236a074d8e49d68",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1568
+    },
+    {
+      "diagnosticId": "c269c937fe01ae3db6816365f2ddbf0447c94f64c6712997a882558e5312be85",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1567
+    },
+    {
+      "diagnosticId": "fbc9857a110719061baef309967c493ceeafe3b8234ce5e26d35a67e3f8a6f80",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1581
+    },
+    {
+      "diagnosticId": "e282bb4092c9f810970118ac4edffb19dd78c0ad378dc7f3a6d6d5f557577c38",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1594
+    },
+    {
+      "diagnosticId": "4c4c8c8701f535f7e77df0ee93d114769c16d74a4724402733d0ea6495b0e0d6",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1590
+    },
+    {
+      "diagnosticId": "ee95219bf5c185684fb1a37fb33a0db8877edad2f4cbd75780b75d04ec96ff42",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1458
+    },
+    {
+      "diagnosticId": "25f5bf01a7b3df9c42e83f54e44391f16fbd16a1ffc9193afaa3343e6291b6cf",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1577
+    },
+    {
+      "diagnosticId": "c1ea38ebb6b83bf36c5c74149a5ad6534b127e6955b11b4e365ffedd5d9e138b",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1589
+    },
+    {
+      "diagnosticId": "f81bbfcb8d39222d7f9f11ca049f7e2f4a02086a40b2559b1d8905e5c3d36406",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1477
+    },
+    {
+      "diagnosticId": "28dfcd2c62e18251576b33b5394a69f9f5a72e5f0836f7e1fbb46ce68e67b7dc",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1455
+    },
+    {
+      "diagnosticId": "73f6e95dd2884d144fd51c3d83bc9dc24498116539e933c82dd909ab0ab27b4f",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1599
+    },
+    {
+      "diagnosticId": "51d2564fd555b47ca94ab1a155bdda0532dc6e0c10e0bfb9e4db68a6b8b346ae",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1457
+    },
+    {
+      "diagnosticId": "d0a8e42fcbc2a2650fe4a00b7374103ae9451783c919f8a4a2acc76973feaf5b",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1457
+    },
+    {
+      "diagnosticId": "77a30a4137eca6b7e475c18ce4d52ef2d7b7645a8debc6f81517410d58cc5991",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1579
+    },
+    {
+      "diagnosticId": "968f70c6c95d0426a2bb150860c0cc4d94537d831128d92957cb043c0aff9f80",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1467
+    },
+    {
+      "diagnosticId": "f602e8f1fbccf39d2154a3fcc396f43bd7834c9263357d8e3a533a47c1eed0ff",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1454
+    },
+    {
+      "diagnosticId": "9f63b0ee039703e70802fea1f1d57c3fbd02a9e17f39462777170b920abeba4e",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1450
+    },
+    {
+      "diagnosticId": "d27bfb3c52582354596071f2ad52c149f6199ad40903ac62a172e3d39e638141",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1574
+    },
+    {
+      "diagnosticId": "b0e1439439db6bd4a80138d1b603e94141a29fbdaff1b41739b85527b3dad72f",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1462
+    },
+    {
+      "diagnosticId": "6d47f695aa94210b4196b95c29b3d9ac42c9016788416ce02590da3261daa1c2",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1599
+    },
+    {
+      "diagnosticId": "5e9b9a0581c0c9fb93f3cd103538be42ba70ebbe41f47fb5d10e2a9cd624a6c7",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1579
+    },
+    {
+      "diagnosticId": "0ed3f6f71cbe26ce3b0e0c674be690e5fe7352c747d73a9c409087dc6fe59e33",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1575
+    },
+    {
+      "diagnosticId": "ff6254e711519c039bf317a87ee800adbf0bb77954088476c9f595e5d56e7276",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1606
+    },
+    {
+      "diagnosticId": "a8bee896788a0fef000f092c045750997ef2be69d9e3f58d46232dcb282688ec",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1461
+    },
+    {
+      "diagnosticId": "931e29c12f152906ed70c37d292f6983e58f05de32d4933b72ed8eb92aae9227",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1597
+    },
+    {
+      "diagnosticId": "ba8dcdd1f762f2b7f5e0fdab7d05dc983a6972e4ebf76a83c38dda077652364d",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1475
+    },
+    {
+      "diagnosticId": "11d3a6e223a292c9629082a16a6b00acaa95173ef9781e7e848fe16a85f3d122",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1461
+    },
+    {
+      "diagnosticId": "7c59c031b35ccfb4782296a6e29a214d4ff07032dee1bb38cff13157a4608a68",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1463
+    },
+    {
+      "diagnosticId": "7df6f12d4ae966c118218b380ff69a8279b1b1908ae420a2d2208a8158e5e61e",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1580
+    },
+    {
+      "diagnosticId": "b8f918afcce1c2216e379836960de564df530d750f86cd54f8fafb97602f3b7d",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1472
+    },
+    {
+      "diagnosticId": "c7694e39ece9e5878b7bcef1f0d44b937ae9e7ffd19d016e0fc596f7fd01c1b3",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1573
+    },
+    {
+      "diagnosticId": "b1b92b7505daea4c6ec6c7613fcc356f01068222732a2bcc2bca0c3e9dfb72f3",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1574
+    },
+    {
+      "diagnosticId": "187f5ba0cff50734d1f6f00087d4715ba321b1a1464a6c8f8eaa65df4fe7f8c9",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1456
+    },
+    {
+      "diagnosticId": "751e2cba8a2f30a6072fc403bacbf7fdbce0498cf9d2361f2a7383795f7df16f",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1451
+    },
+    {
+      "diagnosticId": "abeb79f4743a0e2a648ddad8b2105236138c8724ba72a52e7a3d3e8b4fe959e3",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1459
+    },
+    {
+      "diagnosticId": "743c167f2efa87e88273a969fad26178356624e4664639786ce1d60dddab50fa",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1579
+    },
+    {
+      "diagnosticId": "4414dce1904d9b39a3a14a9f97d7f848d327cbcf31bf6c624fe390e048a85806",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1584
+    },
+    {
+      "diagnosticId": "2bc1fb3ad21380b80ed58e2f49ed10eb587c640ef08f959aa95ed185fb2d0abe",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1578
+    },
+    {
+      "diagnosticId": "72f3143ca5af3eef5becb00a9f763d1c73c9248be52ac0f9baea7a725457d7f0",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1461
+    },
+    {
+      "diagnosticId": "e192be15c8f8771bde321070da4ae90a460c55099dc61d85e3fde6ba2304be88",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1460
+    },
+    {
+      "diagnosticId": "8fea4e3a3df7d32750f3377d74f45a7837b6e14eb1406a8250b9f1f3c09a6b3e",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1607
+    },
+    {
+      "diagnosticId": "f55db3894600216d919ec2546f10790805352e27c4178f8e56748e0f304ac8b0",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1574
+    },
+    {
+      "diagnosticId": "b951ec1f548edf52f751b157808b82bd6febdd0ffa6e32a551dfb76208638668",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1582
+    },
+    {
+      "diagnosticId": "698ab33ebbef8b70d3c0b307007ed44509a814b9ad508f77c8b49905e2138cc9",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1489
+    },
+    {
+      "diagnosticId": "62d11c9927282d529085b3b7da5f89ac80cd5cb1b039db56e89439710d5d4008",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1577
+    },
+    {
+      "diagnosticId": "258a3fba8129d33c1a622e4663ae3de71dd49a497239202b1a239321fb59351a",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1467
+    },
+    {
+      "diagnosticId": "18ea32848554fb2198a7d391087b470953df37ea0d7f985b05231f986e322a31",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1490
+    },
+    {
+      "diagnosticId": "09638ed4023e3afee7f7b803628d86afea8515821bbaf506c8d909656de6dd58",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1576
+    },
+    {
+      "diagnosticId": "42487a4950ab8b2a9fc33b27ab41c615eea853fefb9d456714df5eed8b1b633c",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1579
+    },
+    {
+      "diagnosticId": "a07d07e2c6149b1d5b91d3058e5ed2e90b8b135d6b484d6461629f2067e86761",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1578
+    },
+    {
+      "diagnosticId": "aec76b110bae56143b45f3900f1806f1873ae421e0512be2770922692a076ba3",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1575
+    },
+    {
+      "diagnosticId": "6764650d81b43936466512d2c6b5e031093a567cff1f2487bd8ac443dc9b7e64",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1578
+    },
+    {
+      "diagnosticId": "6af6f8563371850fe75113906e71876fb14daf844e4331d0d9ada9929854b622",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1463
+    },
+    {
+      "diagnosticId": "2446b4c756c20d884ca0bf452a919bdb0173e8f747cd2b5ae28ac9d87ebd7826",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1462
+    },
+    {
+      "diagnosticId": "514dd2bde70af76863b4f75a0db72c60d46f2d9b0197d93b37fa321bb34c6977",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1580
+    },
+    {
+      "diagnosticId": "236d4c94540513597f12be586a3ac44fbf20f018bfe43cd5a6c1abd93219cea6",
+      "layer": "raw",
+      "reasonCategory": "malformed",
+      "issueCodes": [
+        "schema-invalid"
+      ],
+      "byteCount": 1461
+    }
+  ]
+}
