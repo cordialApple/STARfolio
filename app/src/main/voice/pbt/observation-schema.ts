@@ -17,6 +17,31 @@ export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 const nullableString = z.string().nullable()
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/)
 
+export const agentProvenanceSchema = z
+  .object({
+    runId: nullableString,
+    stepId: nullableString,
+    worktreeState: z.enum(['clean', 'dirty', 'unknown']),
+    worktreeStateHash: sha256.nullable()
+  })
+  .strict()
+  .superRefine((agent, context) => {
+    if (agent.worktreeState === 'unknown' && agent.worktreeStateHash !== null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['worktreeStateHash'],
+        message: 'Unknown worktree state hash must be null'
+      })
+    }
+    if (agent.worktreeState !== 'unknown' && agent.worktreeStateHash === null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['worktreeStateHash'],
+        message: 'Known worktree state requires a hash'
+      })
+    }
+  })
+
 export const propertyIdentitySchema = z
   .object({
     id: z.string().min(1),
@@ -80,7 +105,8 @@ export const campaignSummarySchema = z
 
 export const rawObservationSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.union([z.literal(1), z.literal(2)]),
+    agent: agentProvenanceSchema.optional(),
     eventId: z.string().uuid(),
     campaignId: z.string().uuid(),
     eventKind: z.enum(['campaign-started', 'failure-observed', 'campaign-completed']),
@@ -115,6 +141,10 @@ export const rawObservationSchema = z
     const addIssue = (path: string, message: string): void => {
       context.addIssue({ code: 'custom', path: [path], message })
     }
+    if (event.schemaVersion === 1 && event.agent !== undefined)
+      addIssue('agent', 'Version 1 events cannot contain agent provenance')
+    if (event.schemaVersion === 2 && event.agent === undefined)
+      addIssue('agent', 'Version 2 events require agent provenance')
     if (event.executedRuns !== null && event.executedRuns > event.requestedRuns) {
       addIssue('executedRuns', 'Executed runs cannot exceed requested runs')
     }
@@ -396,6 +426,7 @@ export const annotationSchema = z
   })
 
 export type PropertyIdentity = z.infer<typeof propertyIdentitySchema>
+export type AgentProvenance = z.infer<typeof agentProvenanceSchema>
 export type RawObservation = z.infer<typeof rawObservationSchema>
 export type ObservationAnnotation = z.infer<typeof annotationSchema>
 export type ObservationClass = RawObservation['observationClass']

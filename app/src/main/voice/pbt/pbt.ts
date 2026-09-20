@@ -9,13 +9,14 @@ import type {
 } from './observation-schema'
 import {
   appendRawObservation,
+  collectAgentProvenance,
   collectObservationProvenance,
   resolveObservationRoot
 } from './observation-store'
 
 export const PBT_SEED = Number(process.env.PBT_SEED ?? 202607)
 export const PBT_RUNS = Number(process.env.PBT_RUNS ?? 200)
-export const PBT_HARNESS_VERSION = '3'
+export const PBT_HARNESS_VERSION = '4'
 
 export interface PropertyMetadata extends PropertyIdentity {
   observationClass: ObservationClass
@@ -93,15 +94,18 @@ function createEvent(
   campaignId: string,
   seed: number,
   requestedRuns: number,
+  provenance: ReturnType<typeof collectObservationProvenance> & {
+    agent: ReturnType<typeof collectAgentProvenance>
+  },
   overrides: Partial<RawObservation>
 ): RawObservation {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     eventId: randomUUID(),
     campaignId,
     eventKind: 'campaign-started',
     observedAt: new Date().toISOString(),
-    ...collectObservationProvenance(),
+    ...provenance,
     property: { id: metadata.id, version: metadata.version, invariant: metadata.invariant },
     harnessVersion: PBT_HARNESS_VERSION,
     observationClass: metadata.observationClass,
@@ -159,7 +163,14 @@ export function runProperty<T>(
   const requestedRuns = options.runs ?? PBT_RUNS
   const observationRoot = options.observationRoot ?? resolveObservationRoot()
   const campaignId = randomUUID()
-  appendRawObservation(observationRoot, createEvent(metadata, campaignId, seed, requestedRuns, {}))
+  const provenance = {
+    ...collectObservationProvenance(),
+    agent: collectAgentProvenance()
+  }
+  appendRawObservation(
+    observationRoot,
+    createEvent(metadata, campaignId, seed, requestedRuns, provenance, {})
+  )
 
   const realRandom = Math.random
   const realNow = Date.now
@@ -188,7 +199,7 @@ export function runProperty<T>(
     const capturedFailure = captureText(executionError)
     appendObservedEvent(
       observationRoot,
-      createEvent(metadata, campaignId, seed, requestedRuns, {
+      createEvent(metadata, campaignId, seed, requestedRuns, provenance, {
         eventKind: 'campaign-completed',
         ...capturedFailure,
         terminationStatus: 'unknown'
@@ -226,7 +237,7 @@ export function runProperty<T>(
         ? createIncidentFingerprint(metadata, counterexampleHash)
         : null
     const generatedCases = details.numRuns + details.numSkips
-    const failureEvent = createEvent(metadata, campaignId, details.seed, requestedRuns, {
+    const failureEvent = createEvent(metadata, campaignId, details.seed, requestedRuns, provenance, {
       eventKind: 'failure-observed',
       replayPath: details.counterexamplePath,
       executedRuns: details.numRuns,
@@ -244,7 +255,7 @@ export function runProperty<T>(
     const failureRecorded = appendObservedEvent(observationRoot, failureEvent, persistenceErrors)
     appendObservedEvent(
       observationRoot,
-      createEvent(metadata, campaignId, details.seed, requestedRuns, {
+      createEvent(metadata, campaignId, details.seed, requestedRuns, provenance, {
         eventKind: 'campaign-completed',
         replayPath: details.counterexamplePath,
         executedRuns: details.numRuns,
@@ -274,7 +285,7 @@ export function runProperty<T>(
   const generatedCases = details.numRuns + details.numSkips
   appendRawObservation(
     observationRoot,
-    createEvent(metadata, campaignId, details.seed, requestedRuns, {
+    createEvent(metadata, campaignId, details.seed, requestedRuns, provenance, {
       eventKind: 'campaign-completed',
       executedRuns: details.numRuns,
       generatedCases,

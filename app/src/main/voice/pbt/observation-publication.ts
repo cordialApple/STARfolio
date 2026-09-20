@@ -510,6 +510,7 @@ function validateCampaign(campaignId: string, campaign: RawObservation[]): boole
   const provenance = JSON.stringify({
     repository: reference.repository,
     ci: reference.ci,
+    agent: reference.agent ?? null,
     environment: reference.environment
   })
   if (
@@ -532,6 +533,7 @@ function validateCampaign(campaignId: string, campaign: RawObservation[]): boole
         JSON.stringify({
           repository: event.repository,
           ci: event.ci,
+          agent: event.agent ?? null,
           environment: event.environment
         }) !== provenance
     )

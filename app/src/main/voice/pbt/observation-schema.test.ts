@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { annotationSchema, rawObservationSchema, type RawObservation } from './observation-schema'
+import {
+  agentProvenanceSchema,
+  annotationSchema,
+  rawObservationSchema,
+  type RawObservation
+} from './observation-schema'
 import { hashCanonicalValue, toTaggedValue } from './observation-canonical'
 
 const baseEvent: RawObservation = {
@@ -37,6 +42,47 @@ const baseEvent: RawObservation = {
 describe('PBT observation schema', () => {
   it('accepts explicit null provenance without inventing values', () => {
     expect(rawObservationSchema.parse(baseEvent)).toEqual(baseEvent)
+  })
+
+  it('keeps version 1 readable and requires explicit version 2 agent provenance', () => {
+    const agent = {
+      runId: 'agent-run-1',
+      stepId: 'step-1',
+      worktreeState: 'dirty' as const,
+      worktreeStateHash: 'a'.repeat(64)
+    }
+    const event = { ...baseEvent, schemaVersion: 2 as const, agent }
+
+    expect(rawObservationSchema.parse(baseEvent)).toEqual(baseEvent)
+    expect(rawObservationSchema.parse(event)).toEqual(event)
+    expect(() => rawObservationSchema.parse({ ...event, agent: { ...agent, stepId: undefined } }))
+      .toThrow()
+    expect(() => rawObservationSchema.parse({ ...event, agent: { ...agent, worktreeStateHash: null } }))
+      .toThrow(/hash/)
+  })
+
+  it('requires unknown worktree state to use an explicit null hash', () => {
+    expect(
+      agentProvenanceSchema.parse({
+        runId: null,
+        stepId: null,
+        worktreeState: 'unknown',
+        worktreeStateHash: null
+      })
+    ).toEqual({
+      runId: null,
+      stepId: null,
+      worktreeState: 'unknown',
+      worktreeStateHash: null
+    })
+    expect(() =>
+      agentProvenanceSchema.parse({
+        runId: null,
+        stepId: null,
+        worktreeState: 'unknown',
+        worktreeStateHash: 'b'.repeat(64)
+      })
+    ).toThrow(/unknown/i)
   })
 
   it('rejects missing required provenance fields', () => {

@@ -17,7 +17,9 @@ import { execFileSync } from 'child_process'
 import { createIncidentFingerprint, hashTaggedValue } from './observation-canonical'
 import {
   annotationSchema,
+  agentProvenanceSchema,
   rawObservationSchema,
+  type AgentProvenance,
   type ObservationAnnotation,
   type RawObservation
 } from './observation-schema'
@@ -85,6 +87,19 @@ function parseCiState(value: string | undefined): boolean | null {
   if (normalized === 'true') return true
   if (normalized === 'false') return false
   return null
+}
+
+export function collectAgentProvenance(
+  env: Record<string, string | undefined> = process.env
+): AgentProvenance {
+  const worktreeState = env.PBT_WORKTREE_STATE
+  return agentProvenanceSchema.parse({
+    runId: toNullable(env.PBT_AGENT_RUN_ID),
+    stepId: toNullable(env.PBT_AGENT_STEP_ID),
+    worktreeState:
+      worktreeState === 'clean' || worktreeState === 'dirty' ? worktreeState : 'unknown',
+    worktreeStateHash: toNullable(env.PBT_WORKTREE_STATE_HASH)
+  })
 }
 
 export function collectObservationProvenance(
@@ -251,6 +266,7 @@ function diagnoseCampaigns(events: RawObservation[]): ObservationDiagnostic[] {
     const provenanceKey = JSON.stringify({
       repository: reference.repository,
       ci: reference.ci,
+      agent: reference.agent ?? null,
       environment: reference.environment
     })
     if (
@@ -259,6 +275,7 @@ function diagnoseCampaigns(events: RawObservation[]): ObservationDiagnostic[] {
           JSON.stringify({
             repository: event.repository,
             ci: event.ci,
+            agent: event.agent ?? null,
             environment: event.environment
           }) !== provenanceKey
       )
