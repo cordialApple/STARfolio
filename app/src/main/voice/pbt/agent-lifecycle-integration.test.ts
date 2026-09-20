@@ -245,7 +245,11 @@ describe('agent failure-to-fix retention', () => {
       git(repository, ['config', 'user.name', 'test'])
       git(repository, ['config', 'user.email', 'test@example.com'])
       writeFileSync(join(repository, 'tracked.txt'), 'baseline\n')
-      git(repository, ['add', 'tracked.txt'])
+      writeFileSync(
+        join(repository, 'package.json'),
+        `${JSON.stringify({ scripts: { emit: 'node ../emit-malformed.mjs' } }, null, 2)}\n`
+      )
+      git(repository, ['add', 'tracked.txt', 'package.json'])
       git(repository, ['commit', '-m', 'test: seed'])
       const keys = createObservationKeys(root)
       writeFileSync(
@@ -265,8 +269,9 @@ describe('agent failure-to-fix retention', () => {
           join(appRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
           join(appRoot, 'src', 'main', 'voice', 'pbt', 'agent-checkpoint-cli.ts'),
           '--',
-          process.execPath,
-          childPath
+          'npm',
+          'run',
+          'emit'
         ],
         {
           cwd: repository,

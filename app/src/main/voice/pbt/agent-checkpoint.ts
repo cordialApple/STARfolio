@@ -117,6 +117,11 @@ export interface AgentCheckpointDependencies {
   publish: (checkpoint: AgentCheckpointPublication) => Promise<void>
 }
 
+export interface AgentCheckpointSpawn {
+  command: string
+  args: string[]
+}
+
 const CHILD_ENVIRONMENT_NAMES = [
   'COMSPEC',
   'NUMBER_OF_PROCESSORS',
@@ -171,11 +176,32 @@ function spawnCommand(
   environment: NodeJS.ProcessEnv,
   cwd: string
 ): Promise<number> {
+  const spawnTarget = resolveAgentCheckpointSpawn(command, args)
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: environment, stdio: 'inherit' })
+    const child = spawn(spawnTarget.command, spawnTarget.args, {
+      cwd,
+      env: environment,
+      stdio: 'inherit'
+    })
     child.once('error', reject)
     child.once('exit', (code, signal) => resolve(signal === null ? (code ?? 1) : 1))
   })
+}
+
+export function resolveAgentCheckpointSpawn(
+  command: string,
+  args: string[],
+  platform = process.platform,
+  environment: NodeJS.ProcessEnv = process.env
+): AgentCheckpointSpawn {
+  if (platform !== 'win32' || !['npm', 'npm.cmd'].includes(command.toLowerCase()))
+    return { command, args }
+  const npmExecPath = environment.npm_execpath
+  if (!npmExecPath) throw new Error('PBT checkpoint cannot resolve npm on Windows')
+  return {
+    command: environment.npm_node_execpath ?? process.execPath,
+    args: [npmExecPath, ...args]
+  }
 }
 
 function compareText(left: string, right: string): number {

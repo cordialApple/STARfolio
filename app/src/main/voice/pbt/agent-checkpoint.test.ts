@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createAgentChildEnvironment, runAgentCheckpointCommand } from './agent-checkpoint'
+import {
+  createAgentChildEnvironment,
+  resolveAgentCheckpointSpawn,
+  runAgentCheckpointCommand
+} from './agent-checkpoint'
 
 const AGENT_RUN_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -35,6 +39,26 @@ describe('agent checkpoint command', () => {
         AWS_SECRET_ACCESS_KEY: 'cloud-secret'
       })
     ).toEqual({ PATH: 'bin' })
+  })
+
+  it('launches npm through its active Node CLI on Windows', () => {
+    expect(
+      resolveAgentCheckpointSpawn('npm', ['run', 'test'], 'win32', {
+        npm_execpath: 'C:/node/npm-cli.js',
+        npm_node_execpath: 'C:/node/node.exe'
+      })
+    ).toEqual({
+      command: 'C:/node/node.exe',
+      args: ['C:/node/npm-cli.js', 'run', 'test']
+    })
+    expect(resolveAgentCheckpointSpawn('npm', ['run', 'test'], 'linux', {})).toEqual({
+      command: 'npm',
+      args: ['run', 'test']
+    })
+  })
+
+  it('fails clearly when Windows npm provenance is unavailable', () => {
+    expect(() => resolveAgentCheckpointSpawn('npm', [], 'win32', {})).toThrow(/resolve npm/i)
   })
 
   it('publishes new command evidence before committing its receipt', async () => {
