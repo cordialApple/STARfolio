@@ -1,6 +1,10 @@
 import base64
+import contextlib
 import importlib.util
+import io
 import json
+import os
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -13,6 +17,7 @@ MODULE = Path(__file__).with_name("demo.py")
 REQUIRED_BUNDLE_FILES = (
     "README.md",
     "bootstrap.sh",
+    "diagnostics.sh",
     "conditioner_worker.py",
     "gateway.py",
     "interview_worker.py",
@@ -62,8 +67,46 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(plan["lifetime_hours"], 4)
         self.assertEqual(
             set(plan),
-            {"name", "region", "instance_type", "deadline", "lifetime_hours"},
+            {
+                "name",
+                "region",
+                "instance_type",
+                "deadline",
+                "lifetime_hours",
+                "trial_id",
+                "diagnostics_s3_uri",
+            },
         )
+
+    def test_plan_links_worker_and_diagnostics_with_unique_trial_id(self):
+        trial_id = "19ab818e-2f38-4e71-9b51-84698a30f10d"
+        plan = self.demo.make_plan(self.config, self.now, trial_id=trial_id)
+        self.assertEqual(plan["trial_id"], trial_id)
+        self.assertEqual(
+            plan["diagnostics_s3_uri"],
+            f"s3://demo-artifacts/trials/{trial_id}/worker.log",
+        )
+        template = self.demo.make_template(self.config, plan, "/dev/sda1")
+        worker = template["Resources"]["Worker"]["Properties"]
+        self.assertIn({"Key": "StarfolioTrial", "Value": trial_id}, worker["Tags"])
+        self.assertEqual(template["Outputs"]["TrialId"]["Value"], trial_id)
+
+    def test_plan_rejects_supplied_empty_trial_id(self):
+        with self.assertRaisesRegex(ValueError, "UUIDv4"):
+            self.demo.make_plan(self.config, self.now, trial_id="")
+
+    def test_plan_cli_keeps_supplied_trial_id_for_launch_review(self):
+        trial_id = "19ab818e-2f38-4e71-9b51-84698a30f10d"
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "config.json"
+            output = Path(directory) / "plan.json"
+            config.write_text(json.dumps(self.config))
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.demo.main([
+                    "plan", "--config", str(config), "--output", str(output),
+                    "--trial-id", trial_id,
+                ])
+            self.assertEqual(json.loads(output.read_text())["plan"]["trial_id"], trial_id)
 
     def test_template_installs_deadline_before_gpu_and_protects_storage(self):
         plan = self.demo.make_plan(self.config, self.now)
@@ -170,6 +213,88 @@ class DemoTests(unittest.TestCase):
         self.assertIn(self.config["hf_token_secret_arn"], bootstrap)
         self.assertIn("export AWS_REGION=us-east-2", bootstrap)
         self.assertNotIn("hf_example_plaintext_token", json.dumps(template))
+
+    def test_diagnostics_write_is_scoped_and_precedes_shutdown(self):
+        plan = self.demo.make_plan(
+            self.config,
+            self.now,
+            trial_id="19ab818e-2f38-4e71-9b51-84698a30f10d",
+        )
+        template = self.demo.make_template(self.config, plan, "/dev/sda1")
+        policies = template["Resources"]["WorkerRole"]["Properties"]["Policies"]
+        statements = [
+            statement
+            for policy in policies
+            for statement in policy["PolicyDocument"]["Statement"]
+        ]
+        writes = [
+            statement for statement in statements if statement["Action"] == "s3:PutObject"
+        ]
+        self.assertEqual(
+            writes,
+            [
+                {
+                    "Effect": "Allow",
+                    "Action": "s3:PutObject",
+                    "Resource": {
+                        "Fn::Sub": "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/worker.log"
+                    },
+                }
+            ],
+        )
+        bootstrap = base64.b64decode(
+            template["Resources"]["Worker"]["Properties"]["UserData"]
+        ).decode()
+        self.assertIn("STARFOLIO_TRIAL_DIAGNOSTICS_URI", bootstrap)
+        worker_bootstrap = (
+            MODULE.parents[2] / "demo" / "moshi-gateway" / "bootstrap.sh"
+        ).read_text()
+        self.assertIn("starfolio-diagnostics.service", worker_bootstrap)
+        self.assertLess(
+            worker_bootstrap.index("systemctl start starfolio-diagnostics.service"),
+            worker_bootstrap.index("ExecStopPost=+/sbin/shutdown -h now"),
+        )
+        self.assertLess(
+            worker_bootstrap.index("systemctl daemon-reload"),
+            worker_bootstrap.index("apt-get update"),
+        )
+        self.assertLess(
+            worker_bootstrap.index("trap 'systemctl start starfolio-diagnostics.service"),
+            worker_bootstrap.index("nvidia-smi"),
+        )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Worker shell test runs on Linux CI")
+    def test_diagnostics_uploads_bounded_bootstrap_and_worker_logs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commands = root / "commands"
+            commands.mkdir()
+            scripts = {
+                "systemctl": "#!/bin/sh\nprintf 'Result=exit-code\\n'\n",
+                "journalctl": "#!/bin/sh\nprintf 'worker failure\\n'\n",
+                "aws": "#!/bin/sh\ncp \"$3\" \"$TRIAL_CAPTURED\"\n",
+            }
+            for name, source in scripts.items():
+                path = commands / name
+                path.write_text(source)
+                path.chmod(0o700)
+            cloud_init = root / "cloud-init.log"
+            cloud_init.write_bytes(b"x" * 1_000_000 + b"bootstrap failure\n")
+            captured = root / "captured.log"
+            environment = {
+                **os.environ,
+                "PATH": str(commands) + os.pathsep + os.environ["PATH"],
+                "AWS_REGION": "us-east-2",
+                "STARFOLIO_TRIAL_DIAGNOSTICS_URI": "s3://private/trials/test/worker.log",
+                "STARFOLIO_CLOUD_INIT_LOG": str(cloud_init),
+                "TRIAL_CAPTURED": str(captured),
+            }
+            script = MODULE.parents[2] / "demo" / "moshi-gateway" / "diagnostics.sh"
+            subprocess.run(["bash", str(script)], env=environment, check=True)
+            data = captured.read_bytes()
+            self.assertIn(b"worker failure", data)
+            self.assertIn(b"bootstrap failure", data)
+            self.assertLess(len(data), 1_100_000)
 
     def test_cleanup_lambda_only_terminates_matching_instances(self):
         plan = self.demo.make_plan(self.config, self.now)
@@ -301,6 +426,14 @@ class DemoTests(unittest.TestCase):
                 ]
             },
             ("s3api", "get-bucket-location"): {"LocationConstraint": "us-east-2"},
+            ("s3api", "get-public-access-block"): {
+                "PublicAccessBlockConfiguration": {
+                    "BlockPublicAcls": True,
+                    "IgnorePublicAcls": True,
+                    "BlockPublicPolicy": True,
+                    "RestrictPublicBuckets": True,
+                }
+            },
             ("s3api", "head-object"): {
                 "Metadata": {"sha256": "a" * 64},
                 "ContentLength": 1000,
@@ -314,6 +447,14 @@ class DemoTests(unittest.TestCase):
             (service, operation)
         ]
         self.assertEqual(self.demo.preflight(aws, self.config), "/dev/sda1")
+        responses[("s3api", "get-public-access-block")][
+            "PublicAccessBlockConfiguration"
+        ]["BlockPublicPolicy"] = False
+        with self.assertRaisesRegex(ValueError, "public access"):
+            self.demo.preflight(aws, self.config)
+        responses[("s3api", "get-public-access-block")][
+            "PublicAccessBlockConfiguration"
+        ]["BlockPublicPolicy"] = True
         responses[("s3api", "head-object")]["Metadata"]["sha256"] = "b" * 64
         with self.assertRaisesRegex(ValueError, "bundle"):
             self.demo.preflight(aws, self.config)

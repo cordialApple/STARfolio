@@ -199,6 +199,7 @@ async def health(request):
             "interviewProtocol": 1,
             "upstreamReady": ready,
             "busy": state["active"],
+            **({"trialId": state["trial_id"]} if state["trial_id"] else {}),
         }
     )
 
@@ -513,6 +514,7 @@ def create_app(
     fixture=False,
     deadline=math.inf,
     exit_after_session=False,
+    trial_id=None,
 ):
     app = web.Application(client_max_size=300000, middlewares=[reject_browser_origin])
     app[STATE] = {
@@ -524,6 +526,7 @@ def create_app(
         "fixture": fixture,
         "deadline": deadline,
         "exit_after_session": exit_after_session,
+        "trial_id": trial_id,
         "finished": asyncio.Event(),
     }
     app.router.add_get("/session", session)
@@ -555,6 +558,7 @@ async def run(args):
         fixture=args.fixture,
         deadline=deadline,
         exit_after_session=args.exit_after_session,
+        trial_id=os.environ.get("STARFOLIO_TRIAL_ID"),
     )
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()

@@ -70,6 +70,28 @@ class ContractTests(unittest.TestCase):
 
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_health_exposes_trial_id_without_interview_content(self):
+        trial_id = "19ab818e-2f38-4e71-9b51-84698a30f10d"
+        app = create_app(fixture=True, trial_id=trial_id)
+        server = TestServer(app)
+        await server.start_server()
+        try:
+            async with ClientSession() as client:
+                async with client.get(server.make_url("/health")) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(
+                        await response.json(),
+                        {
+                            "mode": "fixture",
+                            "interviewProtocol": 1,
+                            "upstreamReady": True,
+                            "busy": False,
+                            "trialId": trial_id,
+                        },
+                    )
+        finally:
+            await server.close()
+
     async def asyncSetUp(self):
         self.received = []
         self.ready_delay = 0

@@ -24,9 +24,10 @@ Copy-Item infra/aws-demo/config.example.json infra/aws-demo/config.local.json
 Fill `config.local.json`: verified AMI/owner/subnet/VPC, worker lifetime, bucket URI, and SHA256 returned by `pack`. Use that SHA256 as the S3 object name.
 
 ```powershell
-python infra/aws-demo/demo.py plan --config infra/aws-demo/config.local.json --output "$env:TEMP\starfolio-demo-plan.json"
+$trialId = [guid]::NewGuid().ToString()
+python infra/aws-demo/demo.py plan --config infra/aws-demo/config.local.json --output "$env:TEMP\starfolio-demo-plan.json" --trial-id $trialId
 python infra/aws-demo/demo.py upload --config infra/aws-demo/config.local.json --bundle "$env:TEMP\starfolio-demo.tar.gz"
-python infra/aws-demo/demo.py launch --config infra/aws-demo/config.local.json
+python infra/aws-demo/demo.py launch --config infra/aws-demo/config.local.json --trial-id $trialId
 python infra/aws-demo/demo.py status --config infra/aws-demo/config.local.json
 python infra/aws-demo/demo.py tunnel --config infra/aws-demo/config.local.json
 ```
@@ -34,6 +35,28 @@ python infra/aws-demo/demo.py tunnel --config infra/aws-demo/config.local.json
 Review the generated plan/template before launch. Offline template previews use `/dev/sda1`; `launch` replaces this with the selected AMI's actual root device. It revalidates the worker deadline after AWS preflight. `CREATE_COMPLETE` means infrastructure exists; it does not mean models finished loading. Wait for SSM Online, start the tunnel, then check `http://127.0.0.1:8765/health` and Interview → Native duplex (remote MoshiRAG) → Test connection. Keep the tunnel command running during the demo.
 
 The launch command creates a new stack only. It never updates or replaces an existing GPU automatically. An existing tagged worker in the region blocks another launch. Use one region for this demo.
+
+## Keep one trial's evidence
+
+`launch` prints the chosen trial ID. Keep that ID and run the observer after launch, after the interview, and again before deleting the stack:
+
+```powershell
+python infra/aws-demo/trial.py --trial-id <trial-id> capture --config infra/aws-demo/config.local.json --profile iamadmin-general
+```
+
+The observer prints each AWS CLI command to stderr. It only reads AWS and appends local JSON under your user data directory (`%LOCALAPPDATA%/STARfolio/trials/<trial-id>/observations/` on Windows). Each observation has its own ID and UTC time. It records account, region, stack and instance state, AMI, launch time, EBS size, and raw CloudWatch CPU, network, and status-check samples. Missing data stays `null` or carries an error; an empty metric series is not zero use. Basic EC2 monitoring gives CPU and network data at five-minute intervals, while status checks are available at one-minute intervals. The observer keeps those periods and units in the record. [EC2 metric definitions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/viewing_metrics_with_cloudwatch.html), [CloudWatch retrieval limits](https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html).
+
+The app writes a separate timing manifest under Electron `userData/moshi-trials/<session-id>/`. It links to the same trial ID from gateway health and records start-to-health, roadmap, ready, gap-to-next-audio, ping round trips, and input/output sample counts. The optional “Save raw interview audio” box is off by default. If selected, it writes separate 24 kHz mono `input.f32le` and `output.f32le` files there. The existing interview audit keeps the transcript. No interview media enters this repository, the AWS observer, or CI artifacts.
+
+The worker writes up to roughly 1 MiB of bootstrap and service diagnostics to the exact private S3 key in the launch plan, encrypted with SSE-S3. The bucket must block all public access. Fetch that object to a private local directory before deleting it; it may contain interview content or sensitive errors, so do not paste it into issues, PRs, or CI. A missing object means upload failed, not that the worker had no failure. The existing bucket and this object survive stack deletion and need separate cleanup. The app's local media and trial observations also survive the stack and live outside the checkout; back them up before clearing user data. Do not commit logs, media, or observations.
+
+No launch-time dollar figure is called an actual cost. Once AWS posts usage, append the billed amount with its source and scope:
+
+```powershell
+python infra/aws-demo/trial.py --trial-id <trial-id> billing --amount <posted-amount> --currency USD --scope account-window --attribution unattributed --window-start <UTC-start> --window-end <UTC-end> --source "AWS Billing export, UnblendedCost"
+```
+
+An account-window amount remains unattributed unless that window truly isolates the trial. Use `--scope trial-tag --attribution trial-cost` only if an activated cost-allocation tag supports it, and check that all relevant resources are tagged. Cost Explorer updates at least once every 24 hours, so new costs can lag; tag activation can take time too. AWS allows backfill of tag activation, but only for periods when the resource already carried that tag. Do not use an early zero or a modeled hourly rate as the trial's billed cost. [Cost Explorer refresh](https://docs.aws.amazon.com/cost-management/latest/userguide/ce-enable.html), [cost-allocation tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/activating-tags.html), [backfill limits](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-allocation-backfill.html).
 
 ## End and cleanup
 
@@ -48,11 +71,11 @@ python infra/aws-demo/demo.py status --config infra/aws-demo/config.local.json
 
 The deadline schedule and narrowly scoped termination Lambda are created **before** the GPU. They terminate the tagged worker even if the desktop disconnects or the worker OS fails. Termination deletes the encrypted 150 GiB gp3 root disk. CloudFormation reverses that dependency on deletion, removing the worker before its deadline protection. A failed creation uses rollback/delete. No stack updates or deadline extension command are provided. [Scheduler CloudFormation contract](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-scheduler-schedule.html), [SSM port forwarding](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html).
 
-No raw audio or retrieved evidence is placed in cloud infrastructure logs by this runner. Model and bootstrap logs need the gateway's own controls.
+Cloud infrastructure logs do not intentionally receive raw audio or retrieved evidence. Worker and bootstrap diagnostics are private but may still contain sensitive content; review before sharing.
 
 ## IAM scope
 
-The operator needs EC2 describe/create/stop/terminate and security-group actions, CloudFormation stack actions, IAM role/profile creation and passing, Scheduler creation/deletion, Lambda creation/deletion, Service Quotas read, S3 bucket-location/object read/write, and SSM session actions. The stack-created worker role has only the Session Manager channel actions, exact bundle read, and exact Hugging Face secret read. Deadline role can terminate only instances carrying this stack's `StarfolioDemo` tag. No credential files are created.
+The operator needs EC2 describe/create/stop/terminate and security-group actions, CloudFormation stack actions, IAM role/profile creation and passing, Scheduler creation/deletion, Lambda creation/deletion, Service Quotas read, S3 bucket-location/object read/write, and SSM session actions. The stack-created worker role has only the Session Manager channel actions, exact bundle read, exact diagnostic-object write, and exact Hugging Face secret read. Deadline role can terminate only instances carrying this stack's `StarfolioDemo` tag. No credential files are created.
 
 ## Local verification
 

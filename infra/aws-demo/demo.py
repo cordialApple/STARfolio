@@ -11,12 +11,14 @@ import tarfile
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import UUID, uuid4
 
 INSTANCE_TYPE = "g6e.2xlarge"
 TAG_KEY = "StarfolioDemo"
 BUNDLE_FILES = (
     "README.md",
     "bootstrap.sh",
+    "diagnostics.sh",
     "conditioner_worker.py",
     "gateway.py",
     "interview_worker.py",
@@ -37,8 +39,15 @@ def timestamp(value):
     )
 
 
-def make_plan(config, now=None):
+def make_plan(config, now=None, trial_id=None):
     now = now or datetime.now(timezone.utc)
+    trial_id = str(uuid4()) if trial_id is None else trial_id
+    try:
+        parsed_trial_id = UUID(trial_id)
+    except ValueError as error:
+        raise ValueError("trial_id must be a UUIDv4") from error
+    if parsed_trial_id.version != 4 or str(parsed_trial_id) != trial_id:
+        raise ValueError("trial_id must be a UUIDv4")
     if "hf_token" in config:
         raise ValueError("Store the Hugging Face token in AWS Secrets Manager")
     patterns = {
@@ -60,12 +69,15 @@ def make_plan(config, now=None):
     hours = float(config.get("hours"))
     if not math.isfinite(hours) or not 0.5 <= hours <= 6:
         raise ValueError("hours must be between 0.5 and 6")
+    bucket = config["bundle_s3_uri"].removeprefix("s3://").split("/", 1)[0]
     return {
         "name": config["name"],
         "region": config["region"],
         "instance_type": INSTANCE_TYPE,
         "deadline": timestamp(now + timedelta(hours=hours)),
         "lifetime_hours": hours,
+        "trial_id": trial_id,
+        "diagnostics_s3_uri": f"s3://{bucket}/trials/{trial_id}/worker.log",
     }
 
 
@@ -215,6 +227,19 @@ def preflight(aws, config):
     )
     if location != config["region"]:
         raise ValueError("Bundle bucket must be in the demo region")
+    public_access = aws(
+        "s3api", "get-public-access-block", "--bucket", bucket
+    )["PublicAccessBlockConfiguration"]
+    if not all(
+        public_access.get(setting) is True
+        for setting in (
+            "BlockPublicAcls",
+            "IgnorePublicAcls",
+            "BlockPublicPolicy",
+            "RestrictPublicBuckets",
+        )
+    ):
+        raise ValueError("Demo bucket must block all public access")
     artifact = aws("s3api", "head-object", "--bucket", bucket, "--key", key)
     if (
         artifact.get("Metadata", {}).get("sha256") != config["bundle_sha256"]
@@ -256,6 +281,8 @@ def make_bootstrap(config, plan):
                 "set -euo pipefail",
                 "trap 'shutdown -h now' ERR",
                 f"export STARFOLIO_DEMO_DEADLINE={shlex.quote(plan['deadline'])}",
+                f"export STARFOLIO_TRIAL_ID={shlex.quote(plan['trial_id'])}",
+                f"export STARFOLIO_TRIAL_DIAGNOSTICS_URI={shlex.quote(plan['diagnostics_s3_uri'])}",
                 f"export STARFOLIO_DEMO_MAX_SECONDS={max_seconds}",
                 'systemd-run --unit=starfolio-instance-deadline --on-active="${STARFOLIO_DEMO_MAX_SECONDS}s" /sbin/shutdown -h now',
                 "command -v aws >/dev/null",
@@ -277,10 +304,13 @@ def make_bootstrap(config, plan):
     )
 
 
-def make_worker_role(config):
+def make_worker_role(config, plan):
     bundle_arn = "arn:${AWS::Partition}:s3:::" + config["bundle_s3_uri"].removeprefix(
         "s3://"
     )
+    diagnostics_arn = "arn:${AWS::Partition}:s3:::" + plan[
+        "diagnostics_s3_uri"
+    ].removeprefix("s3://")
     return {
         "Type": "AWS::IAM::Role",
         "Properties": {
@@ -310,6 +340,16 @@ def make_worker_role(config):
                             "Effect": "Allow",
                             "Action": "s3:GetObject",
                             "Resource": {"Fn::Sub": bundle_arn},
+                        }
+                    ],
+                ),
+                make_inline_policy(
+                    "WriteTrialDiagnostics",
+                    [
+                        {
+                            "Effect": "Allow",
+                            "Action": "s3:PutObject",
+                            "Resource": {"Fn::Sub": diagnostics_arn},
                         }
                     ],
                 ),
@@ -367,7 +407,7 @@ def handler(event, context):
                 ],
             },
         },
-        "WorkerRole": make_worker_role(config),
+        "WorkerRole": make_worker_role(config, plan),
         "WorkerProfile": {
             "Type": "AWS::IAM::InstanceProfile",
             "Properties": {"Roles": [{"Ref": "WorkerRole"}]},
@@ -486,6 +526,7 @@ def handler(event, context):
                 "Tags": [
                     {"Key": "Name", "Value": name},
                     {"Key": TAG_KEY, "Value": name},
+                    {"Key": "StarfolioTrial", "Value": plan["trial_id"]},
                     {"Key": "DemoDeadline", "Value": plan["deadline"]},
                 ],
                 "UserData": base64.b64encode(bootstrap.encode()).decode(),
@@ -499,6 +540,7 @@ def handler(event, context):
         "Outputs": {
             "InstanceId": {"Value": {"Ref": "Worker"}},
             "Deadline": {"Value": plan["deadline"]},
+            "TrialId": {"Value": plan["trial_id"]},
         },
     }
 
@@ -578,6 +620,8 @@ def main(argv=None):
         sub.add_argument("--config", type=Path, required=True)
         if command == "plan":
             sub.add_argument("--output", type=Path)
+        if command in ("plan", "launch"):
+            sub.add_argument("--trial-id")
         if command == "upload":
             sub.add_argument("--bundle", type=Path, required=True)
         if command == "tunnel":
@@ -607,7 +651,7 @@ def main(argv=None):
         raise ValueError("Invalid demo name or region")
     aws = aws_client(config["region"])
     if args.command in ("plan", "launch", "upload"):
-        plan = make_plan(config)
+        plan = make_plan(config, trial_id=getattr(args, "trial_id", None))
         if args.command == "plan":
             output = {
                 "plan": plan,
@@ -645,7 +689,7 @@ def main(argv=None):
         else:
             ensure_no_active_demo(aws)
             root = preflight(aws, config)
-            plan = make_plan(config)
+            plan = make_plan(config, trial_id=args.trial_id)
             with tempfile.TemporaryDirectory(prefix="starfolio-demo-") as directory:
                 path = Path(directory) / "template.json"
                 path.write_text(
