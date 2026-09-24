@@ -39,6 +39,16 @@ def timestamp(value):
     )
 
 
+def secret_region_and_account(config):
+    match = re.fullmatch(
+        r"arn:aws:secretsmanager:(us-(?:east-[12]|west-[12])):(\d{12}):secret:[A-Za-z0-9/_+=.@-]{1,512}",
+        str(config.get("hf_token_secret_arn", "")),
+    )
+    if not match:
+        raise ValueError("Invalid or missing hf_token_secret_arn")
+    return match.group(1), match.group(2)
+
+
 def make_plan(config, now=None, trial_id=None):
     now = now or datetime.now(timezone.utc)
     trial_id = str(uuid4()) if trial_id is None else trial_id
@@ -63,9 +73,7 @@ def make_plan(config, now=None, trial_id=None):
     for key, pattern in patterns.items():
         if not re.fullmatch(pattern, str(config.get(key, ""))):
             raise ValueError(f"Invalid or missing {key}")
-    secret_pattern = rf"arn:aws:secretsmanager:{re.escape(config['region'])}:\d{{12}}:secret:[A-Za-z0-9/_+=.@-]{{1,512}}"
-    if not re.fullmatch(secret_pattern, str(config.get("hf_token_secret_arn", ""))):
-        raise ValueError("Invalid or missing hf_token_secret_arn")
+    secret_region_and_account(config)
     hours = float(config.get("hours"))
     if not math.isfinite(hours) or not 0.5 <= hours <= 6:
         raise ValueError("hours must be between 0.5 and 6")
@@ -128,6 +136,9 @@ def ensure_no_active_demo(aws):
 
 
 def preflight(aws, config):
+    _, secret_account = secret_region_and_account(config)
+    if aws("sts", "get-caller-identity")["Account"] != secret_account:
+        raise ValueError("Hugging Face secret account must match AWS account")
     images = aws("ec2", "describe-images", "--image-ids", config["ami"]).get(
         "Images", []
     )
@@ -273,6 +284,7 @@ def make_inline_policy(name, statements):
 
 def make_bootstrap(config, plan):
     bundle = config["bundle_s3_uri"]
+    secret_region, _ = secret_region_and_account(config)
     max_seconds = round(plan["lifetime_hours"] * 3600)
     return (
         "\n".join(
@@ -295,6 +307,7 @@ def make_bootstrap(config, plan):
                 "tar --extract --gzip --file /opt/starfolio-demo/bundle.tar.gz --directory /opt/starfolio-demo --no-same-owner --no-same-permissions",
                 "chmod -R a+rX,go-w /opt/starfolio-demo",
                 f"export STARFOLIO_HF_TOKEN_SECRET_ARN={shlex.quote(config['hf_token_secret_arn'])}",
+                f"export STARFOLIO_HF_TOKEN_SECRET_REGION={shlex.quote(secret_region)}",
                 f"export AWS_REGION={shlex.quote(config['region'])}",
                 "cd /opt/starfolio-demo",
                 "bash demo/moshi-gateway/bootstrap.sh",

@@ -38,7 +38,7 @@ git -C /opt/starfolio-runtime/moshi-rag remote add origin https://github.com/kyu
 git -C /opt/starfolio-runtime/moshi-rag fetch --depth 1 origin 8c6dfc101b7871baa428424bcdc583b74fb561d9
 git -C /opt/starfolio-runtime/moshi-rag checkout --detach 8c6dfc101b7871baa428424bcdc583b74fb561d9
 "$py" -m pip install --no-build-isolation --no-deps /opt/starfolio-runtime/moshi-rag/moshi
-HF_TOKEN=$(aws secretsmanager get-secret-value --secret-id "$STARFOLIO_HF_TOKEN_SECRET_ARN" --query SecretString --output text --region "$AWS_REGION")
+HF_TOKEN=$(aws secretsmanager get-secret-value --secret-id "$STARFOLIO_HF_TOKEN_SECRET_ARN" --query SecretString --output text --region "$STARFOLIO_HF_TOKEN_SECRET_REGION")
 export HF_TOKEN
 "$py" - <<'PY'
 import json

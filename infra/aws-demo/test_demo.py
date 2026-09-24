@@ -214,6 +214,24 @@ class DemoTests(unittest.TestCase):
         self.assertIn("export AWS_REGION=us-east-2", bootstrap)
         self.assertNotIn("hf_example_plaintext_token", json.dumps(template))
 
+    def test_cross_region_worker_uses_secret_home_region(self):
+        config = {**self.config, "region": "us-east-1"}
+        plan = self.demo.make_plan(config, self.now)
+        template = self.demo.make_template(config, plan, "/dev/sda1")
+        bootstrap = base64.b64decode(
+            template["Resources"]["Worker"]["Properties"]["UserData"]
+        ).decode()
+        self.assertIn("export AWS_REGION=us-east-1", bootstrap)
+        self.assertIn("export STARFOLIO_HF_TOKEN_SECRET_REGION=us-east-2", bootstrap)
+        self.assertIn(config["hf_token_secret_arn"], bootstrap)
+
+    def test_bootstrap_fetches_secret_from_home_region(self):
+        script = (
+            MODULE.parents[2] / "demo" / "moshi-gateway" / "bootstrap.sh"
+        ).read_text()
+        self.assertIn('get-secret-value --secret-id "$STARFOLIO_HF_TOKEN_SECRET_ARN"', script)
+        self.assertIn('--region "$STARFOLIO_HF_TOKEN_SECRET_REGION"', script)
+
     def test_diagnostics_write_is_scoped_and_precedes_shutdown(self):
         plan = self.demo.make_plan(
             self.config,
@@ -358,7 +376,7 @@ class DemoTests(unittest.TestCase):
     def test_plan_rejects_invalid_hugging_face_secret_arn(self):
         for value in (
             "hf_plaintext_token",
-            "arn:aws:secretsmanager:us-west-2:123456789012:secret:wrong-region",
+            "arn:aws:secretsmanager:eu-west-1:123456789012:secret:unsupported-region",
         ):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.demo.make_plan(
@@ -439,6 +457,7 @@ class DemoTests(unittest.TestCase):
                 "ContentLength": 1000,
             },
             ("service-quotas", "get-service-quota"): {"Quota": {"Value": 8}},
+            ("sts", "get-caller-identity"): {"Account": "123456789012"},
             ("ec2", "describe-instance-type-offerings"): {
                 "InstanceTypeOfferings": [{"InstanceType": "g6e.2xlarge"}]
             },
@@ -463,6 +482,10 @@ class DemoTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "quota"):
             self.demo.preflight(aws, self.config)
         responses[("service-quotas", "get-service-quota")] = {"Quota": {"Value": 8}}
+        responses[("sts", "get-caller-identity")] = {"Account": "999999999999"}
+        with self.assertRaisesRegex(ValueError, "account"):
+            self.demo.preflight(aws, self.config)
+        responses[("sts", "get-caller-identity")] = {"Account": "123456789012"}
         responses[("ec2", "describe-route-tables")] = {"RouteTables": []}
         with self.assertRaisesRegex(ValueError, "internet gateway"):
             self.demo.preflight(aws, self.config)
