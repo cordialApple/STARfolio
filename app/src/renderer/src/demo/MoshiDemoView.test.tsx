@@ -75,7 +75,9 @@ beforeEach(async () => {
       />
     )
   })
-  for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
+  for (const checkbox of [
+    ...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+  ].slice(0, 2)) {
     await act(async () => {
       checkbox.click()
     })
@@ -97,6 +99,24 @@ async function click(label: string): Promise<void> {
     button!.click()
   })
 }
+
+it('keeps raw interview media off unless separately selected', async () => {
+  const media = [...container.querySelectorAll('label')].find((label) =>
+    label.textContent?.includes('Save raw interview audio')
+  )
+  expect(media).toBeDefined()
+  const checkbox = media!.querySelector('input')!
+  expect(checkbox.checked).toBe(false)
+  await click('Start native interview')
+  expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ recordTrialMedia: false }))
+  await click('End interview')
+  await act(async () =>
+    receive({ type: 'ended', reason: 'finished', sessionId: startedSessionId() })
+  )
+  await act(async () => checkbox.click())
+  await click('Start native interview')
+  expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ recordTrialMedia: true }))
+})
 
 function findButton(label: string): HTMLButtonElement | undefined {
   return [...container.querySelectorAll('button')].find((node) => node.textContent === label)

@@ -663,6 +663,7 @@ export type MoshiDemoEvent = { sessionId: string } & (
   | { type: 'audio'; samples: Float32Array }
   | { type: 'text'; speaker: 'assistant' | 'user'; text: string }
   | { type: 'error'; message: string }
+  | { type: 'capture-warning'; message: string }
   | { type: 'ended'; reason: string }
 )
 
@@ -672,7 +673,12 @@ export interface IpcApi {
     rigor: (sessionId: string) => Promise<MoshiRigorResult>
     health: (
       endpoint: string
-    ) => Promise<{ mode: 'moshi' | 'fixture'; upstreamReady: boolean; busy: boolean }>
+    ) => Promise<{
+      mode: 'moshi' | 'fixture'
+      upstreamReady: boolean
+      busy: boolean
+      trialId?: string
+    }>
     start: (request: {
       sessionId: string
       endpoint: string
@@ -682,6 +688,7 @@ export interface IpcApi {
       jobDescription?: string
       candidateName?: string
       consent: true
+      recordTrialMedia?: boolean
     }) => Promise<'moshi' | 'fixture'>
     audio: (sessionId: string, samples: Float32Array) => void
     end: (sessionId: string, reason?: string) => Promise<void>

@@ -20,6 +20,7 @@ export function MoshiDemoView({
   const [endpoint, setEndpoint] = useState('ws://127.0.0.1:8765/session')
   const [jobDescription, setJobDescription] = useState('')
   const [consent, setConsent] = useState(false)
+  const [recordTrialMedia, setRecordTrialMedia] = useState(false)
   const [duration, setDuration] = useState(1200)
   const {
     bank,
@@ -41,7 +42,8 @@ export function MoshiDemoView({
     experienceIds: selected,
     durationSeconds: duration,
     jobDescription,
-    consent
+    consent,
+    recordTrialMedia
   })
 
   return (
@@ -146,6 +148,19 @@ export function MoshiDemoView({
             configured remote MoshiRAG worker. Current deployment runs in my AWS account. Send
             resume, job description, and transcript to my configured architect and evaluator
             providers. Save transcript, scores, and report locally.
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={recordTrialMedia}
+            disabled={active}
+            onChange={(event) => setRecordTrialMedia(event.target.checked)}
+          />
+          <span>
+            Save raw interview audio on this computer for trial review. Input and output stay in
+            separate local files; neither is uploaded automatically. Off by default.
           </span>
         </label>
         <div className="flex gap-3">

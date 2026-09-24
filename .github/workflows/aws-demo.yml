@@ -46,6 +46,7 @@ jobs:
       - name: Check worker shell syntax
         run: |
           bash -n demo/moshi-gateway/bootstrap.sh
+          bash -n demo/moshi-gateway/diagnostics.sh
           bash -n demo/moshi-gateway/run-worker.sh
       - name: Validate generated infrastructure
         run: |

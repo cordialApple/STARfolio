@@ -1,4 +1,6 @@
 import { loadMoshiInterview } from '../db/repositories/moshi-interview'
+import { app } from 'electron'
+import { join } from 'node:path'
 import type { IpcMain } from 'electron'
 import { z } from 'zod'
 import { handle } from './shared'
@@ -7,6 +9,7 @@ import { MoshiDemoSession, selectDemoEvidence, checkDemoHealth } from '../voice/
 import { startMoshiInterview, compareMoshiSessionRigor } from '../ai/moshi-interview'
 import { interviewRuntime } from '../ai/runtime'
 import { getPrefs } from '../settings/prefs'
+import { TrialCapture } from '../voice/moshi/trial-capture'
 
 type Brain = Awaited<ReturnType<typeof startMoshiInterview>>
 type Conditioning = Parameters<MoshiDemoSession['condition']>[0]
@@ -20,6 +23,8 @@ interface ActiveInterview {
   finishing?: Promise<void>
   mouthEnded?: boolean
   endReason?: string
+  capture?: TrialCapture
+  record: (action: (capture: TrialCapture) => void) => void
   transportEnded?: () => void
   close: (reason?: string) => Promise<void>
 }
@@ -72,26 +77,42 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
       resumeText: z.string().trim().min(1).max(200_000),
       jobDescription: z.string().trim().max(20_000).optional(),
       candidateName: z.string().trim().max(200).optional(),
+      recordTrialMedia: z.boolean().optional(),
       consent: z.literal(true)
     }),
     async (event, request) => {
       assertRemoteMoshiEnabled()
       const owner = event.sender
+      const startedMs = performance.now()
+      const startedAtUtc = new Date().toISOString()
       if (sessions.has(owner.id)) throw new Error('End the active interview first')
       const send = (message: object): void => {
         if (!owner.isDestroyed())
           owner.send('moshiDemo:event', { ...message, sessionId: request.sessionId })
       }
       const startupAbort = new AbortController()
+      const record = (action: (capture: TrialCapture) => void): void => {
+        if (!current.capture) return
+        try {
+          action(current.capture)
+        } catch {
+          const failed = current.capture
+          current.capture = undefined
+          void failed.finish('Trial capture failed', false).catch(() => undefined)
+          send({ type: 'capture-warning', message: 'Trial capture failed; interview continues' })
+        }
+      }
       const current: ActiveInterview = {
         id: request.sessionId,
         cancelled: false,
+        record,
         close: (reason = 'Ended by user') => {
           if (current.finishing) return current.finishing
           current.endReason = reason
           current.cancelled = true
           if (!current.brain) startupAbort.abort()
           current.finishing = Promise.resolve().then(async () => {
+            let reportFinished = false
             const mouth = current.mouth
             if (mouth && !current.mouthEnded) {
               await new Promise<void>((resolve) => {
@@ -102,6 +123,7 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
             try {
               if (current.brain) {
                 const snapshot = await current.brain.finish(current.endReason ?? reason)
+                reportFinished = snapshot.status === 'finished'
                 send({ type: 'interview', snapshot })
               }
             } catch (error) {
@@ -112,6 +134,14 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
                   error instanceof Error ? error.message : 'Could not finish interview report'
               })
             } finally {
+              try {
+                await current.capture?.finish(
+                  current.endReason ?? reason,
+                  reportFinished && (current.endReason ?? reason) === 'Ended by user'
+                )
+              } catch {
+                send({ type: 'capture-warning', message: 'Trial capture could not finish' })
+              }
               if (sessions.get(owner.id) === current) sessions.delete(owner.id)
               owner.removeListener('destroyed', stop)
               owner.removeListener('render-process-gone', stop)
@@ -138,6 +168,29 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
         assertActive()
         if (!health.upstreamReady || health.busy)
           throw new Error('Moshi worker is not ready or is busy')
+        if (health.mode === 'moshi') {
+          try {
+            current.capture = new TrialCapture({
+              root: join(app.getPath('userData'), 'moshi-trials'),
+              sessionId: request.sessionId,
+              trialId: health.trialId ?? null,
+              recordMedia: request.recordTrialMedia === true,
+              startedMs,
+              startedAtUtc,
+              onMediaError: () =>
+                send({
+                  type: 'capture-warning',
+                  message: 'Trial media write failed; interview continues'
+                })
+            })
+            record((capture) => capture.phase('health'))
+          } catch {
+            send({
+              type: 'capture-warning',
+              message: 'Trial capture unavailable; interview continues'
+            })
+          }
+        }
         const evidence = selectDemoEvidence(request.experienceIds, (id) =>
           getExperienceStore().get(id)
         )
@@ -179,35 +232,44 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
           throw new Error('Interview ended before it became ready')
         }
         current.brain = brain
+        record((capture) => capture.phase('brain'))
         send({ type: 'interview', snapshot: brain.snapshot() })
-        const mouth = new MoshiDemoSession((message) => {
-          if (sessions.get(owner.id) !== current) return
-          if (message.type === 'ended') {
-            current.mouthEnded = true
-            const endReason =
-              current.endReason ??
-              `Remote session ended before local audio drain; transcript incomplete: ${message.reason}`
-            current.endReason = endReason
-            if (current.transportEnded) current.transportEnded()
-            else void current.close(endReason)
-            return
-          }
-          if (current.cancelled && message.type !== 'segment') return
-          if (message.type === 'segment') {
-            const { type: _type, ...segment } = message
-            brain.appendSegment(segment)
-          } else if (message.type === 'gap') {
-            void brain.gap().catch((error: unknown) => {
-              send({
-                type: 'error',
-                message: error instanceof Error ? error.message : 'Interview scoring failed'
+        const mouth = new MoshiDemoSession(
+          (message) => {
+            if (sessions.get(owner.id) !== current) return
+            if (message.type === 'ended') {
+              current.mouthEnded = true
+              const endReason =
+                current.endReason ??
+                `Remote session ended before local audio drain; transcript incomplete: ${message.reason}`
+              current.endReason = endReason
+              if (current.transportEnded) current.transportEnded()
+              else void current.close(endReason)
+              return
+            }
+            if (current.cancelled && message.type !== 'segment') return
+            if (message.type === 'segment') {
+              const { type: _type, ...segment } = message
+              brain.appendSegment(segment)
+            } else if (message.type === 'gap') {
+              record((capture) => capture.gap())
+              void brain.gap().catch((error: unknown) => {
+                send({
+                  type: 'error',
+                  message: error instanceof Error ? error.message : 'Interview scoring failed'
+                })
+                void current.close('Interview scoring failed')
               })
-              void current.close('Interview scoring failed')
-            })
-          } else if (message.type === 'conditioning') {
-            brain.recordConditioningDelivery(message.revision, message.status, message.reason)
-          } else send(message)
-        })
+            } else if (message.type === 'conditioning') {
+              brain.recordConditioningDelivery(message.revision, message.status, message.reason)
+            } else {
+              if (message.type === 'ready') record((capture) => capture.phase('ready'))
+              if (message.type === 'audio') record((capture) => capture.output(message.samples))
+              send(message)
+            }
+          },
+          (durationMs) => record((capture) => capture.ping(durationMs))
+        )
         current.mouth = mouth
         const mode = await mouth.start(
           request.endpoint,
@@ -233,8 +295,10 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
       !current.cancelled &&
       current.id === sessionId &&
       samples instanceof Float32Array
-    )
+    ) {
       current.mouth?.audio(samples)
+      current.record((capture) => capture.input(samples))
+    }
   })
   handle(
     ipcMain,

@@ -3,9 +3,23 @@ set -euo pipefail
 test "$(id -u)" = 0
 : "${STARFOLIO_DEMO_MAX_SECONDS:?AWS termination duration required}"
 : "${STARFOLIO_DEMO_DEADLINE:?AWS termination deadline required}"
+: "${STARFOLIO_TRIAL_ID:?Trial ID required}"
+: "${STARFOLIO_TRIAL_DIAGNOSTICS_URI:?Trial diagnostics URI required}"
+root=$(cd "$(dirname "$0")/../.." && pwd)
+cat > /etc/systemd/system/starfolio-diagnostics.service <<EOF
+[Unit]
+Description=STARfolio trial diagnostics
+[Service]
+Type=oneshot
+Environment=AWS_REGION=$AWS_REGION
+Environment=STARFOLIO_TRIAL_DIAGNOSTICS_URI=$STARFOLIO_TRIAL_DIAGNOSTICS_URI
+ExecStart=/bin/bash $root/demo/moshi-gateway/diagnostics.sh
+TimeoutStartSec=25
+EOF
+systemctl daemon-reload
+trap 'systemctl start starfolio-diagnostics.service || true; shutdown -h now' ERR
 command -v nvidia-smi >/dev/null
 python3.12 -c 'import sys; assert sys.version_info[:2] == (3, 12)'
-root=$(cd "$(dirname "$0")/../.." && pwd)
 gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
 test "$gpu_memory" -ge 44000
 remaining=$(($(date -d "$STARFOLIO_DEMO_DEADLINE" +%s) - $(date +%s)))
@@ -74,15 +88,17 @@ Group=starfolio-demo
 WorkingDirectory=$root/demo/moshi-gateway
 Environment=STARFOLIO_DEMO_MAX_SECONDS=$STARFOLIO_DEMO_MAX_SECONDS
 Environment=STARFOLIO_DEMO_DEADLINE=$STARFOLIO_DEMO_DEADLINE
+Environment=STARFOLIO_TRIAL_ID=$STARFOLIO_TRIAL_ID
 Environment=HF_HOME=/opt/starfolio-runtime/hf
 Environment=XDG_CACHE_HOME=/opt/starfolio-runtime/cache
 Environment=TRITON_CACHE_DIR=/opt/starfolio-runtime/cache/triton
 Environment=HF_HUB_DISABLE_TELEMETRY=1
 Environment=DO_NOT_TRACK=1
 ExecStart=/bin/bash $root/demo/moshi-gateway/run-worker.sh
+ExecStopPost=-+/usr/bin/systemctl start starfolio-diagnostics.service
 ExecStopPost=+/sbin/shutdown -h now
 RuntimeMaxSec=${remaining}s
-TimeoutStopSec=20
+TimeoutStopSec=45
 KillMode=control-group
 Restart=no
 NoNewPrivileges=true

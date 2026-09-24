@@ -23,6 +23,9 @@ push-to-talk remains available when remote compute is unavailable or unwanted.
   persistence, reporting, and audit local.
 - [x] 6e.4 Unit, integration, lifecycle, production-build, and packaged Electron tests cover the control
   path without requiring a GPU.
+- [ ] 6e.4a Before the live gate, verify trial-linked local timing and media capture, private worker
+  diagnostics, and append-only AWS resource observations. Media needs separate consent; posted cost
+  remains unknown until billing refresh. Tracked in issue #334.
 - [ ] 6e.5 Live GPU gate: run a real microphone interview, verify returned audio and transcript quality,
   compare gap-scoring with the turn-based baseline, and prove teardown on success, timeout, disconnect,
   and failure. Tracked in issue #312.

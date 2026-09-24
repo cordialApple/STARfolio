@@ -14,6 +14,7 @@ export interface DemoHealth {
   interviewProtocol: 1
   upstreamReady: boolean
   busy: boolean
+  trialId?: string
 }
 
 export type DemoEvent =
@@ -108,14 +109,17 @@ export async function checkDemoHealth(endpoint: string): Promise<DemoHealth> {
             !['moshi', 'fixture'].includes(result.mode) ||
             result.interviewProtocol !== 1 ||
             typeof result.upstreamReady !== 'boolean' ||
-            typeof result.busy !== 'boolean'
+            typeof result.busy !== 'boolean' ||
+            (result.trialId !== undefined &&
+              (typeof result.trialId !== 'string' || result.trialId.length > 100))
           )
             throw new Error('Invalid gateway health response')
           resolve({
             mode: result.mode,
             interviewProtocol: 1,
             upstreamReady: result.upstreamReady,
-            busy: result.busy
+            busy: result.busy,
+            ...(result.trialId === undefined ? {} : { trialId: result.trialId })
           })
         } catch (error) {
           reject(error)
@@ -136,9 +140,14 @@ export class MoshiDemoSession {
   private deadline?: ReturnType<typeof setTimeout>
   private heartbeat?: ReturnType<typeof setInterval>
   private lastPong = Date.now()
+  private pendingPingMs?: number
   private rejectStart?: (error: Error) => void
 
-  constructor(private readonly emit: (event: DemoEvent) => void) {}
+  constructor(
+    private readonly emit: (event: DemoEvent) => void,
+    private readonly onRoundTrip?: (durationMs: number) => void,
+    private readonly heartbeatIntervalMs = 10_000
+  ) {}
 
   async start(
     endpoint: string,
@@ -174,8 +183,11 @@ export class MoshiDemoSession {
         this.lastPong = Date.now()
         this.heartbeat = setInterval(() => {
           if (Date.now() - this.lastPong > 35_000) this.fail('Gateway heartbeat lost')
-          else socket.send(JSON.stringify({ type: 'ping' }))
-        }, 10_000)
+          else if (this.pendingPingMs === undefined) {
+            this.pendingPingMs = performance.now()
+            socket.send(JSON.stringify({ type: 'ping' }))
+          }
+        }, this.heartbeatIntervalMs)
       })
       socket.on('message', (data, binary) => {
         if (this.stopped) return
@@ -206,8 +218,13 @@ export class MoshiDemoSession {
             )
             this.emit({ type: 'ready', mode: event.mode })
             resolve(event.mode)
-          } else if (event.type === 'pong') this.lastPong = Date.now()
-          else if (
+          } else if (event.type === 'pong') {
+            this.lastPong = Date.now()
+            if (this.pendingPingMs !== undefined) {
+              this.onRoundTrip?.(performance.now() - this.pendingPingMs)
+              this.pendingPingMs = undefined
+            }
+          } else if (
             event.type === 'text' &&
             ['assistant', 'user'].includes(event.speaker) &&
             typeof event.text === 'string' &&

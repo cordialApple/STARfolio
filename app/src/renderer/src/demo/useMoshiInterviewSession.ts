@@ -15,6 +15,7 @@ interface MoshiInterviewSessionOptions {
   durationSeconds: number
   jobDescription: string
   consent: boolean
+  recordTrialMedia: boolean
 }
 
 function captureDrainFailureMessage(failure: unknown): string {
@@ -47,7 +48,8 @@ export function useMoshiInterviewSession({
   experienceIds,
   durationSeconds,
   jobDescription,
-  consent
+  consent,
+  recordTrialMedia
 }: MoshiInterviewSessionOptions): MoshiInterviewSession {
   const [bank, setBank] = useState<ExperienceSummary[]>([])
   const [status, setStatus] = useState('Ready to connect')
@@ -125,10 +127,7 @@ export function useMoshiInterviewSession({
       } catch (error) {
         drainFailure = error
       }
-      await window.api.moshiDemo.end(
-        id,
-        drainFailure ? 'Final transcript flush failed' : undefined
-      )
+      await window.api.moshiDemo.end(id, drainFailure ? 'Final transcript flush failed' : undefined)
       if (drainFailure) throw new Error(captureDrainFailureMessage(drainFailure))
     },
     [drainCapture]
@@ -203,6 +202,8 @@ export function useMoshiInterviewSession({
         void requestEnd()
         setEnding(true)
         setStatus(event.message)
+      } else if (event.type === 'capture-warning') {
+        setStatus(event.message)
       } else if (event.type === 'ended') {
         void (async () => {
           let drainFailure: unknown
@@ -261,7 +262,8 @@ export function useMoshiInterviewSession({
         resumeText,
         jobDescription: jobDescription.trim() || undefined,
         candidateName: candidateName.trim() || undefined,
-        consent: true
+        consent: true,
+        recordTrialMedia
       })
       if (!isCurrentAttempt()) return
       if (!shouldCaptureDemoAudio(connectedMode, consent)) {
@@ -308,6 +310,7 @@ export function useMoshiInterviewSession({
     endpoint,
     experienceIds,
     jobDescription,
+    recordTrialMedia,
     requestEnd,
     resumeText
   ])
