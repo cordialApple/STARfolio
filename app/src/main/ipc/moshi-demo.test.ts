@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { join } from 'node:path'
 import { beforeEach, expect, it, vi, type Mock } from 'vitest'
 import type { DemoEvent, DemoConditioning } from '../voice/moshi/demo'
 import type { MoshiInterviewPorts } from '../ai/moshi-interview'
@@ -21,17 +22,57 @@ type BrainDouble = {
   recordConditioningDelivery: Mock
   ports: MoshiInterviewPorts
 }
+type CaptureDouble = {
+  args: unknown[]
+  phase: Mock
+  gap: Mock
+  input: Mock
+  output: Mock
+  ping: Mock
+  finish: Mock
+}
 
 const fake = vi.hoisted(() => ({
   transports: [] as TransportDouble[],
   brains: [] as BrainDouble[],
-  health: vi.fn(async () => ({ mode: 'fixture', upstreamReady: true, busy: false })),
+  captures: [] as CaptureDouble[],
+  transportMode: 'fixture' as 'fixture' | 'moshi',
+  health: vi.fn(
+    async (): Promise<{
+      mode: string
+      upstreamReady: boolean
+      busy: boolean
+      trialId?: string
+    }> => ({ mode: 'fixture', upstreamReady: true, busy: false })
+  ),
   runtime: vi.fn(() => ({})),
   startBrain: vi.fn(),
   loadAudit: vi.fn(),
   compare: vi.fn(async () => ({ verdict: 'fixture-only', agreement: 1 })),
   experimentalRemoteMoshiEnabled: true,
   update: undefined as unknown
+}))
+vi.mock('electron', () => ({ app: { getPath: () => 'local-trials' } }))
+vi.mock('../voice/moshi/trial-capture', () => ({
+  TrialCapture: class {
+    phase = vi.fn()
+    gap = vi.fn()
+    input = vi.fn()
+    output = vi.fn()
+    ping = vi.fn()
+    finish = vi.fn(async () => {})
+    constructor(...args: unknown[]) {
+      fake.captures.push({
+        args,
+        phase: this.phase,
+        gap: this.gap,
+        input: this.input,
+        output: this.output,
+        ping: this.ping,
+        finish: this.finish
+      })
+    }
+  }
 }))
 vi.mock('./shared', () => ({
   handle: (ipc, channel, schema, fn) =>
@@ -57,7 +98,7 @@ vi.mock('../voice/moshi/demo', () => ({
     constructor(public emit: (event: DemoEvent) => void) {
       fake.transports.push(this)
     }
-    start = vi.fn(async () => 'fixture')
+    start = vi.fn(async () => fake.transportMode)
   }
 }))
 
@@ -99,6 +140,8 @@ function harness() {
 beforeEach(() => {
   fake.transports.length = 0
   fake.brains.length = 0
+  fake.captures.length = 0
+  fake.transportMode = 'fixture'
   fake.health.mockResolvedValue({ mode: 'fixture', upstreamReady: true, busy: false })
   fake.experimentalRemoteMoshiEnabled = true
   fake.startBrain.mockImplementation(async (_input, _runtime, ports) => {
@@ -122,13 +165,41 @@ beforeEach(() => {
   })
 })
 
+it('links live session measurements to trial ID without recording media by default', async () => {
+  fake.transportMode = 'moshi'
+  fake.health.mockResolvedValueOnce({
+    mode: 'moshi',
+    upstreamReady: true,
+    busy: false,
+    trialId: 'trial-1'
+  })
+  const h = harness()
+  await h.call('start', { ...request, recordTrialMedia: false })
+  expect(fake.captures[0].args[0]).toMatchObject({
+    root: join('local-trials', 'moshi-trials'),
+    sessionId: 'first',
+    trialId: 'trial-1',
+    recordMedia: false
+  })
+  fake.transports[0].emit({ type: 'ready', mode: 'moshi' })
+  expect(fake.captures[0].phase).toHaveBeenCalledWith('ready')
+  fake.transports[0].emit({ type: 'gap', atMs: 100 })
+  fake.transports[0].emit({ type: 'audio', samples: new Float32Array([0.2]) })
+  h.call('audio', { sessionId: 'first', samples: new Float32Array([0.3]) })
+  expect(fake.captures[0].gap).toHaveBeenCalledOnce()
+  expect(fake.captures[0].output).toHaveBeenCalledOnce()
+  expect(fake.captures[0].input).toHaveBeenCalledOnce()
+  await h.call('end', { sessionId: 'first' })
+  expect(fake.captures[0].finish).toHaveBeenCalledWith('Ended by user', true)
+})
+
 it.each([
   ['health', { endpoint: request.endpoint }],
   ['start', request],
   ['rigor', { sessionId: 'stored' }]
 ])('blocks %s while the remote experiment is disabled', async (name, input) => {
-    fake.experimentalRemoteMoshiEnabled = false
-    await expect(harness().call(name, input)).rejects.toThrow('Remote MoshiRAG is disabled')
+  fake.experimentalRemoteMoshiEnabled = false
+  await expect(harness().call(name, input)).rejects.toThrow('Remote MoshiRAG is disabled')
 })
 
 it('keeps saved audits readable while the remote experiment is disabled', async () => {

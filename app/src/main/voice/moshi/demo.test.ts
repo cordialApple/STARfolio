@@ -49,6 +49,29 @@ describe('Moshi demo evidence', () => {
 })
 
 describe('Moshi demo transport', () => {
+  it('measures an application ping round trip after ready', async () => {
+    const { server: ws } = server()
+    await new Promise<void>((resolve) => ws.on('listening', resolve))
+    const address = ws.address() as { port: number }
+    ws.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const message = JSON.parse(data.toString())
+        if (message.type === 'start') socket.send(JSON.stringify({ type: 'ready', mode: 'moshi' }))
+        if (message.type === 'ping') socket.send(JSON.stringify({ type: 'pong' }))
+      })
+    })
+    const roundTrips: number[] = []
+    const session = new MoshiDemoSession(
+      () => {},
+      (durationMs) => roundTrips.push(durationMs),
+      20
+    )
+    await session.start(`ws://127.0.0.1:${address.port}/session`, [], 60)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    expect(roundTrips.length).toBeGreaterThan(0)
+    expect(roundTrips.every((value) => Number.isFinite(value) && value >= 0)).toBe(true)
+    session.end()
+  })
   it('refuses non-loopback endpoints and excessive session duration', async () => {
     const session = new MoshiDemoSession(() => {})
     await expect(session.start('ws://example.com/session', [], 120)).rejects.toThrow('loopback')
@@ -152,7 +175,13 @@ describe('Moshi demo connection check', () => {
       paths.push(request.url ?? '')
       response.setHeader('Content-Type', 'application/json')
       response.end(
-        JSON.stringify({ mode: 'fixture', interviewProtocol: 1, upstreamReady: true, busy: false })
+        JSON.stringify({
+          mode: 'fixture',
+          interviewProtocol: 1,
+          upstreamReady: true,
+          busy: false,
+          trialId: 'trial-123'
+        })
       )
     })
     await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
@@ -162,7 +191,8 @@ describe('Moshi demo connection check', () => {
         mode: 'fixture',
         interviewProtocol: 1,
         upstreamReady: true,
-        busy: false
+        busy: false,
+        trialId: 'trial-123'
       })
       expect(paths).toEqual(['/health'])
       await expect(checkDemoHealth('ws://example.com/session')).rejects.toThrow('loopback')
