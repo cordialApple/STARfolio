@@ -7,7 +7,7 @@ This runner creates one temporary GPU worker for MoshiRAG. STARfolio, its data, 
 - Python 3.10+ and AWS CLI v2 on the desktop. Install the AWS Session Manager plugin for `tunnel`.
 - Existing S3 bucket in the chosen region, blocking public access. Bundle object uses SSE-S3; existing bucket is preserved on cleanup.
 - Hugging Face read token in Secrets Manager. Its full ARN may point to another supported US region in the same AWS account. The worker reads that secret from its home-region endpoint without creating a replica.
-- Existing VPC/public subnet with a direct internet gateway route. No NAT gateway, load balancer, or public inbound rule is created. Outbound HTTP/HTTPS allows package/model downloads. Local services bind loopback; SSM forwards port 8765.
+- Existing VPC/public subnet with a direct internet gateway route, or a default VPC with safe default subnets for automatic placement. No NAT gateway, load balancer, or public inbound rule is created. Outbound HTTP/HTTPS allows package/model downloads. Local services bind loopback; SSM forwards port 8765.
 - Linux x86_64 CUDA AMI with Python 3.12, working NVIDIA driver, AWS CLI, active SSM agent, and systemd. Verify the AMI owner. CLI checks AWS AMI metadata; user data checks installed binaries and stops the instance on failure. AMI package readiness cannot be established from EC2 metadata alone. Marketplace AMIs with product charges are rejected.
 - At least eight vCPUs in the region's Running On-Demand G and VT quota. Availability-zone offering is checked. Current free quota and physical GPU capacity can still cause EC2 launch failure.
 
@@ -23,6 +23,8 @@ Copy-Item infra/aws-demo/config.example.json infra/aws-demo/config.local.json
 ```
 
 Fill `config.local.json`: verified AMI/owner/subnet/VPC, worker lifetime, bucket URI, and SHA256 returned by `pack`. Use that SHA256 as the S3 object name.
+
+Set `"subnet": null` to let EC2 choose a default subnet and zone. This works only with an available default VPC. Preflight requires every default subnet to assign public IPs and have an active internet-gateway route, and at least one default zone must offer the GPU type. EC2 may still reject current capacity. Keep an explicit subnet ID for a pinned zone.
 
 When moving regions, change the worker region, AMI and owner, VPC, public subnet, and bundle bucket URI together. The worker's quota, stack, SSM session, and EC2 metrics follow the worker region. The Hugging Face secret ARN can remain in its original region; preflight checks that its account matches the active AWS identity, and only the secret read uses the ARN's region. No secret value enters local config or the bundle.
 

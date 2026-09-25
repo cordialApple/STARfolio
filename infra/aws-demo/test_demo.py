@@ -225,6 +225,18 @@ class DemoTests(unittest.TestCase):
         self.assertIn("export STARFOLIO_HF_TOKEN_SECRET_REGION=us-east-2", bootstrap)
         self.assertIn(config["hf_token_secret_arn"], bootstrap)
 
+    def test_default_vpc_placement_omits_pinned_subnet(self):
+        config = {**self.config, "subnet": None}
+        plan = self.demo.make_plan(config, self.now)
+        worker = self.demo.make_template(config, plan, "/dev/sda1")["Resources"]["Worker"]
+        properties = worker["Properties"]
+        self.assertEqual(properties["SecurityGroupIds"], [{"Ref": "SecurityGroup"}])
+        self.assertNotIn("NetworkInterfaces", properties)
+        self.assertNotIn("SubnetId", properties)
+        self.assertNotIn("AvailabilityZone", properties)
+        self.assertEqual(worker["DependsOn"], ["DeadlineSchedule"])
+        self.assertTrue(properties["BlockDeviceMappings"][0]["Ebs"]["Encrypted"])
+
     def test_bootstrap_fetches_secret_from_home_region(self):
         script = (
             MODULE.parents[2] / "demo" / "moshi-gateway" / "bootstrap.sh"
@@ -403,8 +415,8 @@ class DemoTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "active demo"):
             self.demo.ensure_no_active_demo(aws)
 
-    def test_preflight_rejects_private_subnet_and_invalid_artifact(self):
-        responses = {
+    def preflight_responses(self):
+        return {
             ("ec2", "describe-images"): {
                 "Images": [
                     {
@@ -462,6 +474,100 @@ class DemoTests(unittest.TestCase):
                 "InstanceTypeOfferings": [{"InstanceType": "g6e.2xlarge"}]
             },
         }
+
+    def default_vpc_responses(self):
+        responses = self.preflight_responses()
+        responses[("ec2", "describe-vpcs")] = {
+            "Vpcs": [{"VpcId": self.config["vpc"], "IsDefault": True, "State": "available"}]
+        }
+        responses[("ec2", "describe-subnets")] = {
+            "Subnets": [
+                {
+                    "SubnetId": "subnet-aaaaaaaa",
+                    "VpcId": self.config["vpc"],
+                    "State": "available",
+                    "DefaultForAz": True,
+                    "MapPublicIpOnLaunch": True,
+                    "AvailabilityZone": "us-east-2a",
+                },
+                {
+                    "SubnetId": "subnet-bbbbbbbb",
+                    "VpcId": self.config["vpc"],
+                    "State": "available",
+                    "DefaultForAz": True,
+                    "MapPublicIpOnLaunch": True,
+                    "AvailabilityZone": "us-east-2b",
+                },
+            ]
+        }
+        responses[("ec2", "describe-route-tables")]["RouteTables"].append(
+            {
+                "Associations": [{"SubnetId": "subnet-bbbbbbbb"}],
+                "Routes": [
+                    {
+                        "DestinationCidrBlock": "0.0.0.0/0",
+                        "GatewayId": "igw-123",
+                        "State": "active",
+                    }
+                ],
+            }
+        )
+        responses[("ec2", "describe-instance-type-offerings")] = {
+            "InstanceTypeOfferings": [
+                {"InstanceType": "g6e.2xlarge", "Location": "us-east-2a"},
+                {"InstanceType": "g6e.2xlarge", "Location": "us-east-2b"},
+            ]
+        }
+        return responses
+
+    def test_default_vpc_preflight_checks_default_network(self):
+        responses = self.default_vpc_responses()
+        calls = []
+
+        def aws(service, operation, *args):
+            calls.append((service, operation, args))
+            return responses[(service, operation)]
+
+        config = {**self.config, "subnet": None}
+        self.assertEqual(self.demo.preflight(aws, config), "/dev/sda1")
+        self.assertTrue(any(call[:2] == ("ec2", "describe-vpcs") for call in calls))
+        subnet_calls = [
+            args for service, operation, args in calls if operation == "describe-subnets"
+        ]
+        self.assertTrue(all("--subnet-ids" not in args for args in subnet_calls))
+
+    def test_default_vpc_preflight_rejects_nondefault_vpc(self):
+        responses = self.default_vpc_responses()
+        responses[("ec2", "describe-vpcs")]["Vpcs"][0]["IsDefault"] = False
+        aws = lambda service, operation, *args: responses[(service, operation)]
+        with self.assertRaisesRegex(ValueError, "default VPC"):
+            self.demo.preflight(aws, {**self.config, "subnet": None})
+
+    def test_default_vpc_preflight_rejects_private_default_subnet(self):
+        responses = self.default_vpc_responses()
+        responses[("ec2", "describe-subnets")]["Subnets"][1]["MapPublicIpOnLaunch"] = False
+        aws = lambda service, operation, *args: responses[(service, operation)]
+        with self.assertRaisesRegex(ValueError, "public IP"):
+            self.demo.preflight(aws, {**self.config, "subnet": None})
+
+    def test_default_vpc_preflight_rejects_unrouted_default_subnet(self):
+        responses = self.default_vpc_responses()
+        responses[("ec2", "describe-route-tables")]["RouteTables"][1]["Routes"] = []
+        aws = lambda service, operation, *args: responses[(service, operation)]
+        with self.assertRaisesRegex(ValueError, "internet gateway"):
+            self.demo.preflight(aws, {**self.config, "subnet": None})
+
+    def test_default_vpc_preflight_requires_offered_default_zone(self):
+        responses = self.default_vpc_responses()
+        responses[("ec2", "describe-instance-type-offerings")]["InstanceTypeOfferings"] = [
+            {"InstanceType": "g6e.2xlarge", "Location": "us-east-2c"}
+        ]
+        aws = lambda service, operation, *args: responses[(service, operation)]
+        with self.assertRaisesRegex(ValueError, "offered"):
+            self.demo.preflight(aws, {**self.config, "subnet": None})
+
+    def test_preflight_rejects_private_subnet_and_invalid_artifact(self):
+        responses = self.preflight_responses()
         aws = lambda service, operation, *args, **kwargs: responses[
             (service, operation)
         ]

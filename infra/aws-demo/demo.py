@@ -65,7 +65,6 @@ def make_plan(config, now=None, trial_id=None):
         "region": r"us-(?:east-[12]|west-[12])",
         "ami": r"ami-[0-9a-f]{8,17}",
         "ami_owner": r"\d{12}",
-        "subnet": r"subnet-[0-9a-f]{8,17}",
         "vpc": r"vpc-[0-9a-f]{8,17}",
         "bundle_sha256": r"[0-9a-f]{64}",
         "bundle_s3_uri": r"s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[A-Za-z0-9/_.-]+",
@@ -73,6 +72,11 @@ def make_plan(config, now=None, trial_id=None):
     for key, pattern in patterns.items():
         if not re.fullmatch(pattern, str(config.get(key, ""))):
             raise ValueError(f"Invalid or missing {key}")
+    if "subnet" not in config or (
+        config["subnet"] is not None
+        and not re.fullmatch(r"subnet-[0-9a-f]{8,17}", str(config["subnet"]))
+    ):
+        raise ValueError("Invalid or missing subnet")
     secret_region_and_account(config)
     hours = float(config.get("hours"))
     if not math.isfinite(hours) or not 0.5 <= hours <= 6:
@@ -164,11 +168,38 @@ def preflight(aws, config):
             raise ValueError(
                 "AMI must have only one EBS volume, no larger than 150 GiB"
             )
-    subnet = aws("ec2", "describe-subnets", "--subnet-ids", config["subnet"])[
-        "Subnets"
-    ][0]
-    if subnet["VpcId"] != config["vpc"] or subnet["State"] != "available":
-        raise ValueError("Subnet must be available in the configured VPC")
+    auto_placement = config["subnet"] is None
+    if auto_placement:
+        vpcs = aws("ec2", "describe-vpcs", "--vpc-ids", config["vpc"])["Vpcs"]
+        if (
+            len(vpcs) != 1
+            or not vpcs[0].get("IsDefault")
+            or vpcs[0].get("State") != "available"
+        ):
+            raise ValueError("Automatic placement requires an available default VPC")
+        subnets = aws(
+            "ec2",
+            "describe-subnets",
+            "--filters",
+            json.dumps([{"Name": "vpc-id", "Values": [config["vpc"]]}]),
+        )["Subnets"]
+        default_subnets = [subnet for subnet in subnets if subnet.get("DefaultForAz")]
+        if not default_subnets or any(
+            subnet.get("VpcId") != config["vpc"]
+            or subnet.get("State") != "available"
+            for subnet in default_subnets
+        ):
+            raise ValueError("Automatic placement needs available default subnets")
+        if any(not subnet.get("MapPublicIpOnLaunch") for subnet in default_subnets):
+            raise ValueError("Every default subnet must assign a public IP")
+        subnet_ids = [subnet["SubnetId"] for subnet in default_subnets]
+    else:
+        subnet = aws("ec2", "describe-subnets", "--subnet-ids", config["subnet"])[
+            "Subnets"
+        ][0]
+        if subnet["VpcId"] != config["vpc"] or subnet["State"] != "available":
+            raise ValueError("Subnet must be available in the configured VPC")
+        subnet_ids = [config["subnet"]]
     tables = aws(
         "ec2",
         "describe-route-tables",
@@ -179,28 +210,34 @@ def preflight(aws, config):
             ]
         ),
     )["RouteTables"]
-    explicit = [
-        table
-        for table in tables
-        if any(
-            a.get("SubnetId") == config["subnet"] for a in table.get("Associations", [])
-        )
-    ]
     main = [
         table
         for table in tables
         if any(a.get("Main") for a in table.get("Associations", []))
     ]
-    applicable = explicit or main
-    if not any(
-        route.get("DestinationCidrBlock") == "0.0.0.0/0"
-        and route.get("GatewayId", "").startswith("igw-")
-        and route.get("State") == "active"
-        for table in applicable
-        for route in table.get("Routes", [])
-    ):
-        raise ValueError(
-            "Subnet needs a direct internet gateway route; this demo does not create NAT gateways"
+    for subnet_id in subnet_ids:
+        explicit = [
+            table
+            for table in tables
+            if any(
+                association.get("SubnetId") == subnet_id
+                for association in table.get("Associations", [])
+            )
+        ]
+        if not any(
+            route.get("DestinationCidrBlock") == "0.0.0.0/0"
+            and route.get("GatewayId", "").startswith("igw-")
+            and route.get("State") == "active"
+            for table in (explicit or main)
+            for route in table.get("Routes", [])
+        ):
+            raise ValueError(
+                "Subnet needs a direct internet gateway route; this demo does not create NAT gateways"
+            )
+    offering_filters = [{"Name": "instance-type", "Values": [INSTANCE_TYPE]}]
+    if not auto_placement:
+        offering_filters.append(
+            {"Name": "location", "Values": [subnet["AvailabilityZone"]]}
         )
     offerings = aws(
         "ec2",
@@ -208,14 +245,14 @@ def preflight(aws, config):
         "--location-type",
         "availability-zone",
         "--filters",
-        json.dumps(
-            [
-                {"Name": "instance-type", "Values": [INSTANCE_TYPE]},
-                {"Name": "location", "Values": [subnet["AvailabilityZone"]]},
-            ]
-        ),
+        json.dumps(offering_filters),
     )["InstanceTypeOfferings"]
-    if not offerings:
+    offered_zones = {offering.get("Location") for offering in offerings}
+    if auto_placement and not any(
+        subnet["AvailabilityZone"] in offered_zones for subnet in default_subnets
+    ):
+        raise ValueError("GPU type is not offered in any default subnet zone")
+    if not auto_placement and not offerings:
         raise ValueError("GPU type is not offered in the selected availability zone")
     quota = aws(
         "service-quotas",
@@ -384,6 +421,20 @@ def make_worker_role(config, plan):
 def make_template(config, plan, root_device):
     name = config["name"]
     bootstrap = make_bootstrap(config, plan)
+    network_properties = (
+        {"SecurityGroupIds": [{"Ref": "SecurityGroup"}]}
+        if config["subnet"] is None
+        else {
+            "NetworkInterfaces": [
+                {
+                    "AssociatePublicIpAddress": True,
+                    "DeviceIndex": "0",
+                    "SubnetId": config["subnet"],
+                    "GroupSet": [{"Ref": "SecurityGroup"}],
+                }
+            ]
+        }
+    )
     lambda_code = """import boto3
 
 def handler(event, context):
@@ -517,14 +568,7 @@ def handler(event, context):
                     "HttpEndpoint": "enabled",
                     "HttpPutResponseHopLimit": 1,
                 },
-                "NetworkInterfaces": [
-                    {
-                        "AssociatePublicIpAddress": True,
-                        "DeviceIndex": "0",
-                        "SubnetId": config["subnet"],
-                        "GroupSet": [{"Ref": "SecurityGroup"}],
-                    }
-                ],
+                **network_properties,
                 "BlockDeviceMappings": [
                     {
                         "DeviceName": root_device,
