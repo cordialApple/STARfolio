@@ -5,6 +5,7 @@
   "ami_owner": "REPLACE_WITH_AMI_OWNER_ACCOUNT",
   "subnet": "REPLACE_WITH_PUBLIC_SUBNET_ID",
   "vpc": "REPLACE_WITH_VPC_ID",
+  "instance_type": "g6e.2xlarge",
   "hours": 4,
   "bundle_s3_uri": "s3://REPLACE_BUCKET/moshi/REPLACE_SHA256.tar.gz",
   "bundle_sha256": "REPLACE_WITH_PACK_RESULT",
