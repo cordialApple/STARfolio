@@ -78,6 +78,50 @@ class DemoTests(unittest.TestCase):
             },
         )
 
+    def test_plan_selects_allowed_gpu_size(self):
+        for instance_type in (
+            "g6e.2xlarge",
+            "g6e.4xlarge",
+            "g6e.8xlarge",
+            "g6e.16xlarge",
+        ):
+            with self.subTest(instance_type=instance_type):
+                config = {**self.config, "instance_type": instance_type}
+                self.assertEqual(
+                    self.demo.make_plan(config, self.now)["instance_type"],
+                    instance_type,
+                )
+
+    def test_plan_rejects_unsupported_gpu_size(self):
+        for instance_type in (
+            "g6e.xlarge",
+            "g6e.48xlarge",
+            "p5.48xlarge",
+            "",
+            None,
+            [],
+            {},
+        ):
+            with self.subTest(instance_type=instance_type):
+                with self.assertRaisesRegex(ValueError, "instance_type"):
+                    self.demo.make_plan(
+                        {**self.config, "instance_type": instance_type}, self.now
+                    )
+
+    def test_template_uses_selected_gpu_size(self):
+        for instance_type in (
+            "g6e.4xlarge",
+            "g6e.8xlarge",
+            "g6e.16xlarge",
+        ):
+            with self.subTest(instance_type=instance_type):
+                config = {**self.config, "instance_type": instance_type}
+                plan = self.demo.make_plan(config, self.now)
+                worker = self.demo.make_template(config, plan, "/dev/sda1")[
+                    "Resources"
+                ]["Worker"]["Properties"]
+                self.assertEqual(worker["InstanceType"], instance_type)
+
     def test_plan_links_worker_and_diagnostics_with_unique_trial_id(self):
         trial_id = "19ab818e-2f38-4e71-9b51-84698a30f10d"
         plan = self.demo.make_plan(self.config, self.now, trial_id=trial_id)
@@ -595,6 +639,40 @@ class DemoTests(unittest.TestCase):
         responses[("ec2", "describe-route-tables")] = {"RouteTables": []}
         with self.assertRaisesRegex(ValueError, "internet gateway"):
             self.demo.preflight(aws, self.config)
+
+    def test_preflight_uses_selected_gpu_offering_and_quota(self):
+        for instance_type, required_vcpus in (
+            ("g6e.4xlarge", 16),
+            ("g6e.8xlarge", 32),
+            ("g6e.16xlarge", 64),
+        ):
+            with self.subTest(instance_type=instance_type):
+                config = {**self.config, "instance_type": instance_type}
+                responses = self.preflight_responses()
+                responses[("ec2", "describe-instance-type-offerings")] = {
+                    "InstanceTypeOfferings": [{"InstanceType": instance_type}]
+                }
+                responses[("service-quotas", "get-service-quota")] = {
+                    "Quota": {"Value": required_vcpus}
+                }
+                calls = []
+
+                def aws(service, operation, *args):
+                    calls.append((service, operation, args))
+                    return responses[(service, operation)]
+
+                self.assertEqual(self.demo.preflight(aws, config), "/dev/sda1")
+                offering_args = next(
+                    args
+                    for service, operation, args in calls
+                    if operation == "describe-instance-type-offerings"
+                )
+                self.assertIn(instance_type, json.dumps(offering_args))
+                responses[("service-quotas", "get-service-quota")] = {
+                    "Quota": {"Value": required_vcpus - 1}
+                }
+                with self.assertRaisesRegex(ValueError, str(required_vcpus)):
+                    self.demo.preflight(aws, config)
 
 
 if __name__ == "__main__":

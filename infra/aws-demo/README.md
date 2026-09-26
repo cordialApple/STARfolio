@@ -9,9 +9,9 @@ This runner creates one temporary GPU worker for MoshiRAG. STARfolio, its data, 
 - Hugging Face read token in Secrets Manager. Its full ARN may point to another supported US region in the same AWS account. The worker reads that secret from its home-region endpoint without creating a replica.
 - Existing VPC/public subnet with a direct internet gateway route, or a default VPC with safe default subnets for automatic placement. No NAT gateway, load balancer, or public inbound rule is created. Outbound HTTP/HTTPS allows package/model downloads. Local services bind loopback; SSM forwards port 8765.
 - Linux x86_64 CUDA AMI with Python 3.12, working NVIDIA driver, AWS CLI, active SSM agent, and systemd. Verify the AMI owner. CLI checks AWS AMI metadata; user data checks installed binaries and stops the instance on failure. AMI package readiness cannot be established from EC2 metadata alone. Marketplace AMIs with product charges are rejected.
-- At least eight vCPUs in the region's Running On-Demand G and VT quota. Availability-zone offering is checked. Current free quota and physical GPU capacity can still cause EC2 launch failure.
+- Enough regional Running On-Demand G and VT quota for the selected type: 8, 16, 32, or 64 vCPUs. Availability-zone offering is checked. Current free quota and physical GPU capacity can still cause EC2 launch failure.
 
-The worker is one `g6e.2xlarge`: 8 vCPUs, 64 GiB host memory, one L40S with 44 GiB reported GPU memory. The PyTorch speech model needs about 24 GB of GPU memory on its own; this worker also runs a separate reference encoder and local STT. `g6e.xlarge` has the same GPU memory but half the host memory, so it is not a validated substitute. First live trial must measure actual memory fit and latency. Setup and downloads consume the configured deadline; the default four hours is a total worker lifetime, not interview duration. [MoshiRAG requirements](https://github.com/kyutai-labs/moshi-rag/tree/8c6dfc101b7871baa428424bcdc583b74fb561d9#requirements), [AWS specifications](https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html).
+Default worker is one `g6e.2xlarge`: 8 vCPUs, 64 GiB host RAM, and one L40S with 44 GiB reported GPU memory. The PyTorch speech model needs about 24 GB of GPU memory on its own; this worker also runs a separate reference encoder and local STT. Set `instance_type` to `g6e.4xlarge`, `g6e.8xlarge`, or `g6e.16xlarge` for 128, 256, or 512 GiB host RAM. Each still has one L40S and the same GPU memory. Extra host RAM does not fix GPU out-of-memory. `g6e.xlarge` has only 32 GiB host RAM and is not a validated substitute. First live trial must measure actual fit and latency. Setup and downloads consume the configured deadline; the default four hours is total worker lifetime, not interview duration. [MoshiRAG requirements](https://github.com/kyutai-labs/moshi-rag/tree/8c6dfc101b7871baa428424bcdc583b74fb561d9#requirements), [AWS specifications](https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html).
 
 ## Run
 
@@ -23,6 +23,8 @@ Copy-Item infra/aws-demo/config.example.json infra/aws-demo/config.local.json
 ```
 
 Fill `config.local.json`: verified AMI/owner/subnet/VPC, worker lifetime, bucket URI, and SHA256 returned by `pack`. Use that SHA256 as the S3 object name.
+
+For an ordered capacity trial, set `hours` to `0.6666666666666666` and `instance_type` to `g6e.4xlarge`. If EC2 cannot allocate it, capture the failed trial and wait until its stack is fully deleted. Then use a fresh trial ID with `g6e.8xlarge`, followed by `g6e.16xlarge` only if needed. Never start the next size while a worker or stack remains. A regional offering is not proof of live capacity.
 
 Set `"subnet": null` to let EC2 choose a default subnet and zone. This works only with an available default VPC. Preflight requires every default subnet to assign public IPs and have an active internet-gateway route, and at least one default zone must offer the GPU type. EC2 may still reject current capacity. Keep an explicit subnet ID for a pinned zone.
 

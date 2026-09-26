@@ -13,7 +13,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
-INSTANCE_TYPE = "g6e.2xlarge"
+INSTANCE_VCPUS = {
+    "g6e.2xlarge": 8,
+    "g6e.4xlarge": 16,
+    "g6e.8xlarge": 32,
+    "g6e.16xlarge": 64,
+}
 TAG_KEY = "StarfolioDemo"
 BUNDLE_FILES = (
     "README.md",
@@ -49,6 +54,13 @@ def secret_region_and_account(config):
     return match.group(1), match.group(2)
 
 
+def selected_instance(config):
+    instance_type = config.get("instance_type", "g6e.2xlarge")
+    if not isinstance(instance_type, str) or instance_type not in INSTANCE_VCPUS:
+        raise ValueError("Invalid instance_type")
+    return instance_type
+
+
 def make_plan(config, now=None, trial_id=None):
     now = now or datetime.now(timezone.utc)
     trial_id = str(uuid4()) if trial_id is None else trial_id
@@ -78,6 +90,7 @@ def make_plan(config, now=None, trial_id=None):
     ):
         raise ValueError("Invalid or missing subnet")
     secret_region_and_account(config)
+    instance_type = selected_instance(config)
     hours = float(config.get("hours"))
     if not math.isfinite(hours) or not 0.5 <= hours <= 6:
         raise ValueError("hours must be between 0.5 and 6")
@@ -85,7 +98,7 @@ def make_plan(config, now=None, trial_id=None):
     return {
         "name": config["name"],
         "region": config["region"],
-        "instance_type": INSTANCE_TYPE,
+        "instance_type": instance_type,
         "deadline": timestamp(now + timedelta(hours=hours)),
         "lifetime_hours": hours,
         "trial_id": trial_id,
@@ -140,6 +153,8 @@ def ensure_no_active_demo(aws):
 
 
 def preflight(aws, config):
+    instance_type = selected_instance(config)
+    required_vcpus = INSTANCE_VCPUS[instance_type]
     _, secret_account = secret_region_and_account(config)
     if aws("sts", "get-caller-identity")["Account"] != secret_account:
         raise ValueError("Hugging Face secret account must match AWS account")
@@ -234,7 +249,7 @@ def preflight(aws, config):
             raise ValueError(
                 "Subnet needs a direct internet gateway route; this demo does not create NAT gateways"
             )
-    offering_filters = [{"Name": "instance-type", "Values": [INSTANCE_TYPE]}]
+    offering_filters = [{"Name": "instance-type", "Values": [instance_type]}]
     if not auto_placement:
         offering_filters.append(
             {"Name": "location", "Values": [subnet["AvailabilityZone"]]}
@@ -262,9 +277,9 @@ def preflight(aws, config):
         "--quota-code",
         "L-DB2E81BA",
     )["Quota"]["Value"]
-    if quota < 8:
+    if quota < required_vcpus:
         raise ValueError(
-            "Running On-Demand G and VT quota must be at least 8 vCPUs; remaining account capacity is checked by EC2 at launch"
+            f"Running On-Demand G and VT quota must be at least {required_vcpus} vCPUs; remaining account capacity is checked by EC2 at launch"
         )
     bucket, key = config["bundle_s3_uri"].removeprefix("s3://").split("/", 1)
     location = (
@@ -560,7 +575,7 @@ def handler(event, context):
             "DependsOn": ["DeadlineSchedule"],
             "Properties": {
                 "ImageId": config["ami"],
-                "InstanceType": INSTANCE_TYPE,
+                "InstanceType": plan["instance_type"],
                 "IamInstanceProfile": {"Ref": "WorkerProfile"},
                 "InstanceInitiatedShutdownBehavior": "terminate",
                 "MetadataOptions": {
