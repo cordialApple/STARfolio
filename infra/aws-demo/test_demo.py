@@ -17,9 +17,12 @@ MODULE = Path(__file__).with_name("demo.py")
 REQUIRED_BUNDLE_FILES = (
     "README.md",
     "bootstrap.sh",
+    "cloudwatch-gpu.json",
     "diagnostics.sh",
     "conditioner_worker.py",
     "gateway.py",
+    "gpu_peaks.py",
+    "gpu_sampler.py",
     "interview_worker.py",
     "interview_protocol.py",
     "requirements-build.in",
@@ -50,21 +53,21 @@ class DemoTests(unittest.TestCase):
             "ami_owner": "123456789012",
             "subnet": "subnet-0123456789abcdef0",
             "vpc": "vpc-0123456789abcdef0",
-            "hours": 4,
+            "hours": 2 / 3,
             "bundle_s3_uri": "s3://demo-artifacts/moshi/abc.tar.gz",
             "bundle_sha256": "a" * 64,
             "hf_token_secret_arn": "arn:aws:secretsmanager:us-east-2:123456789012:secret:starfolio/huggingface-AbCdEf",
         }
 
     def test_plan_rejects_invalid_worker_lifetime(self):
-        for value in [0.49, 6.01, float("nan"), float("inf")]:
+        for value in [0.49, 0.67, 1, 6.01, float("nan"), float("inf")]:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.demo.make_plan({**self.config, "hours": value}, self.now)
 
     def test_plan_sets_worker_deadline_without_pricing_inputs(self):
         plan = self.demo.make_plan(self.config, self.now)
-        self.assertEqual(plan["deadline"], "2026-09-10T16:00:00Z")
-        self.assertEqual(plan["lifetime_hours"], 4)
+        self.assertEqual(plan["deadline"], "2026-09-10T12:40:00Z")
+        self.assertEqual(plan["lifetime_hours"], 2 / 3)
         self.assertEqual(
             set(plan),
             {
@@ -75,6 +78,7 @@ class DemoTests(unittest.TestCase):
                 "lifetime_hours",
                 "trial_id",
                 "diagnostics_s3_uri",
+                "telemetry_s3_prefix",
             },
         )
 
@@ -135,6 +139,19 @@ class DemoTests(unittest.TestCase):
         self.assertIn({"Key": "StarfolioTrial", "Value": trial_id}, worker["Tags"])
         self.assertEqual(template["Outputs"]["TrialId"]["Value"], trial_id)
 
+    def test_plan_scopes_gpu_telemetry_to_trial(self):
+        trial_id = "19ab818e-2f38-4e71-9b51-84698a30f10d"
+        plan = self.demo.make_plan(self.config, self.now, trial_id=trial_id)
+        self.assertEqual(
+            plan["telemetry_s3_prefix"],
+            f"s3://demo-artifacts/trials/{trial_id}/gpu/",
+        )
+        bootstrap = self.demo.make_bootstrap(self.config, plan)
+        self.assertIn(
+            f"export STARFOLIO_TRIAL_GPU_URI=s3://demo-artifacts/trials/{trial_id}/gpu/",
+            bootstrap,
+        )
+
     def test_plan_rejects_supplied_empty_trial_id(self):
         with self.assertRaisesRegex(ValueError, "UUIDv4"):
             self.demo.make_plan(self.config, self.now, trial_id="")
@@ -168,8 +185,8 @@ class DemoTests(unittest.TestCase):
         bootstrap = base64.b64decode(worker["Properties"]["UserData"]).decode()
         self.assertIn("install -d -m 755 /opt/starfolio-demo", bootstrap)
         self.assertIn("chmod -R a+rX,go-w /opt/starfolio-demo", bootstrap)
-        self.assertIn("STARFOLIO_DEMO_DEADLINE=2026-09-10T16:00:00Z", bootstrap)
-        self.assertIn("STARFOLIO_DEMO_MAX_SECONDS=14400", bootstrap)
+        self.assertIn("STARFOLIO_DEMO_DEADLINE=2026-09-10T12:40:00Z", bootstrap)
+        self.assertIn("STARFOLIO_DEMO_MAX_SECONDS=2400", bootstrap)
         self.assertLess(
             bootstrap.index("starfolio-instance-deadline"),
             bootstrap.index("nvidia-smi"),
@@ -181,7 +198,7 @@ class DemoTests(unittest.TestCase):
             resources["SecurityGroup"]["Properties"]["SecurityGroupIngress"], []
         )
         schedule = resources["DeadlineSchedule"]["Properties"]
-        self.assertEqual(schedule["ScheduleExpression"], "at(2026-09-10T16:00:00)")
+        self.assertEqual(schedule["ScheduleExpression"], "at(2026-09-10T12:40:00)")
         self.assertEqual(schedule["FlexibleTimeWindow"], {"Mode": "OFF"})
         self.assertNotIn("ActionAfterCompletion", schedule)
         self.assertIn(
@@ -258,6 +275,69 @@ class DemoTests(unittest.TestCase):
         self.assertIn("export AWS_REGION=us-east-2", bootstrap)
         self.assertNotIn("hf_example_plaintext_token", json.dumps(template))
 
+    def test_worker_can_upload_gpu_checkpoints_only_to_trial_prefix(self):
+        plan = self.demo.make_plan(
+            self.config,
+            self.now,
+            trial_id="19ab818e-2f38-4e71-9b51-84698a30f10d",
+        )
+        role = self.demo.make_worker_role(self.config, plan)
+        statements = [
+            statement
+            for policy in role["Properties"]["Policies"]
+            for statement in policy["PolicyDocument"]["Statement"]
+        ]
+        writes = [statement for statement in statements if statement["Action"] == "s3:PutObject"]
+        self.assertEqual(
+            {statement["Resource"]["Fn::Sub"] for statement in writes},
+            {
+                "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/worker.log",
+                "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/gpu/*",
+            },
+        )
+        self.assertTrue(all(statement["Effect"] == "Allow" for statement in writes))
+
+    def test_worker_publishes_metrics_only_in_moshirag_namespace(self):
+        plan = self.demo.make_plan(self.config, self.now)
+        role = self.demo.make_worker_role(self.config, plan)
+        statements = [
+            statement
+            for policy in role["Properties"]["Policies"]
+            for statement in policy["PolicyDocument"]["Statement"]
+        ]
+        metrics = [
+            statement
+            for statement in statements
+            if statement["Action"] == "cloudwatch:PutMetricData"
+        ]
+        self.assertEqual(
+            metrics,
+            [{
+                "Effect": "Allow",
+                "Action": "cloudwatch:PutMetricData",
+                "Resource": "*",
+                "Condition": {
+                    "StringEquals": {"cloudwatch:namespace": "STARfolio/MoshiRAG"}
+                },
+            }],
+        )
+
+    def test_cloudwatch_gpu_config_contains_only_device_metrics(self):
+        path = MODULE.parents[2] / "demo" / "moshi-gateway" / "cloudwatch-gpu.json"
+        config = json.loads(path.read_text())
+        self.assertEqual(set(config), {"agent", "metrics"})
+        self.assertEqual(config["agent"]["metrics_collection_interval"], 10)
+        metrics = config["metrics"]
+        self.assertEqual(metrics["namespace"], "STARfolio/MoshiRAG")
+        self.assertEqual(metrics["append_dimensions"], {"InstanceId": "${aws:InstanceId}"})
+        self.assertEqual(set(metrics["metrics_collected"]), {"nvidia_gpu"})
+        gpu = metrics["metrics_collected"]["nvidia_gpu"]
+        self.assertEqual(
+            set(gpu["measurement"]),
+            {"memory_used", "memory_free", "memory_total", "utilization_gpu"},
+        )
+        self.assertEqual(gpu["metrics_collection_interval"], 10)
+
     def test_cross_region_worker_uses_secret_home_region(self):
         config = {**self.config, "region": "us-east-1"}
         plan = self.demo.make_plan(config, self.now)
@@ -302,7 +382,10 @@ class DemoTests(unittest.TestCase):
             for statement in policy["PolicyDocument"]["Statement"]
         ]
         writes = [
-            statement for statement in statements if statement["Action"] == "s3:PutObject"
+            statement
+            for statement in statements
+            if statement["Action"] == "s3:PutObject"
+            and statement["Resource"]["Fn::Sub"].endswith("/worker.log")
         ]
         self.assertEqual(
             writes,

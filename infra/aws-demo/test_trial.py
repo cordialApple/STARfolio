@@ -81,6 +81,47 @@ class TrialTests(unittest.TestCase):
         self.assertIsNone(snapshot["metrics"])
         self.assertEqual(set(snapshot["errors"]), {"identity", "stack"})
 
+    def test_gpu_snapshot_preserves_discovered_series_and_raw_datapoints(self):
+        dimensions = [
+            {"Name": "InstanceId", "Value": "i-0123456789abcdef0"},
+            {"Name": "gpu", "Value": "0"},
+        ]
+
+        def gpu_aws(service, operation, *args):
+            if service == "cloudwatch" and operation == "list-metrics":
+                return {"Metrics": [{
+                    "Namespace": "STARfolio/MoshiRAG",
+                    "MetricName": "nvidia_smi_memory_used",
+                    "Dimensions": dimensions,
+                }]}
+            if service == "cloudwatch" and "STARfolio/MoshiRAG" in args:
+                self.assertIn("Name=InstanceId,Value=i-0123456789abcdef0", args)
+                self.assertIn("Name=gpu,Value=0", args)
+                return {"Datapoints": [{"Timestamp": "2026-09-24T11:01:00+00:00", "Maximum": 17800, "Unit": "Megabytes"}]}
+            return self.aws(service, operation, *args)
+
+        snapshot = self.trial.capture_snapshot(gpu_aws, self.config, TRIAL_ID, self.now)
+        self.assertEqual(len(snapshot["gpuMetrics"]), 1)
+        series = snapshot["gpuMetrics"][0]
+        self.assertEqual(series["name"], "nvidia_smi_memory_used")
+        self.assertEqual(series["dimensions"], dimensions)
+        self.assertEqual(series["periodSeconds"], 10)
+        self.assertEqual(series["statistic"], "Maximum")
+        self.assertEqual(series["datapoints"][0]["Maximum"], 17800)
+
+    def test_gpu_snapshot_distinguishes_absent_series_from_failed_read(self):
+        snapshot = self.trial.capture_snapshot(self.aws, self.config, TRIAL_ID, self.now)
+        self.assertEqual(snapshot["gpuMetrics"], [])
+
+        def failed_gpu_aws(service, operation, *args):
+            if service == "cloudwatch" and operation == "list-metrics":
+                raise OSError("GPU metrics unavailable")
+            return self.aws(service, operation, *args)
+
+        snapshot = self.trial.capture_snapshot(failed_gpu_aws, self.config, TRIAL_ID, self.now)
+        self.assertIsNone(snapshot["gpuMetrics"])
+        self.assertEqual(snapshot["errors"]["gpuMetrics"], "GPU metrics unavailable")
+
     def test_observations_append_without_overwriting_or_leaving_valid_partial_files(self):
         snapshot = self.trial.capture_snapshot(self.aws, self.config, TRIAL_ID, self.now)
         with tempfile.TemporaryDirectory() as directory:

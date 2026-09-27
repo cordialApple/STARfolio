@@ -5,6 +5,7 @@ test "$(id -u)" = 0
 : "${STARFOLIO_DEMO_DEADLINE:?AWS termination deadline required}"
 : "${STARFOLIO_TRIAL_ID:?Trial ID required}"
 : "${STARFOLIO_TRIAL_DIAGNOSTICS_URI:?Trial diagnostics URI required}"
+: "${STARFOLIO_TRIAL_GPU_URI:?Trial GPU URI required}"
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cat > /etc/systemd/system/starfolio-diagnostics.service <<EOF
 [Unit]
@@ -14,7 +15,7 @@ Type=oneshot
 Environment=AWS_REGION=$AWS_REGION
 Environment=STARFOLIO_TRIAL_DIAGNOSTICS_URI=$STARFOLIO_TRIAL_DIAGNOSTICS_URI
 ExecStart=/bin/bash $root/demo/moshi-gateway/diagnostics.sh
-TimeoutStartSec=25
+TimeoutStartSec=50
 EOF
 systemctl daemon-reload
 trap 'systemctl start starfolio-diagnostics.service || true; shutdown -h now' ERR
@@ -28,7 +29,20 @@ systemd-run --unit=starfolio-host-deadline --on-active="${remaining}s" /sbin/shu
 id starfolio-demo >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin starfolio-demo
 install -d -o starfolio-demo -g starfolio-demo /opt/starfolio-runtime
 apt-get update -qq
-apt-get install -y -qq git libportaudio2 python3.12-venv
+apt-get install -y -qq curl git gnupg libportaudio2 python3.12-venv
+cloudwatch_dir=/opt/starfolio-runtime/cloudwatch
+install -d -m 700 "$cloudwatch_dir/gnupg"
+cloudwatch_url=https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+curl -fsSL "$cloudwatch_url" -o "$cloudwatch_dir/amazon-cloudwatch-agent.deb"
+curl -fsSL "$cloudwatch_url.sig" -o "$cloudwatch_dir/amazon-cloudwatch-agent.deb.sig"
+curl -fsSL https://amazoncloudwatch-agent.s3.amazonaws.com/assets/amazon-cloudwatch-agent.gpg -o "$cloudwatch_dir/amazon-cloudwatch-agent.gpg"
+gpg --batch --homedir "$cloudwatch_dir/gnupg" --import "$cloudwatch_dir/amazon-cloudwatch-agent.gpg"
+cloudwatch_fingerprint=$(gpg --batch --homedir "$cloudwatch_dir/gnupg" --with-colons --fingerprint | awk -F: '$1 == "fpr" {print $10; exit}')
+test "$cloudwatch_fingerprint" = 937616F3450B7D806CBD9725D58167303B789C72
+gpg --batch --homedir "$cloudwatch_dir/gnupg" --verify "$cloudwatch_dir/amazon-cloudwatch-agent.deb.sig" "$cloudwatch_dir/amazon-cloudwatch-agent.deb"
+dpkg -i "$cloudwatch_dir/amazon-cloudwatch-agent.deb"
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c "file:$root/demo/moshi-gateway/cloudwatch-gpu.json"
+systemctl is-active --quiet amazon-cloudwatch-agent.service
 python3.12 -m venv /opt/starfolio-runtime/venv
 py=/opt/starfolio-runtime/venv/bin/python
 "$py" -m pip install --require-hashes --only-binary=:all: -r "$root/demo/moshi-gateway/requirements.lock"
@@ -76,11 +90,41 @@ config_path.write_text(json.dumps(config))
 PY
 unset HF_TOKEN
 chown -R starfolio-demo:starfolio-demo /opt/starfolio-runtime
+install -d -m 700 -o starfolio-demo -g starfolio-demo /var/lib/starfolio-gpu
+install -d -m 700 -o starfolio-demo -g starfolio-demo /var/lib/starfolio-gpu/events
+cat > /etc/systemd/system/starfolio-gpu-sampler.service <<EOF
+[Unit]
+Description=STARfolio independent GPU sampler
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=starfolio-demo
+Group=starfolio-demo
+WorkingDirectory=$root/demo/moshi-gateway
+Environment=AWS_REGION=$AWS_REGION
+Environment=STARFOLIO_TRIAL_ID=$STARFOLIO_TRIAL_ID
+Environment=STARFOLIO_TRIAL_GPU_URI=$STARFOLIO_TRIAL_GPU_URI
+ExecStart=/usr/bin/python3.12 $root/demo/moshi-gateway/gpu_sampler.py
+TimeoutStopSec=20
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/starfolio-gpu
+UMask=0077
+StandardOutput=null
+StandardError=journal
+[Install]
+WantedBy=multi-user.target
+EOF
 cat > /etc/systemd/system/starfolio-demo.service <<EOF
 [Unit]
 Description=STARfolio temporary Moshi demo
-After=network-online.target
+After=network-online.target starfolio-gpu-sampler.service
 Wants=network-online.target
+BindsTo=starfolio-gpu-sampler.service
 [Service]
 Type=simple
 User=starfolio-demo
@@ -89,6 +133,7 @@ WorkingDirectory=$root/demo/moshi-gateway
 Environment=STARFOLIO_DEMO_MAX_SECONDS=$STARFOLIO_DEMO_MAX_SECONDS
 Environment=STARFOLIO_DEMO_DEADLINE=$STARFOLIO_DEMO_DEADLINE
 Environment=STARFOLIO_TRIAL_ID=$STARFOLIO_TRIAL_ID
+Environment=STARFOLIO_GPU_EVENT_DIR=/var/lib/starfolio-gpu/events
 Environment=HF_HOME=/opt/starfolio-runtime/hf
 Environment=XDG_CACHE_HOME=/opt/starfolio-runtime/cache
 Environment=TRITON_CACHE_DIR=/opt/starfolio-runtime/cache/triton
@@ -107,7 +152,7 @@ IPAddressDeny=any
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/opt/starfolio-runtime
+ReadWritePaths=/opt/starfolio-runtime /var/lib/starfolio-gpu/events
 UMask=0077
 StandardOutput=null
 StandardError=journal
@@ -115,4 +160,7 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
+systemctl enable --now starfolio-gpu-sampler.service
+sleep 1
+systemctl is-active --quiet starfolio-gpu-sampler.service
 systemctl enable --now starfolio-demo.service
