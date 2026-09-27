@@ -1,9 +1,11 @@
 import json
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from contextlib import redirect_stderr
 
 from gpu_peaks import PeakTracker, process_start_ticks
 
@@ -123,11 +125,24 @@ class PeakTrackerTests(unittest.TestCase):
     def test_telemetry_failure_does_not_replace_model_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             model_error = RuntimeError("model failed")
-            with self.assertRaises(RuntimeError) as raised:
-                with PeakTracker("interview", "trial-1", directory, cuda=FakeCuda(), interval=60) as tracker:
-                    tracker.publish = lambda *args: (_ for _ in ()).throw(MemoryError())
-                    raise model_error
+            with redirect_stderr(io.StringIO()):
+                with self.assertRaises(RuntimeError) as raised:
+                    with PeakTracker("interview", "trial-1", directory, cuda=FakeCuda(), interval=60) as tracker:
+                        tracker.publish = lambda *args: (_ for _ in ()).throw(MemoryError())
+                        raise model_error
             self.assertIs(raised.exception, model_error)
+
+    def test_publish_failure_reports_safe_diagnostic_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = io.StringIO()
+            with redirect_stderr(output):
+                with PeakTracker("interview", "trial-1", directory, cuda=FakeCuda(), interval=60) as tracker:
+                    tracker.publish = lambda *args: (_ for _ in ()).throw(OSError("private prompt"))
+                    tracker.record_failure(RuntimeError("private audio"))
+            self.assertIn("GPU peak telemetry publish failed", output.getvalue())
+            self.assertEqual(output.getvalue().count("GPU peak telemetry publish failed"), 1)
+            self.assertNotIn("private prompt", output.getvalue())
+            self.assertNotIn("private audio", output.getvalue())
 
     def test_linux_process_start_ticks_handles_parentheses_in_name(self):
         with tempfile.TemporaryDirectory() as directory:

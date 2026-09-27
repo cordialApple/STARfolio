@@ -36,6 +36,18 @@ EVENT_FIELDS = set(EVENT_NUMBERS) | {
 }
 ROLE_NAMES = {"interview", "conditioner"}
 EVENT_STATUSES = {"start", "sample", "phase_end", "failure", "exit"}
+SAMPLE_FIELDS = {
+    "schema_version", "trial_id", "utc", "monotonic_ns", "actual_interval_ms",
+    "gpu_uuid", "device_total_mib", "device_used_mib", "device_free_mib",
+    "device_utilization_percent", "processes",
+}
+PROCESS_FIELDS = {"gpu_uuid", "pid", "process_start_ticks", "used_mib", "role"}
+SEGMENT_FIELDS = {
+    "schema_version", "trial_id", "segment_id", "created_utc", "samples",
+    "events", "event_files",
+}
+UTC_PATTERN = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|\+00:00)"
+EVENT_FILE_PATTERN = r"[A-Za-z0-9_-]+\.json"
 
 
 def utc_now():
@@ -53,7 +65,11 @@ def optional_int(value):
 
 
 def gpu_uuid_or_none(value):
-    return value if re.fullmatch(r"GPU-[A-Fa-f0-9-]+", value) else None
+    return value if isinstance(value, str) and re.fullmatch(r"GPU-[A-Fa-f0-9-]+", value) else None
+
+
+def nullable_nonnegative_int(value):
+    return value is None or (type(value) is int and value >= 0)
 
 
 def process_start_ticks(proc_root, pid):
@@ -120,6 +136,7 @@ class GpuSampler:
         self.upload_interval = upload_interval
         self.records = []
         self.last_sample_time = None
+        self.last_event_file_counts = {"malformed": 0, "partial": 0}
         self.spool_dir.mkdir(parents=True, exist_ok=True)
         self.event_dir.mkdir(parents=True, exist_ok=True)
 
@@ -140,9 +157,11 @@ class GpuSampler:
         claimed = set()
         for segment in self.spool_dir.glob("segment-*.json"):
             try:
-                claimed.update(json.loads(segment.read_text())["event_files"])
+                body = json.loads(segment.read_text())
             except (OSError, ValueError, KeyError, TypeError):
                 continue
+            if self.valid_segment(segment, body):
+                claimed.update(body["event_files"])
         events = []
         for path in sorted(self.event_dir.glob("*.json")):
             if path.name in claimed:
@@ -155,6 +174,19 @@ class GpuSampler:
             if event is not None:
                 events.append((path, event))
         return events
+
+    def event_file_counts(self):
+        counts = {"malformed": 0, "partial": 0}
+        for path in self.event_dir.glob("*.json"):
+            try:
+                raw = json.loads(path.read_text())
+            except (OSError, ValueError):
+                counts["malformed"] += 1
+                continue
+            if self.valid_event(raw) is None:
+                counts["malformed"] += 1
+        counts["partial"] = sum(1 for _ in self.event_dir.glob("*.tmp"))
+        return counts
 
     def valid_event(self, raw):
         if not isinstance(raw, dict) or set(raw) != EVENT_FIELDS:
@@ -175,17 +207,93 @@ class GpuSampler:
         ):
             return None
         if not isinstance(raw["timestamp_utc"], str) or not re.fullmatch(
-            r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|\+00:00)",
+            UTC_PATTERN,
             raw["timestamp_utc"],
         ):
             return None
         for field in EVENT_NUMBERS:
-            value = raw[field]
-            if value is not None and (type(value) is not int or value < 0):
+            if not nullable_nonnegative_int(raw[field]):
                 return None
         if raw["pid"] is None or raw["pid"] == 0:
             return None
         return raw
+
+    def valid_process(self, process):
+        if not isinstance(process, dict) or set(process) != PROCESS_FIELDS:
+            return False
+        if process["gpu_uuid"] is not None and gpu_uuid_or_none(process["gpu_uuid"]) != process["gpu_uuid"]:
+            return False
+        if process["role"] is not None and (not isinstance(process["role"], str) or process["role"] not in ROLE_NAMES):
+            return False
+        for field in ("pid", "process_start_ticks", "used_mib"):
+            if not nullable_nonnegative_int(process[field]):
+                return False
+        return bool(process["pid"])
+
+    def valid_sample(self, sample):
+        if not isinstance(sample, dict) or set(sample) != SAMPLE_FIELDS:
+            return False
+        if type(sample["schema_version"]) is not int or sample["schema_version"] != 1 or sample["trial_id"] != self.trial_id:
+            return False
+        if not isinstance(sample["utc"], str) or not re.fullmatch(UTC_PATTERN, sample["utc"]):
+            return False
+        if sample["gpu_uuid"] is not None and gpu_uuid_or_none(sample["gpu_uuid"]) != sample["gpu_uuid"]:
+            return False
+        for field in SAMPLE_FIELDS - {"schema_version", "trial_id", "utc", "gpu_uuid", "processes"}:
+            if not nullable_nonnegative_int(sample[field]):
+                return False
+        return isinstance(sample["processes"], list) and all(
+            self.valid_process(process) for process in sample["processes"]
+        )
+
+    def valid_segment(self, path, body):
+        if not isinstance(body, dict) or set(body) not in (SEGMENT_FIELDS, SEGMENT_FIELDS | {"event_file_counts"}):
+            return False
+        if "event_file_counts" in body:
+            counts = body["event_file_counts"]
+            if not isinstance(counts, dict) or set(counts) != {"malformed", "partial"}:
+                return False
+            if any(type(value) is not int or value < 0 for value in counts.values()):
+                return False
+        if (
+            type(body["schema_version"]) is not int
+            or body["schema_version"] != 1
+            or body["trial_id"] != self.trial_id
+            or not isinstance(body["segment_id"], str)
+            or not re.fullmatch(r"[a-f0-9]{32}", body["segment_id"])
+            or path.name != f'segment-{body["segment_id"]}.json'
+            or not isinstance(body["created_utc"], str)
+            or not re.fullmatch(UTC_PATTERN, body["created_utc"])
+            or not isinstance(body["samples"], list)
+            or not isinstance(body["events"], list)
+            or not isinstance(body["event_files"], list)
+            or len(body["events"]) != len(body["event_files"])
+        ):
+            return False
+        if not all(self.valid_sample(sample) for sample in body["samples"]):
+            return False
+        for name, event in zip(body["event_files"], body["events"]):
+            if not isinstance(name, str) or not re.fullmatch(EVENT_FILE_PATTERN, name) or self.valid_event(event) is None:
+                return False
+        return True
+
+    def valid_receipt(self, path, body, content):
+        try:
+            receipt = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return False
+        return (
+            isinstance(receipt, dict)
+            and set(receipt) == {"s3_uri", "sha256", "sample_count", "event_count", "uploaded_utc"}
+            and receipt["s3_uri"] == self.destination_uri + path.with_suffix(".json").name
+            and receipt["sha256"] == hashlib.sha256(content).hexdigest()
+            and type(receipt["sample_count"]) is int
+            and receipt["sample_count"] == len(body["samples"])
+            and type(receipt["event_count"]) is int
+            and receipt["event_count"] == len(body["events"])
+            and isinstance(receipt["uploaded_utc"], str)
+            and re.fullmatch(UTC_PATTERN, receipt["uploaded_utc"]) is not None
+        )
 
     def role_for(self, pid, start_ticks, events):
         if start_ticks is None:
@@ -202,6 +310,7 @@ class GpuSampler:
         if (
             owner.get("pid") == pid
             and owner.get("process_start_ticks") == start_ticks
+            and isinstance(owner.get("role"), str)
             and owner.get("role") in ROLE_NAMES
         ):
             return owner["role"]
@@ -271,7 +380,8 @@ class GpuSampler:
 
     def flush(self):
         events = self.read_events()
-        if not self.records and not events:
+        event_file_counts = self.event_file_counts()
+        if not self.records and not events and event_file_counts == self.last_event_file_counts:
             return None
         segment_id = uuid.uuid4().hex
         path = self.spool_dir / f"segment-{segment_id}.json"
@@ -283,12 +393,14 @@ class GpuSampler:
             "samples": self.records,
             "events": [event for _, event in events],
             "event_files": [path.name for path, _ in events],
+            "event_file_counts": event_file_counts,
         }
         content = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
         write_atomic(path, content)
         for _, event in events:
             self.record_owner(event)
         self.records = []
+        self.last_event_file_counts = event_file_counts
         return path
 
     def upload_pending(self):
@@ -299,11 +411,9 @@ class GpuSampler:
                 body = json.loads(content)
             except (OSError, ValueError):
                 continue
-            if not isinstance(body, dict) or not isinstance(
-                body.get("samples"), list
-            ) or not isinstance(body.get("events"), list):
+            if not self.valid_segment(segment, body):
                 continue
-            if receipt.exists():
+            if self.valid_receipt(receipt, body, content):
                 self.acknowledge_segment(segment, body)
                 continue
             destination = self.destination_uri + segment.name
@@ -349,7 +459,7 @@ class GpuSampler:
             if event is None:
                 continue
             self.record_owner(event)
-            if re.fullmatch(r"[A-Za-z0-9_-]+\.json", name):
+            if re.fullmatch(EVENT_FILE_PATTERN, name):
                 (self.event_dir / name).unlink(missing_ok=True)
         segment.unlink(missing_ok=True)
 

@@ -1,4 +1,5 @@
 import json
+import hashlib
 import tempfile
 import threading
 import time
@@ -137,7 +138,9 @@ class GpuSamplerTests(unittest.TestCase):
         (self.sampler.event_dir / "a.json").unlink()
         partial = self.sampler.event_dir / "a.tmp"
         partial.write_text(json.dumps(event))
-        self.assertIsNone(self.sampler.flush())
+        checkpoint = self.sampler.flush()
+        self.assertEqual(json.loads(checkpoint.read_text())["event_file_counts"], {"malformed": 0, "partial": 1})
+        self.assertEqual(json.loads(checkpoint.read_text())["events"], [])
         published = self.sampler.event_dir / "a.json"
         partial.replace(published)
         segment = self.sampler.flush()
@@ -167,11 +170,61 @@ class GpuSamplerTests(unittest.TestCase):
     def test_receipt_recovery_cleans_claimed_event_without_second_upload(self):
         event, _ = self.publish_peak()
         segment = self.sampler.flush()
-        segment.with_suffix(".uploaded").write_text("{}")
+        body = json.loads(segment.read_text())
+        segment.with_suffix(".uploaded").write_text(json.dumps({
+            "s3_uri": self.sampler.destination_uri + segment.name,
+            "sha256": hashlib.sha256(segment.read_bytes()).hexdigest(),
+            "sample_count": len(body["samples"]),
+            "event_count": len(body["events"]),
+            "uploaded_utc": "2026-09-27T00:00:00Z",
+        }))
         self.sampler.upload_pending()
         self.assertFalse(event.exists())
         self.assertFalse(segment.exists())
         self.assertFalse([c for c in self.commands.calls if c[:3] == ["aws", "s3", "cp"]])
+
+    def test_invalid_receipt_cannot_acknowledge_unuploaded_segment(self):
+        event, _ = self.publish_peak()
+        segment = self.sampler.flush()
+        segment.with_suffix(".uploaded").write_text("{}")
+        self.commands.upload_failures = 1
+        self.sampler.upload_pending()
+        self.assertTrue(segment.exists())
+        self.assertTrue(event.exists())
+        self.assertEqual(len([c for c in self.commands.calls if c[:3] == ["aws", "s3", "cp"]]), 1)
+
+    def test_segment_with_extra_private_field_never_uploads(self):
+        self.sampler.sample_once()
+        segment = self.sampler.flush()
+        body = json.loads(segment.read_text())
+        body["prompt"] = "private prompt"
+        segment.write_text(json.dumps(body))
+        self.sampler.upload_pending()
+        self.assertTrue(segment.exists())
+        self.assertFalse([c for c in self.commands.calls if c[:3] == ["aws", "s3", "cp"]])
+
+    def test_nested_private_field_and_invalid_value_never_upload(self):
+        self.sampler.sample_once()
+        segment = self.sampler.flush()
+        body = json.loads(segment.read_text())
+        body["samples"][0]["processes"][0]["prompt"] = "private prompt"
+        segment.write_text(json.dumps(body))
+        self.sampler.upload_pending()
+        self.assertFalse([c for c in self.commands.calls if c[:3] == ["aws", "s3", "cp"]])
+        del body["samples"][0]["processes"][0]["prompt"]
+        body["samples"][0]["gpu_uuid"] = {"audio": "private audio"}
+        segment.write_text(json.dumps(body))
+        self.sampler.upload_pending()
+        self.assertFalse([c for c in self.commands.calls if c[:3] == ["aws", "s3", "cp"]])
+
+    def test_corrupt_segment_cannot_claim_unuploaded_event(self):
+        event, raw = self.publish_peak()
+        self.sampler.flush()
+        segment = next(self.sampler.spool_dir.glob("segment-*.json"))
+        body = json.loads(segment.read_text())
+        body["events"][0]["prompt"] = "private prompt"
+        segment.write_text(json.dumps(body))
+        self.assertEqual(self.sampler.read_events(), [(event, raw)])
 
     def test_uploaded_peak_keeps_safe_role_provenance(self):
         proc = self.root / "proc" / "123"
@@ -203,6 +256,19 @@ class GpuSamplerTests(unittest.TestCase):
         self.assertNotIn("private text", segment.read_text())
         self.assertTrue(event.exists())
 
+    def test_malformed_and_partial_peak_files_get_safe_checkpoint(self):
+        (self.sampler.event_dir / "private.json").write_text('{"prompt":"private prompt"}')
+        (self.sampler.event_dir / "private.tmp").write_text("private audio")
+        segment = self.sampler.flush()
+        self.assertIsNotNone(segment)
+        body = json.loads(segment.read_text())
+        self.assertEqual(body["event_file_counts"], {"malformed": 1, "partial": 1})
+        self.assertNotIn("private prompt", segment.read_text())
+        self.assertNotIn("private audio", segment.read_text())
+        self.assertIsNone(self.sampler.flush())
+        self.sampler.upload_pending()
+        self.assertFalse(segment.exists())
+
     def test_untrusted_event_and_owner_shapes_cannot_stop_sampling(self):
         event, _ = self.publish_peak()
         raw = json.loads(event.read_text())
@@ -213,6 +279,13 @@ class GpuSamplerTests(unittest.TestCase):
         (proc / "stat").write_text("123 (worker) S " + "0 " * 18 + "777 0\n")
         self.sampler.owner_dir.mkdir()
         (self.sampler.owner_dir / "123.json").write_text("[]")
+        self.sampler.sample_once()
+        self.assertIsNone(self.sampler.records[-1]["processes"][0]["role"])
+        (self.sampler.owner_dir / "123.json").write_text(json.dumps({
+            "pid": 123,
+            "process_start_ticks": 777,
+            "role": ["interview"],
+        }))
         self.sampler.sample_once()
         self.assertIsNone(self.sampler.records[-1]["processes"][0]["role"])
 

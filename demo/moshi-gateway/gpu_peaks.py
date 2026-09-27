@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -64,6 +65,7 @@ class PeakTracker:
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.thread = None
+        self.publish_failure_reported = False
 
     def __enter__(self):
         self._safely_publish("start")
@@ -92,7 +94,13 @@ class PeakTracker:
         try:
             self.publish(status, oom)
         except Exception:
-            pass
+            with self.lock:
+                if not self.publish_failure_reported:
+                    self.publish_failure_reported = True
+                    try:
+                        print("GPU peak telemetry publish failed", file=sys.stderr)
+                    except Exception:
+                        pass
 
     def record_failure(self, exception):
         self._safely_publish("failure", self._is_oom(exception))
