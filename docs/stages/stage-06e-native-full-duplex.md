@@ -26,6 +26,10 @@ push-to-talk remains available when remote compute is unavailable or unwanted.
 - [ ] 6e.4a Before the live gate, verify trial-linked local timing and media capture, private worker
   diagnostics, and append-only AWS resource observations. Media needs separate consent; posted cost
   remains unknown until billing refresh. Tracked in issue #334.
+- [ ] 6e.4b Verify candidate and assistant speech timelines against a real session, including overlap,
+  no-reply cases, renderer clock limits, and durable event files. Tracked in issue #344.
+- [ ] 6e.4c Cross-check GPU samples, PyTorch peaks, malformed-file counts, and S3 receipt continuity
+  before trusting memory evidence. Tracked in issue #345.
 - [ ] 6e.5 Live GPU gate: run a real microphone interview, verify returned audio and transcript quality,
   compare gap-scoring with the turn-based baseline, and prove teardown on success, timeout, disconnect,
   and failure. Tracked in issue #312.
