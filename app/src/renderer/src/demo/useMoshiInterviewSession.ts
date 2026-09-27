@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { startRecording, type Recording } from '../audio/recorder'
 import { shouldCaptureDemoAudio } from './capture-mode'
+import { createLatencySession, type LatencySession } from './latency-session'
 import type {
   ExperienceSummary,
   MoshiDemoEvent,
@@ -69,6 +70,7 @@ export function useMoshiInterviewSession({
   const stoppingAudio = useRef<Promise<void> | null>(null)
   const startingCapture = useRef<Promise<void> | null>(null)
   const endingSession = useRef<Promise<void> | null>(null)
+  const latencySession = useRef<LatencySession | null>(null)
 
   const stopAudio = useCallback(async (): Promise<void> => {
     if (stoppingAudio.current) return stoppingAudio.current
@@ -82,6 +84,8 @@ export function useMoshiInterviewSession({
       mic?.stop(),
       context && context.state !== 'closed' ? context.close() : undefined
     ]).then((results) => {
+      latencySession.current?.finish()
+      latencySession.current = null
       isCaptureLive.current = false
       const failed = results.find((result) => result.status === 'rejected')
       if (failed?.status === 'rejected') throw failed.reason
@@ -183,13 +187,32 @@ export function useMoshiInterviewSession({
           setStatus('Playback fell behind; saving interview')
           return
         }
-        const buffer = context.createBuffer(1, event.samples.length, 24000)
-        buffer.copyToChannel(new Float32Array(event.samples), 0)
+        const receivedAtMs = performance.now()
+        const samples = new Float32Array(event.samples)
+        const buffer = context.createBuffer(1, samples.length, 24000)
+        buffer.copyToChannel(samples, 0)
         const source = context.createBufferSource()
         source.buffer = buffer
         source.connect(context.destination)
         const when = Math.max(context.currentTime, nextAudioTime.current)
         source.start(when)
+        const outputStamp = context.getOutputTimestamp?.()
+        const outputContextTime = outputStamp?.contextTime
+        const outputPerformanceTime = outputStamp?.performanceTime
+        const hasOutputTimestamp =
+          typeof outputContextTime === 'number' &&
+          typeof outputPerformanceTime === 'number' &&
+          Number.isFinite(outputContextTime) &&
+          Number.isFinite(outputPerformanceTime) &&
+          outputPerformanceTime > 0
+        const scheduledStartMs = hasOutputTimestamp
+          ? outputPerformanceTime + (when - outputContextTime) * 1000
+          : performance.now() + Math.max(0, when - context.currentTime) * 1000
+        latencySession.current?.output(samples, {
+          receivedAtMs,
+          scheduledStartMs,
+          clockSource: hasOutputTimestamp ? 'audio-output-timestamp' : 'renderer-fallback'
+        })
         nextAudioTime.current = when + buffer.duration
       } else if (event.type === 'ready') {
         setMode(event.mode)
@@ -274,15 +297,22 @@ export function useMoshiInterviewSession({
         return
       }
       isCaptureLive.current = true
+      latencySession.current = createLatencySession({
+        emit: (event) => window.api.moshiDemo.timing(id, event),
+        now: () => performance.now(),
+        timeOriginUtcMs: performance.timeOrigin
+      })
       const pendingCapture = startRecording({
         sampleRate: 24000,
         batchSamples: 1920,
         onLevel: (value) => {
           if (sessionId.current === id) setLevel(value)
         },
-        onFrames: (samples) => {
-          if (isCaptureLive.current && sessionId.current === id)
+        onFrames: (samples, timing) => {
+          if (isCaptureLive.current && sessionId.current === id) {
+            if (timing) latencySession.current?.input(samples, timing)
             window.api.moshiDemo.audio(id, samples)
+          }
         }
       }).then(async (mic) => {
         if (!isCurrentAttempt()) {
@@ -290,6 +320,7 @@ export function useMoshiInterviewSession({
           return
         }
         recording.current = mic
+        latencySession.current?.micReady()
         setStatus('Live — scoring runs between speech segments')
       })
       startingCapture.current = pendingCapture

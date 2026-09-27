@@ -667,6 +667,31 @@ export type MoshiDemoEvent = { sessionId: string } & (
   | { type: 'ended'; reason: string }
 )
 
+export interface MoshiTimingEvent {
+  schemaVersion: 1
+  sequence: number
+  kind:
+    | 'mic-ready'
+    | 'candidate-speech-start'
+    | 'candidate-speech-end'
+    | 'assistant-voice-scheduled'
+    | 'assistant-voice-end'
+    | 'assistant-voice-interrupted'
+    | 'audio-received'
+    | 'session-ended'
+  rendererTimeMs: number
+  rendererTimeOriginUtcMs: number
+  sampleOffset: number | null
+  estimatedAtMs: number | null
+  observedAtMs: number | null
+  quantizationMs: number | null
+  uncertaintyMs: number | null
+  segmentId?: number | null
+  queuedMs?: number | null
+  clockSource?: 'audio-output-timestamp' | 'renderer-fallback' | null
+  status?: 'observed' | 'ambiguous' | 'cancelled' | 'unanswered' | null
+}
+
 export interface IpcApi {
   moshiDemo: {
     audit: (sessionId: string) => Promise<MoshiInterviewSnapshot | null>
@@ -691,6 +716,7 @@ export interface IpcApi {
       recordTrialMedia?: boolean
     }) => Promise<'moshi' | 'fixture'>
     audio: (sessionId: string, samples: Float32Array) => void
+    timing: (sessionId: string, timing: MoshiTimingEvent) => void
     end: (sessionId: string, reason?: string) => Promise<void>
     onEvent: (callback: (event: MoshiDemoEvent) => void) => () => void
   }

@@ -1,8 +1,44 @@
-import { createWriteStream, mkdirSync, renameSync, writeFileSync, type WriteStream } from 'node:fs'
+import {
+  closeSync,
+  createWriteStream,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  writeFileSync,
+  type WriteStream
+} from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 type Phase = 'health' | 'brain' | 'ready'
+
+export type RendererTimingKind =
+  | 'mic-ready'
+  | 'candidate-speech-start'
+  | 'candidate-speech-end'
+  | 'assistant-voice-scheduled'
+  | 'assistant-voice-end'
+  | 'assistant-voice-interrupted'
+  | 'audio-received'
+  | 'session-ended'
+
+export interface RendererTimingEvent {
+  schemaVersion: 1
+  sequence: number
+  kind: RendererTimingKind
+  rendererTimeMs: number
+  rendererTimeOriginUtcMs: number
+  sampleOffset: number | null
+  estimatedAtMs: number | null
+  observedAtMs: number | null
+  quantizationMs: number | null
+  uncertaintyMs: number | null
+  segmentId?: number | null
+  queuedMs?: number | null
+  clockSource?: 'audio-output-timestamp' | 'renderer-fallback' | null
+  status?: 'observed' | 'ambiguous' | 'cancelled' | 'unanswered' | null
+}
 
 interface TrialCaptureOptions {
   root: string
@@ -36,6 +72,7 @@ export class TrialCapture {
   private outputSamples = 0
   private mediaError: string | null = null
   private finished = false
+  private lastTimingSequence = 0
 
   constructor(options: TrialCaptureOptions) {
     if (!/^[a-zA-Z0-9-]{1,64}$/.test(options.sessionId)) throw new Error('Invalid trial session ID')
@@ -92,6 +129,54 @@ export class TrialCapture {
     if (this.finished || !Number.isFinite(roundTripMs) || roundTripMs < 0) return
     this.pingRttMs.push(Math.round(roundTripMs))
     this.snapshot('active', null, null)
+  }
+
+  timing(event: RendererTimingEvent): void {
+    if (this.finished) return
+    if (event.sequence <= this.lastTimingSequence) {
+      this.appendTimingRecord({
+        recordType: 'timing-rejection',
+        rejectedSequence: event.sequence,
+        lastAcceptedSequence: this.lastTimingSequence
+      })
+      return
+    }
+    if (event.sequence > this.lastTimingSequence + 1) {
+      this.appendTimingRecord({
+        recordType: 'timing-gap',
+        missingStart: this.lastTimingSequence + 1,
+        missingEnd: event.sequence - 1
+      })
+    }
+    this.appendTimingRecord({ recordType: 'renderer-timing', ...event })
+    this.lastTimingSequence = event.sequence
+  }
+
+  private appendTimingRecord(record: object): void {
+    const directory = join(this.directory, 'events')
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    const eventId = randomUUID()
+    const temporary = join(directory, `${eventId}.tmp`)
+    const destination = join(directory, `${eventId}.json`)
+    const descriptor = openSync(temporary, 'wx', 0o600)
+    try {
+      writeFileSync(
+        descriptor,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          eventId,
+          trialId: this.trialId,
+          sessionId: this.sessionId,
+          receivedAtUtc: new Date().toISOString(),
+          ...record
+        })}\n`,
+        'utf8'
+      )
+      fsyncSync(descriptor)
+    } finally {
+      closeSync(descriptor)
+    }
+    renameSync(temporary, destination)
   }
 
   async finish(reason: string, complete: boolean): Promise<void> {

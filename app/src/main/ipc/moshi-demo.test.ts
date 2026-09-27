@@ -29,6 +29,7 @@ type CaptureDouble = {
   input: Mock
   output: Mock
   ping: Mock
+  timing: Mock
   finish: Mock
 }
 
@@ -60,6 +61,7 @@ vi.mock('../voice/moshi/trial-capture', () => ({
     input = vi.fn()
     output = vi.fn()
     ping = vi.fn()
+    timing = vi.fn()
     finish = vi.fn(async () => {})
     constructor(...args: unknown[]) {
       fake.captures.push({
@@ -69,6 +71,7 @@ vi.mock('../voice/moshi/trial-capture', () => ({
         input: this.input,
         output: this.output,
         ping: this.ping,
+        timing: this.timing,
         finish: this.finish
       })
     }
@@ -191,6 +194,52 @@ it('links live session measurements to trial ID without recording media by defau
   expect(fake.captures[0].input).toHaveBeenCalledOnce()
   await h.call('end', { sessionId: 'first' })
   expect(fake.captures[0].finish).toHaveBeenCalledWith('Ended by user', true)
+})
+
+it('accepts only numeric timing from the owner of an active live session', async () => {
+  fake.transportMode = 'moshi'
+  fake.health.mockResolvedValueOnce({
+    mode: 'moshi',
+    upstreamReady: true,
+    busy: false,
+    trialId: 'trial-1'
+  })
+  const h = harness()
+  await h.call('start')
+  const timing = {
+    schemaVersion: 1,
+    sequence: 1,
+    kind: 'candidate-speech-end',
+    rendererTimeMs: 500,
+    rendererTimeOriginUtcMs: 1_800_000_000_000,
+    sampleOffset: 24_000,
+    estimatedAtMs: 480,
+    observedAtMs: 500,
+    quantizationMs: 10,
+    uncertaintyMs: null
+  }
+  h.call('timing', { sessionId: 'first', timing })
+  expect(fake.captures[0].timing).toHaveBeenCalledWith(timing)
+  h.call('timing', {
+    sessionId: 'first',
+    timing: {
+      ...timing,
+      sequence: 2,
+      kind: 'assistant-voice-end',
+      clockSource: 'audio-output-timestamp'
+    }
+  })
+  expect(fake.captures[0].timing).toHaveBeenCalledTimes(2)
+  h.call('timing', { sessionId: 'other', timing: { ...timing, sequence: 3 } })
+  h.call('timing', { sessionId: 'first', timing: { ...timing, sequence: 3, text: 'secret' } })
+  h.call('timing', { sessionId: 'first', timing: { ...timing, sequence: 3, rendererTimeMs: NaN } })
+  h.call('timing', { sessionId: 'first', timing: { ...timing, sequence: 3, clockSource: 'unknown' } })
+  const otherOwner = Object.assign(new EventEmitter(), { id: 2, isDestroyed: () => false, send: vi.fn() })
+  h.call('timing', { sessionId: 'first', timing: { ...timing, sequence: 3 } }, otherOwner)
+  expect(fake.captures[0].timing).toHaveBeenCalledTimes(2)
+  await h.call('end', { sessionId: 'first' })
+  h.call('timing', { sessionId: 'first', timing: { ...timing, sequence: 3 } })
+  expect(fake.captures[0].timing).toHaveBeenCalledTimes(2)
 })
 
 it.each([
