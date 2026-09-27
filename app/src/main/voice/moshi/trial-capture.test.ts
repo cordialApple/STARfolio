@@ -173,7 +173,9 @@ it('records sequence gaps and duplicate deliveries without rewriting prior event
 
 it('keeps interview running when a timing write fails and marks evidence incomplete', async () => {
   const path = root()
-  const onTimingError = vi.fn()
+  const onTimingError = vi.fn(() => {
+    throw new Error('Window closed before warning')
+  })
   const capture = new TrialCapture({
     root: path,
     sessionId: 'session-write-failure',

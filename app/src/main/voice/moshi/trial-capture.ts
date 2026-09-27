@@ -175,7 +175,11 @@ export class TrialCapture {
       } catch {
         if (this.timingError) return
         this.timingError = true
-        this.onTimingError?.()
+        try {
+          this.onTimingError?.()
+        } catch {
+          return
+        }
       }
     })
   }
