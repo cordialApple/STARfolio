@@ -124,6 +124,32 @@ describe('createStreamingFrameSink', () => {
     expect(batches[0].length).toBe(4)
   })
 
+  it('reports first and last sample offsets for a complete batch', () => {
+    const onFrames = vi.fn()
+    const sink = createStreamingFrameSink({ onFrames, batchSamples: 4 })
+    sink.push(createFrame(2, 1), {
+      startSample: 100,
+      endSample: 102,
+      observedAtMs: 1000,
+      estimatedEndAtMs: 1000,
+      uncertaintyMs: null
+    })
+    sink.push(createFrame(2, 1), {
+      startSample: 102,
+      endSample: 104,
+      observedAtMs: 1010,
+      estimatedEndAtMs: 1010,
+      uncertaintyMs: null
+    })
+    expect(onFrames.mock.calls[0][1]).toEqual({
+      startSample: 100,
+      endSample: 104,
+      observedAtMs: 1010,
+      estimatedEndAtMs: 1010,
+      uncertaintyMs: null
+    })
+  })
+
   it('flushes a trailing partial batch on finish', () => {
     const { batches, sink } = createBatchCollector(100)
     sink.push(createFrame(5, 1))
@@ -214,6 +240,25 @@ describe('startRecording sample rate', () => {
     expect(onFrames).toHaveBeenCalledOnce()
     expect(onFrames.mock.calls[0][0]).toHaveLength(5)
     expect(worklet.port.onmessage).toBeNull()
+  })
+
+  it('maps worklet sample offsets into renderer performance clock', async () => {
+    const onFrames = vi.fn()
+    const { getWorklet } = mockAudioCapture()
+    const recording = await startRecording({ sampleRate: 24000, onFrames, batchSamples: 4 })
+    vi.spyOn(performance, 'now').mockReturnValue(1000)
+    getWorklet().port.onmessage?.({
+      data: { type: 'frames', frames: createFrame(4, 1), startSample: 100 }
+    } as MessageEvent<WorkletMessage>)
+    expect(onFrames.mock.calls[0][1]).toEqual({
+      startSample: 100,
+      endSample: 104,
+      observedAtMs: 1000,
+      estimatedEndAtMs: 1000,
+      uncertaintyMs: null
+    })
+    vi.restoreAllMocks()
+    await recording.stop()
   })
 
   it('flushes accepted frames when context close fails', async () => {

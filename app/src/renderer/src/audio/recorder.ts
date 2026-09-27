@@ -13,16 +13,26 @@ export interface BufferedRecordOptions extends RecordOptions {
 }
 
 export interface StreamingRecordOptions extends RecordOptions {
-  onFrames: (frames: Float32Array) => void
+  onFrames: (frames: Float32Array, timing?: RecordingFrameTiming) => void
   batchSamples?: number
 }
 
+export interface RecordingFrameTiming {
+  startSample: number
+  endSample: number
+  observedAtMs: number
+  estimatedEndAtMs: number
+  uncertaintyMs: null
+}
+
 export interface FrameSink<T> {
-  push: (frame: Float32Array) => void
+  push: (frame: Float32Array, timing?: RecordingFrameTiming) => void
   finish: () => T
 }
 
-type ProcessorMessage = { type: 'frames'; frames: Float32Array } | { type: 'drained' }
+type ProcessorMessage =
+  | { type: 'frames'; frames: Float32Array; startSample?: number }
+  | { type: 'drained' }
 
 const DEFAULT_BATCH_SAMPLES = 4000
 const DRAIN_TIMEOUT_MS = 250
@@ -93,18 +103,28 @@ export function createStreamingFrameSink(
   const reportLevel = createLevelReporter(opts.onLevel)
   let pendingFrames: Float32Array[] = []
   let pendingSampleCount = 0
+  let pendingStartSample: number | undefined
+  let latestTiming: RecordingFrameTiming | undefined
 
   function flushBatch(): void {
     if (pendingSampleCount === 0) return
     const frames = concatFloat32(pendingFrames, pendingSampleCount)
     pendingFrames = []
     pendingSampleCount = 0
-    opts.onFrames(frames)
+    const timing =
+      pendingStartSample !== undefined && latestTiming
+        ? { ...latestTiming, startSample: pendingStartSample }
+        : undefined
+    pendingStartSample = undefined
+    latestTiming = undefined
+    opts.onFrames(frames, timing)
   }
 
   return {
-    push(frame): void {
+    push(frame, timing): void {
       reportLevel(frame)
+      if (pendingSampleCount === 0) pendingStartSample = timing?.startSample
+      latestTiming = timing
       pendingFrames.push(frame)
       pendingSampleCount += frame.length
       if (pendingSampleCount >= batchSamples) flushBatch()
@@ -154,13 +174,25 @@ export async function startRecording(
     const sink = opts.onFrames
       ? createStreamingFrameSink(opts)
       : createBufferedFrameSink({ onLevel: opts.onLevel })
+    let nextSample = 0
     let resolveDrain: () => void
     const drained = new Promise<void>((resolve) => {
       resolveDrain = resolve
     })
     node.port.onmessage = (event: MessageEvent<ProcessorMessage>) => {
-      if (event.data.type === 'frames') sink.push(event.data.frames)
-      else if (event.data.type === 'drained') resolveDrain()
+      if (event.data.type === 'frames') {
+        const startSample = event.data.startSample ?? nextSample
+        const endSample = startSample + event.data.frames.length
+        nextSample = endSample
+        const observedAtMs = performance.now()
+        sink.push(event.data.frames, {
+          startSample,
+          endSample,
+          observedAtMs,
+          estimatedEndAtMs: observedAtMs,
+          uncertaintyMs: null
+        })
+      } else if (event.data.type === 'drained') resolveDrain()
     }
     source.connect(node)
     const openContext = audioContext

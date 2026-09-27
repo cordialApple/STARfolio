@@ -48,9 +48,11 @@ describe('pcm processor protocol', () => {
     const processor = new ProcessorClass()
     const frame = Float32Array.from([0.25, -0.5])
     expect(processor.process([[frame]])).toBe(true)
-    expect(processor.port.messages[0]).toEqual({ type: 'frames', frames: frame })
+    expect(processor.port.messages[0]).toEqual({ type: 'frames', frames: frame, startSample: 0 })
+    expect(processor.process([[frame]])).toBe(true)
+    expect(processor.port.messages[1]).toEqual({ type: 'frames', frames: frame, startSample: 2 })
     processor.port.onmessage?.({ data: { type: 'stop' } })
-    expect(processor.port.messages[1]).toEqual({ type: 'drained' })
+    expect(processor.port.messages[2]).toEqual({ type: 'drained' })
     expect(processor.process([[frame]])).toBe(false)
   })
 

@@ -94,3 +94,79 @@ it('warns once when asynchronous media writing fails', async () => {
   const data = JSON.parse(readFileSync(join(path, 'session-3', 'manifest.json'), 'utf8'))
   expect(data).toMatchObject({ status: 'incomplete', mediaError: 'disk full' })
 })
+
+it('keeps immutable renderer timing events with distinct occurrence ids', async () => {
+  const path = root()
+  const capture = new TrialCapture({
+    root: path,
+    sessionId: 'session-timing',
+    trialId: 'trial-timing',
+    recordMedia: false,
+    now: () => 100
+  })
+  const event = {
+    schemaVersion: 1 as const,
+    sequence: 1,
+    kind: 'candidate-speech-end' as const,
+    rendererTimeMs: 500,
+    rendererTimeOriginUtcMs: 1_800_000_000_000,
+    sampleOffset: 24_000,
+    estimatedAtMs: 480,
+    observedAtMs: 500,
+    quantizationMs: 10,
+    uncertaintyMs: null
+  }
+  capture.timing(event)
+  capture.timing({ ...event, sequence: 2, kind: 'assistant-voice-scheduled', rendererTimeMs: 800 })
+  await capture.finish('Ended by user', true)
+  const directory = join(path, 'session-timing', 'events')
+  const files = readdirSync(directory)
+  expect(files).toHaveLength(2)
+  expect(files.every((file) => file.endsWith('.json'))).toBe(true)
+  const records = files.map((file) => JSON.parse(readFileSync(join(directory, file), 'utf8')))
+  expect(new Set(records.map((record) => record.eventId)).size).toBe(2)
+  expect(records.map((record) => record.sequence).sort()).toEqual([1, 2])
+  expect(records[0]).toMatchObject({ trialId: 'trial-timing', sessionId: 'session-timing' })
+  expect(JSON.stringify(records)).not.toContain('secret')
+})
+
+it('records sequence gaps and duplicate deliveries without rewriting prior events', async () => {
+  const path = root()
+  const capture = new TrialCapture({
+    root: path,
+    sessionId: 'session-gap',
+    trialId: 'trial-gap',
+    recordMedia: false,
+    now: () => 0
+  })
+  const event = {
+    schemaVersion: 1 as const,
+    sequence: 1,
+    kind: 'mic-ready' as const,
+    rendererTimeMs: 100,
+    rendererTimeOriginUtcMs: 1_800_000_000_000,
+    sampleOffset: null,
+    estimatedAtMs: null,
+    observedAtMs: 100,
+    quantizationMs: null,
+    uncertaintyMs: null
+  }
+  capture.timing(event)
+  capture.timing({ ...event, sequence: 3, rendererTimeMs: 300 })
+  capture.timing({ ...event, sequence: 1, rendererTimeMs: 500 })
+  await capture.finish('Gateway disconnected', false)
+  const directory = join(path, 'session-gap', 'events')
+  const records = readdirSync(directory).map((file) =>
+    JSON.parse(readFileSync(join(directory, file), 'utf8'))
+  )
+  expect(records.filter((record) => record.recordType === 'renderer-timing')).toHaveLength(2)
+  expect(records.find((record) => record.recordType === 'timing-gap')).toMatchObject({
+    missingStart: 2,
+    missingEnd: 2
+  })
+  expect(records.find((record) => record.recordType === 'timing-rejection')).toMatchObject({
+    rejectedSequence: 1
+  })
+  const manifest = JSON.parse(readFileSync(join(path, 'session-gap', 'manifest.json'), 'utf8'))
+  expect(manifest.status).toBe('incomplete')
+})

@@ -2,6 +2,7 @@ class PcmProcessor extends AudioWorkletProcessor {
   constructor() {
     super()
     this.active = true
+    this.sampleOffset = 0
     this.port.onmessage = (event) => {
       if (event.data?.type !== 'stop') return
       this.active = false
@@ -13,7 +14,8 @@ class PcmProcessor extends AudioWorkletProcessor {
     if (!this.active) return false
     const channel = inputs[0]?.[0]
     if (channel && channel.length) {
-      this.port.postMessage({ type: 'frames', frames: channel.slice(0) })
+      this.port.postMessage({ type: 'frames', frames: channel.slice(0), startSample: this.sampleOffset })
+      this.sampleOffset += channel.length
     }
     return true
   }

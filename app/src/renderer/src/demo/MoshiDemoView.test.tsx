@@ -17,6 +17,7 @@ let holdResume = false
 const start = vi.fn(async (): Promise<'moshi' | 'fixture'> => 'fixture')
 const end = vi.fn(async () => undefined)
 const audio = vi.fn()
+const timing = vi.fn()
 const startStreamingRecording = startRecording as unknown as Mock<
   (options: StreamingRecordOptions) => Promise<Recording<void>>
 >
@@ -25,6 +26,7 @@ beforeEach(async () => {
   start.mockClear()
   end.mockClear()
   audio.mockClear()
+  timing.mockClear()
   startStreamingRecording.mockReset()
   holdResume = false
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -33,6 +35,17 @@ beforeEach(async () => {
     'AudioContext',
     class {
       state = 'running'
+      currentTime = 0
+      destination = {}
+      getOutputTimestamp(): { contextTime: number; performanceTime: number } {
+        return { contextTime: 0, performanceTime: 0 }
+      }
+      createBuffer(_channels: number, length: number, sampleRate: number) {
+        return { duration: length / sampleRate, copyToChannel: vi.fn() }
+      }
+      createBufferSource() {
+        return { buffer: null, connect: vi.fn(), start: vi.fn() }
+      }
       resume(): Promise<void> {
         return holdResume
           ? new Promise((resolve) => {
@@ -56,6 +69,7 @@ beforeEach(async () => {
       start,
       end,
       audio,
+      timing,
       onEvent: (callback: (event: MoshiDemoEvent) => void) => {
         receive = callback
         return vi.fn()
@@ -213,6 +227,56 @@ it('flushes final microphone frames before ending the remote session', async () 
   expect(audio).toHaveBeenCalledWith(expect.any(String), trailing)
   expect(end).toHaveBeenCalledOnce()
   expect(audio.mock.invocationCallOrder[0]).toBeLessThan(end.mock.invocationCallOrder[0])
+})
+
+it('sends live speech timing before closing the trial', async () => {
+  start.mockResolvedValueOnce('moshi')
+  let emitFrames!: StreamingRecordOptions['onFrames']
+  startStreamingRecording.mockImplementationOnce(async (options) => {
+    emitFrames = options.onFrames
+    return { stop: async () => undefined }
+  })
+
+  await click('Start native interview')
+  const id = startedSessionId()
+  emitFrames(new Float32Array(240).fill(0.4), {
+    startSample: 0,
+    endSample: 240,
+    observedAtMs: 100,
+    estimatedEndAtMs: 100,
+    uncertaintyMs: null
+  })
+  await click('End interview')
+
+  expect(timing).toHaveBeenCalledWith(id, expect.objectContaining({ kind: 'mic-ready' }))
+  expect(timing).toHaveBeenCalledWith(
+    id,
+    expect.objectContaining({ kind: 'candidate-speech-start', sampleOffset: 0 })
+  )
+  expect(timing).toHaveBeenCalledWith(id, expect.objectContaining({ kind: 'session-ended' }))
+  expect(timing.mock.invocationCallOrder.at(-1)).toBeLessThan(end.mock.invocationCallOrder[0])
+})
+
+it('does not treat an uninitialized output clock as playback time', async () => {
+  start.mockResolvedValueOnce('moshi')
+  startStreamingRecording.mockResolvedValueOnce({ stop: async () => undefined })
+
+  await click('Start native interview')
+  const id = startedSessionId()
+  await act(async () => {
+    receive({ type: 'audio', sessionId: id, samples: new Float32Array(240).fill(0.4) })
+  })
+
+  expect(timing).toHaveBeenCalledWith(
+    id,
+    expect.objectContaining({
+      kind: 'assistant-voice-scheduled',
+      estimatedAtMs: expect.any(Number),
+      clockSource: 'renderer-fallback'
+    })
+  )
+  const voice = timing.mock.calls.find(([, event]) => event.kind === 'assistant-voice-scheduled')![1]
+  expect(voice.estimatedAtMs).toBeGreaterThan(0)
 })
 
 it('waits for pending microphone startup before ending the remote session', async () => {

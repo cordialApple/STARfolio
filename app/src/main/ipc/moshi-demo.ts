@@ -286,6 +286,41 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
       }
     }
   )
+  const timingEvent = z
+    .object({
+      schemaVersion: z.literal(1),
+      sequence: z.number().int().min(1).max(1_000_000),
+      kind: z.enum([
+        'mic-ready',
+        'candidate-speech-start',
+        'candidate-speech-end',
+        'assistant-voice-scheduled',
+        'assistant-voice-end',
+        'assistant-voice-interrupted',
+        'audio-received',
+        'session-ended'
+      ]),
+      rendererTimeMs: z.number().finite().nonnegative(),
+      rendererTimeOriginUtcMs: z.number().finite().nonnegative(),
+      sampleOffset: z.number().int().nonnegative().nullable(),
+      estimatedAtMs: z.number().finite().nonnegative().nullable(),
+      observedAtMs: z.number().finite().nonnegative().nullable(),
+      quantizationMs: z.number().finite().nonnegative().nullable(),
+      uncertaintyMs: z.number().finite().nonnegative().nullable(),
+      segmentId: z.number().int().nonnegative().nullable().optional(),
+      queuedMs: z.number().finite().nonnegative().nullable().optional(),
+      clockSource: z.enum(['audio-output-timestamp', 'renderer-fallback']).nullable().optional(),
+      status: z.enum(['observed', 'ambiguous', 'cancelled', 'unanswered']).nullable().optional()
+    })
+    .strict()
+  const timingInput = z.object({ sessionId: z.string().min(1).max(64), timing: timingEvent }).strict()
+  ipcMain.on('moshiDemo:timing', (event, input: unknown) => {
+    const parsed = timingInput.safeParse(input)
+    if (!parsed.success) return
+    const current = sessions.get(event.sender.id)
+    if (current?.id !== parsed.data.sessionId || current.cancelled) return
+    current.record((capture) => capture.timing(parsed.data.timing))
+  })
   ipcMain.on('moshiDemo:audio', (event, input: unknown) => {
     if (!input || typeof input !== 'object') return
     const { sessionId, samples } = input as { sessionId?: unknown; samples?: unknown }

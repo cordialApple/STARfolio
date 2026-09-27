@@ -16,6 +16,7 @@ const api: IpcApi = {
     health: (endpoint) => ipcRenderer.invoke('moshiDemo:health', { endpoint }),
     start: (request) => ipcRenderer.invoke('moshiDemo:start', request),
     audio: (sessionId, samples) => ipcRenderer.send('moshiDemo:audio', { sessionId, samples }),
+    timing: (sessionId, timing) => ipcRenderer.send('moshiDemo:timing', { sessionId, timing }),
     end: (sessionId, reason) => ipcRenderer.invoke('moshiDemo:end', { sessionId, reason }),
     onEvent: (callback) => {
       const handler = (_: Electron.IpcRendererEvent, event: MoshiDemoEvent): void => callback(event)
