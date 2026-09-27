@@ -181,6 +181,11 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
                 send({
                   type: 'capture-warning',
                   message: 'Trial media write failed; interview continues'
+                }),
+              onTimingError: () =>
+                send({
+                  type: 'capture-warning',
+                  message: 'Trial timing write failed; interview continues'
                 })
             })
             record((capture) => capture.phase('health'))

@@ -1,13 +1,4 @@
-import {
-  closeSync,
-  createWriteStream,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  renameSync,
-  writeFileSync,
-  type WriteStream
-} from 'node:fs'
+import { createWriteStream, mkdirSync, promises as fsPromises, renameSync, writeFileSync, type WriteStream } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
@@ -49,6 +40,7 @@ interface TrialCaptureOptions {
   startedMs?: number
   startedAtUtc?: string
   onMediaError?: (message: string) => void
+  onTimingError?: () => void
 }
 
 export class TrialCapture {
@@ -60,6 +52,7 @@ export class TrialCapture {
   private readonly mediaRecorded: boolean
   private readonly now: () => number
   private readonly onMediaError?: (message: string) => void
+  private readonly onTimingError?: () => void
   private readonly phasesMs: Partial<Record<Phase, number>> = {}
   private readonly gapToAudioMs: number[] = []
   private readonly pingRttMs: number[] = []
@@ -73,6 +66,8 @@ export class TrialCapture {
   private mediaError: string | null = null
   private finished = false
   private lastTimingSequence = 0
+  private pendingTimingWrites: Promise<void> = Promise.resolve()
+  private timingError = false
 
   constructor(options: TrialCaptureOptions) {
     if (!/^[a-zA-Z0-9-]{1,64}$/.test(options.sessionId)) throw new Error('Invalid trial session ID')
@@ -81,6 +76,7 @@ export class TrialCapture {
     this.mediaRecorded = options.recordMedia
     this.now = options.now ?? (() => performance.now())
     this.onMediaError = options.onMediaError
+    this.onTimingError = options.onTimingError
     this.directory = join(options.root, options.sessionId)
     mkdirSync(this.directory, { recursive: true, mode: 0o700 })
     this.startedMs = options.startedMs ?? this.now()
@@ -154,37 +150,46 @@ export class TrialCapture {
 
   private appendTimingRecord(record: object): void {
     const directory = join(this.directory, 'events')
-    mkdirSync(directory, { recursive: true, mode: 0o700 })
     const eventId = randomUUID()
     const temporary = join(directory, `${eventId}.tmp`)
     const destination = join(directory, `${eventId}.json`)
-    const descriptor = openSync(temporary, 'wx', 0o600)
-    try {
-      writeFileSync(
-        descriptor,
-        `${JSON.stringify({
-          schemaVersion: 1,
-          eventId,
-          trialId: this.trialId,
-          sessionId: this.sessionId,
-          receivedAtUtc: new Date().toISOString(),
-          ...record
-        })}\n`,
-        'utf8'
-      )
-      fsyncSync(descriptor)
-    } finally {
-      closeSync(descriptor)
-    }
-    renameSync(temporary, destination)
+    const content = `${JSON.stringify({
+      schemaVersion: 1,
+      eventId,
+      trialId: this.trialId,
+      sessionId: this.sessionId,
+      receivedAtUtc: new Date().toISOString(),
+      ...record
+    })}\n`
+    this.pendingTimingWrites = this.pendingTimingWrites.then(async () => {
+      try {
+        await fsPromises.mkdir(directory, { recursive: true, mode: 0o700 })
+        const descriptor = await fsPromises.open(temporary, 'wx', 0o600)
+        try {
+          await descriptor.writeFile(content, 'utf8')
+          await descriptor.sync()
+        } finally {
+          await descriptor.close()
+        }
+        await fsPromises.rename(temporary, destination)
+      } catch {
+        if (this.timingError) return
+        this.timingError = true
+        this.onTimingError?.()
+      }
+    })
   }
 
   async finish(reason: string, complete: boolean): Promise<void> {
     if (this.finished) return
     this.finished = true
-    await Promise.all([this.endStream(this.inputStream), this.endStream(this.outputStream)])
+    await Promise.all([
+      this.endStream(this.inputStream),
+      this.endStream(this.outputStream),
+      this.pendingTimingWrites
+    ])
     this.snapshot(
-      complete && !this.mediaError ? 'finished' : 'incomplete',
+      complete && !this.mediaError && !this.timingError ? 'finished' : 'incomplete',
       reason,
       new Date().toISOString()
     )
@@ -247,6 +252,7 @@ export class TrialCapture {
       sampleRateHz: 24_000,
       mediaRecorded: this.mediaRecorded,
       mediaError: this.mediaError,
+      timingError: this.timingError,
       phasesMs: this.phasesMs,
       gapCount: this.gapCount,
       gapToAudioMs: this.gapToAudioMs,

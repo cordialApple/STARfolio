@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { TrialCapture } from './trial-capture'
 
 const roots: string[] = []
@@ -169,4 +169,38 @@ it('records sequence gaps and duplicate deliveries without rewriting prior event
   })
   const manifest = JSON.parse(readFileSync(join(path, 'session-gap', 'manifest.json'), 'utf8'))
   expect(manifest.status).toBe('incomplete')
+})
+
+it('keeps interview running when a timing write fails and marks evidence incomplete', async () => {
+  const path = root()
+  const onTimingError = vi.fn()
+  const capture = new TrialCapture({
+    root: path,
+    sessionId: 'session-write-failure',
+    trialId: 'trial-write-failure',
+    recordMedia: false,
+    now: () => 0,
+    onTimingError
+  })
+  writeFileSync(join(path, 'session-write-failure', 'events'), 'blocked')
+  expect(() =>
+    capture.timing({
+      schemaVersion: 1,
+      sequence: 1,
+      kind: 'mic-ready',
+      rendererTimeMs: 100,
+      rendererTimeOriginUtcMs: 1_800_000_000_000,
+      sampleOffset: null,
+      estimatedAtMs: null,
+      observedAtMs: 100,
+      quantizationMs: null,
+      uncertaintyMs: null
+    })
+  ).not.toThrow()
+  await capture.finish('Ended by user', true)
+  expect(onTimingError).toHaveBeenCalledOnce()
+  const manifest = JSON.parse(
+    readFileSync(join(path, 'session-write-failure', 'manifest.json'), 'utf8')
+  )
+  expect(manifest).toMatchObject({ status: 'incomplete', timingError: true })
 })
