@@ -23,9 +23,12 @@ TAG_KEY = "StarfolioDemo"
 BUNDLE_FILES = (
     "README.md",
     "bootstrap.sh",
+    "cloudwatch-gpu.json",
     "diagnostics.sh",
     "conditioner_worker.py",
     "gateway.py",
+    "gpu_peaks.py",
+    "gpu_sampler.py",
     "interview_worker.py",
     "interview_protocol.py",
     "requirements-build.in",
@@ -92,8 +95,8 @@ def make_plan(config, now=None, trial_id=None):
     secret_region_and_account(config)
     instance_type = selected_instance(config)
     hours = float(config.get("hours"))
-    if not math.isfinite(hours) or not 0.5 <= hours <= 6:
-        raise ValueError("hours must be between 0.5 and 6")
+    if not math.isfinite(hours) or not 0.5 <= hours <= 2 / 3:
+        raise ValueError("hours must be between 0.5 and 2/3")
     bucket = config["bundle_s3_uri"].removeprefix("s3://").split("/", 1)[0]
     return {
         "name": config["name"],
@@ -103,6 +106,7 @@ def make_plan(config, now=None, trial_id=None):
         "lifetime_hours": hours,
         "trial_id": trial_id,
         "diagnostics_s3_uri": f"s3://{bucket}/trials/{trial_id}/worker.log",
+        "telemetry_s3_prefix": f"s3://{bucket}/trials/{trial_id}/gpu/",
     }
 
 
@@ -347,6 +351,7 @@ def make_bootstrap(config, plan):
                 f"export STARFOLIO_DEMO_DEADLINE={shlex.quote(plan['deadline'])}",
                 f"export STARFOLIO_TRIAL_ID={shlex.quote(plan['trial_id'])}",
                 f"export STARFOLIO_TRIAL_DIAGNOSTICS_URI={shlex.quote(plan['diagnostics_s3_uri'])}",
+                f"export STARFOLIO_TRIAL_GPU_URI={shlex.quote(plan['telemetry_s3_prefix'])}",
                 f"export STARFOLIO_DEMO_MAX_SECONDS={max_seconds}",
                 'systemd-run --unit=starfolio-instance-deadline --on-active="${STARFOLIO_DEMO_MAX_SECONDS}s" /sbin/shutdown -h now',
                 "command -v aws >/dev/null",
@@ -376,6 +381,9 @@ def make_worker_role(config, plan):
     diagnostics_arn = "arn:${AWS::Partition}:s3:::" + plan[
         "diagnostics_s3_uri"
     ].removeprefix("s3://")
+    telemetry_arn = "arn:${AWS::Partition}:s3:::" + plan[
+        "telemetry_s3_prefix"
+    ].removeprefix("s3://") + "*"
     return {
         "Type": "AWS::IAM::Role",
         "Properties": {
@@ -415,6 +423,31 @@ def make_worker_role(config, plan):
                             "Effect": "Allow",
                             "Action": "s3:PutObject",
                             "Resource": {"Fn::Sub": diagnostics_arn},
+                        }
+                    ],
+                ),
+                make_inline_policy(
+                    "WriteTrialGpuTelemetry",
+                    [
+                        {
+                            "Effect": "Allow",
+                            "Action": "s3:PutObject",
+                            "Resource": {"Fn::Sub": telemetry_arn},
+                        }
+                    ],
+                ),
+                make_inline_policy(
+                    "PublishGpuMetrics",
+                    [
+                        {
+                            "Effect": "Allow",
+                            "Action": "cloudwatch:PutMetricData",
+                            "Resource": "*",
+                            "Condition": {
+                                "StringEquals": {
+                                    "cloudwatch:namespace": "STARfolio/MoshiRAG"
+                                }
+                            },
                         }
                     ],
                 ),

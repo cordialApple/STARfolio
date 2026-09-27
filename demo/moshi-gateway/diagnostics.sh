@@ -3,6 +3,7 @@ set -uo pipefail
 : "${AWS_REGION:?AWS region required}"
 : "${STARFOLIO_TRIAL_DIAGNOSTICS_URI:?Trial diagnostics URI required}"
 umask 077
+timeout 20s systemctl stop starfolio-gpu-sampler.service || true
 capture=$(mktemp)
 trap 'rm -f "$capture"' EXIT
 systemctl show starfolio-demo.service \
@@ -10,6 +11,8 @@ systemctl show starfolio-demo.service \
   > "$capture"
 journalctl --unit=starfolio-demo.service --boot --no-pager --output=short-iso \
   | tail --bytes=524288 >> "$capture"
+journalctl --unit=starfolio-gpu-sampler.service --boot --no-pager --output=short-iso \
+  | tail --bytes=131072 >> "$capture"
 cloud_init_log=${STARFOLIO_CLOUD_INIT_LOG:-/var/log/cloud-init-output.log}
 if [[ -f "$cloud_init_log" ]]; then
   tail --bytes=524288 "$cloud_init_log" >> "$capture"

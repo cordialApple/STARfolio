@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = ROOT / "demo" / "moshi-gateway" / "bootstrap.sh"
 RUN_WORKER = ROOT / "demo" / "moshi-gateway" / "run-worker.sh"
+DIAGNOSTICS = ROOT / "demo" / "moshi-gateway" / "diagnostics.sh"
 BUILD_LOCK = ROOT / "demo" / "moshi-gateway" / "requirements-build.lock"
 WORKFLOW = ROOT / ".github" / "workflows" / "aws-demo.yml"
 SOURCE_REVISION = "8c6dfc101b7871baa428424bcdc583b74fb561d9"
@@ -90,6 +91,7 @@ class RuntimeInputTests(unittest.TestCase):
         self.assertIn("verify_moshi_source.py /tmp/moshi-rag/moshi/moshi", workflow)
         self.assertIn("bash -n /tmp/starfolio-user-data.sh", workflow)
         self.assertIn("cfn-lint /tmp/starfolio-template.json", workflow)
+        self.assertIn("'hours':0.6666666666666666", workflow)
 
     def test_bootstrap_uses_secret_token_ephemerally(self):
         script = BOOTSTRAP.read_text()
@@ -100,6 +102,28 @@ class RuntimeInputTests(unittest.TestCase):
         self.assertIn("Environment=STARFOLIO_DEMO_DEADLINE=", script)
         self.assertIn("IPAddressAllow=localhost", script)
         self.assertIn("IPAddressDeny=any", script)
+
+    def test_gpu_sampler_starts_before_model_service_and_stops_for_diagnostics(self):
+        bootstrap = BOOTSTRAP.read_text()
+        diagnostics = DIAGNOSTICS.read_text()
+        self.assertIn("STARFOLIO_TRIAL_GPU_URI", bootstrap)
+        self.assertIn("gpu_sampler.py", bootstrap)
+        self.assertIn("starfolio-gpu-sampler.service", bootstrap)
+        self.assertLess(
+            bootstrap.index("systemctl enable --now starfolio-gpu-sampler.service"),
+            bootstrap.index("systemctl enable --now starfolio-demo.service"),
+        )
+        self.assertIn("systemctl stop starfolio-gpu-sampler.service", diagnostics)
+
+    def test_cloudwatch_agent_starts_before_model_service(self):
+        bootstrap = BOOTSTRAP.read_text()
+        self.assertIn("cloudwatch-gpu.json", bootstrap)
+        self.assertIn("amazon-cloudwatch-agent-ctl", bootstrap)
+        self.assertIn("--verify \"$cloudwatch_dir/amazon-cloudwatch-agent.deb.sig\"", bootstrap)
+        self.assertLess(
+            bootstrap.index("amazon-cloudwatch-agent-ctl"),
+            bootstrap.index("systemctl enable --now starfolio-demo.service"),
+        )
 
 
 if __name__ == "__main__":

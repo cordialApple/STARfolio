@@ -16,6 +16,13 @@ METRICS = {
     "NetworkOut": ("Sum", "Bytes"),
     "StatusCheckFailed": ("Maximum", "Count"),
 }
+GPU_METRICS = frozenset({
+    "nvidia_smi_memory_used",
+    "nvidia_smi_memory_free",
+    "nvidia_smi_memory_total",
+    "nvidia_smi_utilization_gpu",
+})
+GPU_NAMESPACE = "STARfolio/MoshiRAG"
 
 
 def utc(value):
@@ -71,6 +78,7 @@ def capture_snapshot(aws, config, trial_id, now=None):
         "stackStatus": None,
         "instance": None,
         "metrics": None,
+        "gpuMetrics": None,
         "errors": errors,
     }
     try:
@@ -158,6 +166,52 @@ def capture_snapshot(aws, config, trial_id, now=None):
             metric["datapoints"] = sorted(response.get("Datapoints", []), key=lambda point: str(point.get("Timestamp", "")))
         except (OSError, subprocess.CalledProcessError, KeyError) as error:
             errors[name] = str(error)
+    try:
+        listed = aws(
+            "cloudwatch", "list-metrics",
+            "--namespace", GPU_NAMESPACE,
+            "--dimensions", f"Name=InstanceId,Value={instance_id}",
+        )
+        result["gpuMetrics"] = []
+        for item in listed.get("Metrics", []):
+            name = item.get("MetricName")
+            dimensions = item.get("Dimensions", [])
+            if name not in GPU_METRICS or not any(
+                dimension.get("Name") == "InstanceId" and dimension.get("Value") == instance_id
+                for dimension in dimensions
+            ):
+                continue
+            metric = {
+                "name": name,
+                "dimensions": dimensions,
+                "periodSeconds": 10,
+                "statistic": "Maximum",
+                "windowStartUtc": launch,
+                "windowEndUtc": observed_at,
+                "datapoints": None,
+            }
+            result["gpuMetrics"].append(metric)
+            try:
+                response = aws(
+                    "cloudwatch", "get-metric-statistics",
+                    "--namespace", GPU_NAMESPACE,
+                    "--metric-name", name,
+                    "--dimensions", *[
+                        f"Name={dimension['Name']},Value={dimension['Value']}"
+                        for dimension in dimensions
+                    ],
+                    "--start-time", launch,
+                    "--end-time", observed_at,
+                    "--period", "10",
+                    "--statistics", "Maximum",
+                )
+                metric["datapoints"] = sorted(
+                    response.get("Datapoints", []), key=lambda point: str(point.get("Timestamp", ""))
+                )
+            except (OSError, subprocess.CalledProcessError, KeyError) as error:
+                errors[f"gpuMetric:{name}:{len(result['gpuMetrics'])}"] = str(error)
+    except (OSError, subprocess.CalledProcessError, KeyError) as error:
+        errors["gpuMetrics"] = str(error)
     return result
 
 

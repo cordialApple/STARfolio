@@ -6,6 +6,7 @@ from pathlib import Path
 
 import aiohttp
 import numpy as np
+from gpu_peaks import PeakTracker
 from interview_protocol import (
     CONTROL_PREFIX,
     InterviewConditioning,
@@ -81,9 +82,11 @@ class ControlSocket:
             yield message
 
 
-def create_channel(base, word_type, encode):
+def create_channel(base, word_type, encode, tracker=None):
     class InterviewChannel(base):
         def __init__(self, server, ws, mimi=None):
+            if tracker is not None:
+                tracker.set_phase("session_init")
             super().__init__(server, ws, mimi=mimi)
             self.ws = ControlSocket(ws, self)
             self.output_queue = FrameQueue()
@@ -318,6 +321,8 @@ def create_channel(base, word_type, encode):
             )
 
         async def run(self):
+            if tracker is not None:
+                tracker.set_phase("session_active")
             try:
                 await super().run()
             finally:
@@ -327,27 +332,49 @@ def create_channel(base, word_type, encode):
                 await asyncio.gather(*self.tasks, return_exceptions=True)
                 with contextlib.suppress(ConnectionError):
                     await self.flush_transcript(True)
+                if tracker is not None:
+                    tracker.set_phase("serving")
 
     return InterviewChannel
 
 
-def main():
-    from moshi import server
-    from moshi.inference_utils import channel as channel_module
-    from moshi.inference_utils.channel import Channel
-    from moshi.inference_utils.utils import get_conditioning_remote_async
-    from moshi.models import loaders
-    from moshi.stt import LocalSpeechToText, STTWordMessage
+def track_interview_lifecycle(server, tracker):
+    original_load_models = server.load_models
+    original_warmup = server.ServerState.warmup
 
-    channel_module.LocalSpeechToText = create_local_stt_with_model(
-        LocalSpeechToText,
-        loaders,
-        Path(os.environ["STARFOLIO_STT_MODEL_PATH"]),
-    )
-    server.Channel = create_channel(
-        Channel, STTWordMessage, get_conditioning_remote_async
-    )
-    server.main()
+    def load_models(*args, **kwargs):
+        tracker.set_phase("model_load")
+        return original_load_models(*args, **kwargs)
+
+    def warmup(state, *args, **kwargs):
+        tracker.set_phase("warmup")
+        result = original_warmup(state, *args, **kwargs)
+        tracker.set_phase("serving")
+        return result
+
+    server.load_models = load_models
+    server.ServerState.warmup = warmup
+
+
+def main():
+    with PeakTracker("interview") as tracker:
+        from moshi import server
+        from moshi.inference_utils import channel as channel_module
+        from moshi.inference_utils.channel import Channel
+        from moshi.inference_utils.utils import get_conditioning_remote_async
+        from moshi.models import loaders
+        from moshi.stt import LocalSpeechToText, STTWordMessage
+
+        channel_module.LocalSpeechToText = create_local_stt_with_model(
+            LocalSpeechToText,
+            loaders,
+            Path(os.environ["STARFOLIO_STT_MODEL_PATH"]),
+        )
+        track_interview_lifecycle(server, tracker)
+        server.Channel = create_channel(
+            Channel, STTWordMessage, get_conditioning_remote_async, tracker=tracker
+        )
+        server.main()
 
 
 if __name__ == "__main__":
