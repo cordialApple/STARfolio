@@ -112,11 +112,19 @@ describe('evaluator', () => {
 })
 
 describe('conversation', () => {
+  it.each([
+    ['ask_intro', 'Hello, thanks for joining me. Tell me about yourself.'],
+    ['closing', 'That covers my questions. What questions do you have for me?'],
+    ['done', 'Thank you for your time. That concludes the interview.']
+  ] as const)('uses fixed %s line without a provider', async (kind, expected) => {
+    await expect(composeUtterance({ action: { kind } })).resolves.toBe(expected)
+  })
+
   const cases: Array<{ action: InterviewAction; needle: string }> = [
     { action: { kind: 'ask_intro' }, needle: 'yourself' },
     { action: { kind: 'probe', topicId: 'p', dimension: 'tradeoffs', reason: 'x' }, needle: 'tradeoffs' },
-    { action: { kind: 'closing' }, needle: 'time' },
-    { action: { kind: 'done' }, needle: 'Thanks' }
+    { action: { kind: 'closing' }, needle: 'questions' },
+    { action: { kind: 'done' }, needle: 'Thank you' }
   ]
 
   for (const c of cases) {

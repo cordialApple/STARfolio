@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { startRecording, type Recording } from '../audio/recorder'
 import { shouldCaptureDemoAudio } from './capture-mode'
 import { createLatencySession, type LatencySession } from './latency-session'
+import { playScriptedAudio } from './scripted-playback'
 import type {
   ExperienceSummary,
   MoshiDemoEvent,
@@ -25,6 +26,30 @@ function captureDrainFailureMessage(failure: unknown): string {
 
 function captureDrainError(failure: unknown): Error {
   return failure instanceof Error ? failure : new Error('Unknown audio capture failure')
+}
+
+function scheduledOutputTiming(context: AudioContext, when: number, receivedAtMs: number): {
+  receivedAtMs: number
+  scheduledStartMs: number
+  clockSource: 'audio-output-timestamp' | 'renderer-fallback'
+} {
+  const outputStamp = context.getOutputTimestamp?.()
+  const outputContextTime = outputStamp?.contextTime
+  const outputPerformanceTime = outputStamp?.performanceTime
+  const hasOutputTimestamp =
+    typeof outputContextTime === 'number' &&
+    typeof outputPerformanceTime === 'number' &&
+    Number.isFinite(outputContextTime) &&
+    Number.isFinite(outputPerformanceTime) &&
+    outputPerformanceTime > 0
+  const scheduledStartMs = hasOutputTimestamp
+    ? outputPerformanceTime + (when - outputContextTime) * 1000
+    : performance.now() + Math.max(0, when - context.currentTime) * 1000
+  return {
+    receivedAtMs,
+    scheduledStartMs,
+    clockSource: hasOutputTimestamp ? 'audio-output-timestamp' : 'renderer-fallback'
+  }
 }
 
 export interface MoshiInterviewSession {
@@ -71,10 +96,17 @@ export function useMoshiInterviewSession({
   const startingCapture = useRef<Promise<void> | null>(null)
   const endingSession = useRef<Promise<void> | null>(null)
   const latencySession = useRef<LatencySession | null>(null)
+  const pendingScript = useRef<{ revision: number; kind: 'ask_intro' | 'closing' | 'done'; samples: Float32Array } | null>(null)
+  const scriptSpeaking = useRef(false)
+  const scriptAbort = useRef<AbortController | null>(null)
+  const openingCompleted = useRef(false)
 
   const stopAudio = useCallback(async (): Promise<void> => {
     if (stoppingAudio.current) return stoppingAudio.current
     generation.current++
+    scriptAbort.current?.abort()
+    scriptAbort.current = null
+    pendingScript.current = null
     const mic = recording.current
     recording.current = null
     const context = playback.current
@@ -160,6 +192,45 @@ export function useMoshiInterviewSession({
     return endingSession.current
   }, [drainCapture, finishSession])
 
+  const playScript = useCallback((): void => {
+    const script = pendingScript.current
+    const id = sessionId.current
+    const context = playback.current
+    if (!script || !id || !context || context.state === 'closed' || !recording.current || !isCaptureLive.current || scriptSpeaking.current)
+      return
+    pendingScript.current = null
+    scriptSpeaking.current = true
+    const controller = new AbortController()
+    scriptAbort.current = controller
+    const receivedAtMs = performance.now()
+    const when = Math.max(context.currentTime, nextAudioTime.current)
+    nextAudioTime.current = when + script.samples.length / 24_000
+    const outputTiming = scheduledOutputTiming(context, when, receivedAtMs)
+    latencySession.current?.output(script.samples, outputTiming)
+    setStatus('Speaking fixed interview line…')
+    void playScriptedAudio(context, script.samples, when, controller.signal)
+      .then(async () => {
+        if (sessionId.current !== id) return
+        const recorded = await window.api.moshiDemo.scriptedTurnDone(id, script.revision)
+        if (!recorded) throw new Error('Scripted interview line was not accepted')
+        if (sessionId.current !== id) return
+        if (script.kind === 'ask_intro') openingCompleted.current = true
+        if (script.kind === 'done') await requestEnd()
+        else {
+          scriptSpeaking.current = false
+          setStatus('Live — scoring runs between speech segments')
+        }
+      })
+      .catch((error: unknown) => {
+        if (sessionId.current !== id || endingSession.current) return
+        setStatus(error instanceof Error ? error.message : 'Scripted speech failed')
+        void requestEnd()
+      })
+      .finally(() => {
+        if (scriptAbort.current === controller) scriptAbort.current = null
+      })
+  }, [requestEnd])
+
   useEffect(() => {
     setMode(null)
     setConnection('Connection not checked')
@@ -179,6 +250,13 @@ export function useMoshiInterviewSession({
       if (event.sessionId !== sessionId.current) return
       if (event.type === 'interview') {
         setSnapshot(event.snapshot)
+      } else if (event.type === 'scripted-turn') {
+        pendingScript.current = {
+          revision: event.revision,
+          kind: event.kind,
+          samples: new Float32Array(event.samples)
+        }
+        playScript()
       } else if (event.type === 'audio') {
         const context = playback.current
         if (!context || !isCaptureLive.current || context.state === 'closed') return
@@ -196,23 +274,8 @@ export function useMoshiInterviewSession({
         source.connect(context.destination)
         const when = Math.max(context.currentTime, nextAudioTime.current)
         source.start(when)
-        const outputStamp = context.getOutputTimestamp?.()
-        const outputContextTime = outputStamp?.contextTime
-        const outputPerformanceTime = outputStamp?.performanceTime
-        const hasOutputTimestamp =
-          typeof outputContextTime === 'number' &&
-          typeof outputPerformanceTime === 'number' &&
-          Number.isFinite(outputContextTime) &&
-          Number.isFinite(outputPerformanceTime) &&
-          outputPerformanceTime > 0
-        const scheduledStartMs = hasOutputTimestamp
-          ? outputPerformanceTime + (when - outputContextTime) * 1000
-          : performance.now() + Math.max(0, when - context.currentTime) * 1000
-        latencySession.current?.output(samples, {
-          receivedAtMs,
-          scheduledStartMs,
-          clockSource: hasOutputTimestamp ? 'audio-output-timestamp' : 'renderer-fallback'
-        })
+        const outputTiming = scheduledOutputTiming(context, when, receivedAtMs)
+        latencySession.current?.output(samples, outputTiming)
         nextAudioTime.current = when + buffer.duration
       } else if (event.type === 'ready') {
         setMode(event.mode)
@@ -259,11 +322,13 @@ export function useMoshiInterviewSession({
           if (sessionId.current === id) sessionId.current = null
         })
     }
-  }, [drainCapture, finishSession, requestEnd])
+  }, [drainCapture, finishSession, playScript, requestEnd])
 
   const start = useCallback(async (): Promise<void> => {
     if (!consent || !resumeText.trim() || sessionId.current) return
     const attempt = ++generation.current
+    openingCompleted.current = false
+    scriptSpeaking.current = false
     const id = crypto.randomUUID()
     sessionId.current = id
     setActive(true)
@@ -310,8 +375,12 @@ export function useMoshiInterviewSession({
         },
         onFrames: (samples, timing) => {
           if (isCaptureLive.current && sessionId.current === id) {
-            if (timing) latencySession.current?.input(samples, timing)
-            window.api.moshiDemo.audio(id, samples)
+            if (!openingCompleted.current || scriptSpeaking.current || pendingScript.current) {
+              window.api.moshiDemo.audio(id, new Float32Array(samples.length))
+            } else {
+              if (timing) latencySession.current?.input(samples, timing)
+              window.api.moshiDemo.audio(id, samples)
+            }
           }
         }
       }).then(async (mic) => {
@@ -322,6 +391,7 @@ export function useMoshiInterviewSession({
         recording.current = mic
         latencySession.current?.micReady()
         setStatus('Live — scoring runs between speech segments')
+        playScript()
       })
       startingCapture.current = pendingCapture
       try {
@@ -341,6 +411,7 @@ export function useMoshiInterviewSession({
     endpoint,
     experienceIds,
     jobDescription,
+    playScript,
     recordTrialMedia,
     requestEnd,
     resumeText

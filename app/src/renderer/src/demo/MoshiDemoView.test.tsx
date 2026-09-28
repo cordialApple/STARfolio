@@ -6,8 +6,10 @@ import type { MoshiDemoEvent } from '../../../preload/index.d'
 import { MoshiDemoView } from './MoshiDemoView'
 import { initState } from '../../../main/ai/roadmap'
 import { startRecording, type Recording, type StreamingRecordOptions } from '../audio/recorder'
+import { playScriptedAudio } from './scripted-playback'
 
 vi.mock('../audio/recorder', () => ({ startRecording: vi.fn() }))
+vi.mock('./scripted-playback', () => ({ playScriptedAudio: vi.fn(async () => undefined) }))
 
 let root: Root
 let container: HTMLDivElement
@@ -18,6 +20,8 @@ const start = vi.fn(async (): Promise<'moshi' | 'fixture'> => 'fixture')
 const end = vi.fn(async () => undefined)
 const audio = vi.fn()
 const timing = vi.fn()
+const scriptedTurnDone = vi.fn(async () => true)
+const scriptedPlayback = playScriptedAudio as Mock<typeof playScriptedAudio>
 const startStreamingRecording = startRecording as unknown as Mock<
   (options: StreamingRecordOptions) => Promise<Recording<void>>
 >
@@ -27,6 +31,9 @@ beforeEach(async () => {
   end.mockClear()
   audio.mockClear()
   timing.mockClear()
+  scriptedTurnDone.mockClear()
+  scriptedPlayback.mockReset()
+  scriptedPlayback.mockResolvedValue(undefined)
   startStreamingRecording.mockReset()
   holdResume = false
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -70,6 +77,7 @@ beforeEach(async () => {
       end,
       audio,
       timing,
+      scriptedTurnDone,
       onEvent: (callback: (event: MoshiDemoEvent) => void) => {
         receive = callback
         return vi.fn()
@@ -116,6 +124,117 @@ async function click(label: string): Promise<void> {
   })
 }
 
+it('speaks fixed opening, sends silence during playback, then restores mic audio', async () => {
+  start.mockResolvedValueOnce('moshi')
+  let emitFrames!: StreamingRecordOptions['onFrames']
+  startStreamingRecording.mockImplementationOnce(async (options) => {
+    emitFrames = options.onFrames
+    return { stop: async () => undefined }
+  })
+  let releaseSpeech!: () => void
+  scriptedPlayback.mockImplementationOnce(() => new Promise((resolve) => { releaseSpeech = resolve }))
+
+  await click('Start native interview')
+  const id = startedSessionId()
+  await act(async () => {
+    receive({
+      type: 'scripted-turn', sessionId: id, revision: 1, kind: 'ask_intro',
+      text: 'Hello, thanks for joining me. Tell me about yourself.',
+      samples: new Float32Array([0.1, 0.2])
+    })
+  })
+  expect(scriptedPlayback).toHaveBeenCalledWith(expect.anything(), new Float32Array([0.1, 0.2]), expect.any(Number), expect.anything())
+  const samples = new Float32Array([0.2, 0.4])
+  emitFrames(samples)
+  expect(audio).toHaveBeenLastCalledWith(id, new Float32Array(2))
+  expect(scriptedTurnDone).not.toHaveBeenCalled()
+
+  await act(async () => releaseSpeech())
+  expect(scriptedTurnDone).toHaveBeenCalledWith(id, 1)
+  emitFrames(samples)
+  expect(audio).toHaveBeenLastCalledWith(id, samples)
+})
+
+it('keeps microphone silent before opening playback arrives', async () => {
+  start.mockResolvedValueOnce('moshi')
+  let emitFrames!: StreamingRecordOptions['onFrames']
+  startStreamingRecording.mockImplementationOnce(async (options) => {
+    emitFrames = options.onFrames
+    return { stop: async () => undefined }
+  })
+  await click('Start native interview')
+  const id = startedSessionId()
+  emitFrames(new Float32Array([0.3, 0.5]))
+  expect(audio).toHaveBeenLastCalledWith(id, new Float32Array(2))
+})
+
+it('asks fixed final question and signs off before ending', async () => {
+  start.mockResolvedValueOnce('moshi')
+  startStreamingRecording.mockResolvedValueOnce({ stop: async () => undefined })
+  await click('Start native interview')
+  const id = startedSessionId()
+  await completeOpening(id)
+  await act(async () => {
+    receive({
+      type: 'scripted-turn', sessionId: id, revision: 3, kind: 'closing',
+      text: 'That covers my questions. What questions do you have for me?',
+      samples: new Float32Array([0.3, 0.4])
+    })
+  })
+  expect(scriptedPlayback).toHaveBeenCalledWith(expect.anything(), new Float32Array([0.3, 0.4]), expect.any(Number), expect.anything())
+  expect(scriptedTurnDone).toHaveBeenCalledWith(id, 3)
+  expect(end).not.toHaveBeenCalled()
+  await act(async () => {
+    receive({
+      type: 'scripted-turn', sessionId: id, revision: 4, kind: 'done',
+      text: 'Thank you for your time. That concludes the interview.',
+      samples: new Float32Array([0.5, 0.6])
+    })
+  })
+  expect(scriptedPlayback).toHaveBeenCalledWith(expect.anything(), new Float32Array([0.5, 0.6]), expect.any(Number), expect.anything())
+  expect(scriptedTurnDone).toHaveBeenCalledWith(id, 4)
+  expect(end).toHaveBeenCalledWith(id, undefined)
+})
+
+it('waits for microphone readiness before speaking queued opening', async () => {
+  start.mockResolvedValueOnce('moshi')
+  let finishStart!: (recording: Recording<void>) => void
+  startStreamingRecording.mockImplementationOnce(() => new Promise((resolve) => { finishStart = resolve }))
+  await click('Start native interview')
+  const id = startedSessionId()
+  await act(async () => {
+    receive({
+      type: 'scripted-turn', sessionId: id, revision: 1, kind: 'ask_intro',
+      text: 'Hello, thanks for joining me. Tell me about yourself.',
+      samples: new Float32Array([0.1, 0.2])
+    })
+  })
+  expect(scriptedPlayback).not.toHaveBeenCalled()
+  await act(async () => finishStart({ stop: async () => undefined }))
+  expect(scriptedPlayback).toHaveBeenCalledOnce()
+  expect(scriptedTurnDone).toHaveBeenCalledWith(id, 1)
+})
+
+it('does not acknowledge cancelled opening speech', async () => {
+  start.mockResolvedValueOnce('moshi')
+  startStreamingRecording.mockResolvedValueOnce({ stop: async () => undefined })
+  let rejectSpeech!: (error: Error) => void
+  scriptedPlayback.mockImplementationOnce(() => new Promise((_, reject) => { rejectSpeech = reject }))
+  await click('Start native interview')
+  const id = startedSessionId()
+  await act(async () => {
+    receive({
+      type: 'scripted-turn', sessionId: id, revision: 1, kind: 'ask_intro',
+      text: 'Hello, thanks for joining me. Tell me about yourself.',
+      samples: new Float32Array([0.1, 0.2])
+    })
+  })
+  await click('End interview')
+  await act(async () => rejectSpeech(new Error('Scripted speech cancelled')))
+  expect(scriptedTurnDone).not.toHaveBeenCalled()
+  expect(end).toHaveBeenCalledWith(id, undefined)
+})
+
 it('keeps raw interview media off unless separately selected', async () => {
   const media = [...container.querySelectorAll('label')].find((label) =>
     label.textContent?.includes('Save raw interview audio')
@@ -140,6 +259,17 @@ function findButton(label: string): HTMLButtonElement | undefined {
 
 function startedSessionId(call = 0): string {
   return (start.mock.calls[call] as unknown as [{ sessionId: string }])[0].sessionId
+}
+
+async function completeOpening(id: string): Promise<void> {
+  await act(async () => {
+    receive({
+      type: 'scripted-turn', sessionId: id, revision: 1, kind: 'ask_intro',
+      text: 'Hello, thanks for joining me. Tell me about yourself.',
+      samples: new Float32Array([0.1, 0.2])
+    })
+  })
+  expect(scriptedTurnDone).toHaveBeenCalledWith(id, 1)
 }
 
 it('does not start a session after End while audio activation is pending', async () => {
@@ -216,6 +346,7 @@ it('flushes final microphone frames before ending the remote session', async () 
   })
 
   await click('Start native interview')
+  await completeOpening(startedSessionId())
   await click('End interview')
   expect(stop).toHaveBeenCalledOnce()
   expect(end).not.toHaveBeenCalled()
@@ -241,6 +372,7 @@ it('sends live speech timing before closing the trial', async () => {
 
   await click('Start native interview')
   const id = startedSessionId()
+  await completeOpening(id)
   emitFrames(new Float32Array(240).fill(0.4), {
     startSample: 0,
     endSample: 240,
@@ -323,6 +455,7 @@ it('flushes final microphone frames before ending during unmount', async () => {
 
   await click('Start native interview')
   const id = startedSessionId()
+  await completeOpening(id)
   await act(async () => {
     root.render(<div />)
   })

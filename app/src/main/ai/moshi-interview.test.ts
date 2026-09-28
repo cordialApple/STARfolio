@@ -28,6 +28,29 @@ async function create(ports = {}) {
   return session
 }
 describe('native duplex interview brain', () => {
+  it('attributes a completed fixed opening once without model realization', async () => {
+    const verify = vi.fn()
+    const session = await createRaw({ verify })
+    const opening = 'Hello, thanks for joining me. Tell me about yourself.'
+    expect(session.recordScriptedTurn(1, opening)).toBe(true)
+    expect(session.recordScriptedTurn(1, opening)).toBe(false)
+    session.appendSegment(segment('I build backend services.', 100))
+    await session.gap()
+    expect(verify).not.toHaveBeenCalled()
+    expect(session.snapshot().transcript[0]).toMatchObject({
+      speaker: 'interviewer',
+      text: opening
+    })
+    expect(session.snapshot().state.phase).toBe('exploration')
+  })
+
+  it('rejects unplayed, mismatched, and stale scripted turns', async () => {
+    const session = await createRaw()
+    expect(session.recordScriptedTurn(1, 'Different words.')).toBe(false)
+    expect(session.recordScriptedTurn(2, 'Hello, thanks for joining me. Tell me about yourself.')).toBe(false)
+    expect(session.snapshot().transcript).toEqual([])
+  })
+
   it('emits architect roadmap and directed intent without a fabricated utterance', async () => {
     const onConditioning = vi.fn()
     const session = await createRaw({ onConditioning })
@@ -498,10 +521,12 @@ it('keeps cascade closing response unscored', async () => {
   await session.gap()
   expect(session.snapshot().conditioning.at(-1)?.action.intent.kind).toBe('closing')
   session.recordConditioningDelivery(3, 'consumed')
-  session.appendSegment({ ...segment('Any final questions?', 410, 'interviewer'), endMs: 420 })
+  expect(session.recordScriptedTurn(3, 'That covers my questions. What questions do you have for me?')).toBe(true)
   session.appendSegment(segment('Thank you.', 500))
   await session.gap()
   expect(evaluate).toHaveBeenCalledOnce()
   expect(session.snapshot().state.phase).toBe('done')
   expect(session.snapshot().transcript).toHaveLength(6)
+  expect(session.recordScriptedTurn(4, 'Thank you for your time. That concludes the interview.')).toBe(true)
+  expect(session.snapshot().transcript.at(-1)?.text).toBe('Thank you for your time. That concludes the interview.')
 })

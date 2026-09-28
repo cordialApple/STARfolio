@@ -15,6 +15,7 @@ const api: IpcApi = {
     rigor: (sessionId) => ipcRenderer.invoke('moshiDemo:rigor', { sessionId }),
     health: (endpoint) => ipcRenderer.invoke('moshiDemo:health', { endpoint }),
     start: (request) => ipcRenderer.invoke('moshiDemo:start', request),
+    scriptedTurnDone: (sessionId, revision) => ipcRenderer.invoke('moshiDemo:scriptedTurnDone', { sessionId, revision }),
     audio: (sessionId, samples) => ipcRenderer.send('moshiDemo:audio', { sessionId, samples }),
     timing: (sessionId, timing) => ipcRenderer.send('moshiDemo:timing', { sessionId, timing }),
     end: (sessionId, reason) => ipcRenderer.invoke('moshiDemo:end', { sessionId, reason }),

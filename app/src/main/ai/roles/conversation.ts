@@ -5,6 +5,7 @@ import type { InterviewAction } from '../roadmap'
 import type { AiTransport } from '../transport'
 import { streamWithWatchdog, type StallTimer, type UtterancePartial } from '../utterance'
 import { logUsage } from '../usage'
+import { scriptedLine } from './scripted-turns'
 
 export interface ConversationInput {
   action: InterviewAction
@@ -66,6 +67,8 @@ function conversationRequest(input: ConversationInput, model?: string): Conversa
 }
 
 export async function composeUtterance(input: ConversationInput, opts: RoleOptions = {}): Promise<string> {
+  const scripted = scriptedLine(input.action.kind)
+  if (scripted) return scripted
   if (stubEnabled(opts.stub)) return stubUtterance(input)
   const req = conversationRequest(input, opts.model)
   const out = await parseStructured({
@@ -96,6 +99,11 @@ export async function composeUtteranceStream(
   input: ConversationInput,
   deps: ComposeStreamDeps
 ): Promise<string> {
+  const scripted = scriptedLine(input.action.kind)
+  if (scripted) {
+    deps.onPartial?.({ text: scripted, done: true })
+    return scripted
+  }
   if (stubEnabled(deps.stub)) {
     const line = stubUtterance(input)
     deps.onPartial?.({ text: line, done: true })
@@ -117,17 +125,13 @@ function stubUtterance(input: ConversationInput): string {
   const topic = input.topicLabel ?? 'that'
   const a = input.action
   switch (a.kind) {
-    case 'ask_intro':
-      return 'To get us started, tell me a bit about yourself and the work you’re most proud of.'
     case 'probe':
       return `Staying on ${topic} — can you walk me through the ${a.dimension} there?`
     case 'transition':
       return a.callback && input.callbackNote
         ? `Earlier you mentioned ${input.callbackNote} — I’d love to come back to ${topic}.`
         : `Let’s move on to ${topic}.`
-    case 'closing':
-      return 'We’re coming up on time — anything you’d like to add, or questions for me?'
-    case 'done':
-      return 'Thanks for walking me through all of that — this was great.'
+    default:
+      return scriptedLine(a.kind)!
   }
 }

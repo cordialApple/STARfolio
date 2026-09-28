@@ -661,6 +661,7 @@ export type MoshiDemoEvent = { sessionId: string } & (
   | { type: 'interview'; snapshot: MoshiInterviewSnapshot }
   | { type: 'conditioning'; revision: number; status: string; reason?: string }
   | { type: 'ready'; mode: 'moshi' | 'fixture' }
+  | { type: 'scripted-turn'; revision: number; kind: 'ask_intro' | 'closing' | 'done'; text: string; samples: Float32Array }
   | { type: 'audio'; samples: Float32Array }
   | { type: 'text'; speaker: 'assistant' | 'user'; text: string }
   | { type: 'error'; message: string }
@@ -717,6 +718,7 @@ export interface IpcApi {
       recordTrialMedia?: boolean
     }) => Promise<'moshi' | 'fixture'>
     audio: (sessionId: string, samples: Float32Array) => void
+    scriptedTurnDone: (sessionId: string, revision: number) => Promise<boolean>
     timing: (sessionId: string, timing: MoshiTimingEvent) => void
     end: (sessionId: string, reason?: string) => Promise<void>
     onEvent: (callback: (event: MoshiDemoEvent) => void) => () => void

@@ -96,7 +96,7 @@ describe('interview session', () => {
     expect(step.done).toBe(true)
     expect(step.phase).toBe('done')
 
-    const closings = utterances.filter((u) => u.includes('coming up on time'))
+    const closings = utterances.filter((u) => u.includes('What questions do you have for me?'))
     expect(closings.length).toBe(1)
 
     const report = step.report
