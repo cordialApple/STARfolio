@@ -270,6 +270,190 @@ it('keeps target job requirements outside resume evidence in architect input', a
   expect(parse.mock.calls[0][0].userText).toContain('not evidence of candidate experience')
 })
 
+it('maps JD requirements to resume-grounded roadmap topics', async () => {
+  const { buildRoadmap } = await import('./roles/architect')
+  const parse = vi.fn(async (_request: import('./roles/parse').StructuredRequest) => ({
+    stop_reason: 'end_turn',
+    parsed_output: {
+      topics: [
+        {
+          id: 'checkout',
+          label: 'Checkout service',
+          value: 5,
+          seed_coverage: [],
+          open_threads: ['How would you approach Kubernetes deployment?'],
+          candidate_evidence: 'built checkout services in Go',
+          role_requirements: ['Kubernetes deployment']
+        }
+      ],
+      objectives: ['Test deployment judgment for the target role']
+    },
+    usage: { input_tokens: 1, output_tokens: 1 }
+  }))
+  const roadmap = await buildRoadmap(
+    {
+      resumeText: 'I built checkout services in Go.',
+      jobDescription: 'Own Kubernetes deployment and incident response.'
+    },
+    { provider: { parse }, stub: false }
+  )
+  expect(roadmap.topics[0].candidateEvidence).toBe('built checkout services in Go')
+  expect(roadmap.topics[0].roleRequirements).toEqual(['Kubernetes deployment'])
+  expect(parse.mock.calls[0][0].system).toContain('JD requirements are not candidate evidence')
+  expect(parse.mock.calls[0][0].userText).toContain('Own Kubernetes deployment')
+})
+
+it('drops architect evidence claims absent from resume and bank', async () => {
+  const { buildRoadmap } = await import('./roles/architect')
+  const parse = vi.fn(async () => ({
+    stop_reason: 'end_turn',
+    parsed_output: {
+      topics: [
+        {
+          id: 'checkout',
+          label: 'Checkout',
+          value: 5,
+          seed_coverage: [],
+          open_threads: [],
+          candidate_evidence: 'I ran Kubernetes clusters',
+          role_requirements: ['Kubernetes operations']
+        }
+      ],
+      objectives: []
+    },
+    usage: { input_tokens: 1, output_tokens: 1 }
+  }))
+  const roadmap = await buildRoadmap(
+    {
+      resumeText: 'I built checkout services in Go.',
+      jobDescription: 'Own Kubernetes operations.'
+    },
+    { provider: { parse }, stub: false }
+  )
+  expect(roadmap.topics[0].candidateEvidence).toBeUndefined()
+})
+
+it('drops requirements absent from the supplied JD', async () => {
+  const { buildRoadmap } = await import('./roles/architect')
+  const parse = vi.fn(async () => ({
+    stop_reason: 'end_turn',
+    parsed_output: {
+      topics: [
+        {
+          id: 'checkout',
+          label: 'Checkout',
+          value: 5,
+          seed_coverage: [],
+          open_threads: [],
+          role_requirements: ['Kubernetes operations']
+        }
+      ],
+      objectives: []
+    },
+    usage: { input_tokens: 1, output_tokens: 1 }
+  }))
+  const roadmap = await buildRoadmap(
+    { resumeText: 'I built checkout.', jobDescription: 'Own Kafka operations.' },
+    { provider: { parse }, stub: false }
+  )
+  expect(roadmap.topics[0].roleRequirements).toBeUndefined()
+})
+
+it('keeps general interview free of invented JD requirements', async () => {
+  const { buildRoadmap } = await import('./roles/architect')
+  const parse = vi.fn(async () => ({
+    stop_reason: 'end_turn',
+    parsed_output: {
+      topics: [
+        {
+          id: 'checkout',
+          label: 'Checkout',
+          value: 5,
+          seed_coverage: [],
+          open_threads: [],
+          role_requirements: ['Kubernetes operations']
+        }
+      ],
+      objectives: []
+    },
+    usage: { input_tokens: 1, output_tokens: 1 }
+  }))
+  const roadmap = await buildRoadmap(
+    { resumeText: 'I built checkout.' },
+    { provider: { parse }, stub: false }
+  )
+  expect(roadmap.topics[0].roleRequirements).toBeUndefined()
+})
+
+it('passes JD-linked topic requirements to answer evaluation', async () => {
+  const parse = vi.fn(async () => ({
+    stop_reason: 'end_turn',
+    parsed_output: {
+      topics: [
+        {
+          id: 'checkout',
+          label: 'Checkout',
+          value: 5,
+          seed_coverage: [],
+          open_threads: [],
+          candidate_evidence: 'built checkout services',
+          role_requirements: ['Kubernetes operations']
+        }
+      ],
+      objectives: []
+    },
+    usage: { input_tokens: 1, output_tokens: 1 }
+  }))
+  const evaluate = vi.fn(async (answer: EvaluatorInput) => evaluateAnswer(answer, { stub: true }))
+  const session = await startMoshiInterview(
+    { ...input, jobDescription: 'Own Kubernetes operations.' },
+    { architect: { provider: { parse }, model: 'architect-test' }, evaluator: { stub: true } },
+    { onConditioning: vi.fn(), save: vi.fn(), evaluate }
+  )
+  session.recordConditioningDelivery(1, 'consumed')
+  session.appendSegment({ ...segment('Introduce yourself.', 0, 'interviewer'), endMs: 1 })
+  session.appendSegment({ ...segment('I built checkout.', 2), endMs: 3 })
+  await session.gap()
+  session.recordConditioningDelivery(2, 'consumed')
+  session.appendSegment({ ...segment('Tell me about Checkout.', 4, 'interviewer'), endMs: 5 })
+  session.appendSegment(segment('I built the API.'))
+  await session.gap()
+  expect(evaluate.mock.calls[0][0].candidateEvidence).toBe('built checkout services')
+  expect(evaluate.mock.calls[0][0].roleRequirements).toEqual(['Kubernetes operations'])
+})
+
+it('uses JD requirements to guide follow-up without crediting unshown skills', async () => {
+  const parse = vi.fn(async (_request: import('./roles/parse').StructuredRequest) => ({
+    stop_reason: 'end_turn',
+    parsed_output: {
+      coverage_updates: [],
+      demonstrated_skill: 0.5,
+      confidence: 0.5,
+      new_threads: [],
+      resolved_thread_ids: [],
+      notes: 'Candidate described the checkout API.'
+    },
+    usage: { input_tokens: 1, output_tokens: 1 }
+  }))
+  await evaluateAnswer(
+    {
+      topicId: 'checkout',
+      topicLabel: 'Checkout',
+      candidateEvidence: 'built checkout services',
+      question: 'What did you build?',
+      answer: 'I built the API.',
+      level: 'entry',
+      turn: 1,
+      roleRequirements: ['Kubernetes operations']
+    },
+    { provider: { parse }, stub: false }
+  )
+  expect(parse.mock.calls[0][0].userText).toContain('built checkout services')
+  expect(parse.mock.calls[0][0].userText).toContain('Kubernetes operations')
+  expect(parse.mock.calls[0][0].system).toContain('Resume claims are interview leads')
+  expect(parse.mock.calls[0][0].system).toContain('An unasked JD requirement is unassessed')
+})
+
 it('keeps cascade intro behavior without scoring introductory speech', async () => {
   const evaluate = vi.fn()
   const session = await createRaw({ evaluate })

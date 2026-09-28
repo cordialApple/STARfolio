@@ -5,6 +5,8 @@ import { useMoshiInterviewSession } from './useMoshiInterviewSession'
 
 interface NativeInterviewProps {
   resumeText: string
+  jobDescription: string
+  onJobDescriptionChange: (value: string) => void
   candidateName: string
   onBack: () => void
   onHistory: () => void
@@ -12,13 +14,14 @@ interface NativeInterviewProps {
 
 export function MoshiDemoView({
   resumeText,
+  jobDescription,
+  onJobDescriptionChange,
   candidateName,
   onBack,
   onHistory
 }: NativeInterviewProps): React.JSX.Element {
   const [selected, setSelected] = useState<string[]>([])
   const [endpoint, setEndpoint] = useState('ws://127.0.0.1:8765/session')
-  const [jobDescription, setJobDescription] = useState('')
   const [consent, setConsent] = useState(false)
   const [recordTrialMedia, setRecordTrialMedia] = useState(false)
   const [duration, setDuration] = useState(1200)
@@ -71,8 +74,9 @@ export function MoshiDemoView({
             aria-label="Job description"
             rows={3}
             value={jobDescription}
+            maxLength={20_000}
             disabled={active}
-            onChange={(event) => setJobDescription(event.target.value)}
+            onChange={(event) => onJobDescriptionChange(event.target.value)}
           />
         </label>
         <label className="block text-sm font-bold">

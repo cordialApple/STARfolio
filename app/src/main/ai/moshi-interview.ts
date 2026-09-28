@@ -425,6 +425,8 @@ export class MoshiInterview {
           const input = evaluatorInputFrom(batch.transcript, {
             topicId,
             topicLabel: topic.label,
+            candidateEvidence: topic.candidateEvidence,
+            roleRequirements: topic.roleRequirements,
             question: context.question,
             level: this.data.state.candidate.level,
             turn: this.data.state.turnCount

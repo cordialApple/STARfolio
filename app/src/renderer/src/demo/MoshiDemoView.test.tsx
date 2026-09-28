@@ -83,6 +83,8 @@ beforeEach(async () => {
     root.render(
       <MoshiDemoView
         resumeText="Synthetic resume"
+        jobDescription=""
+        onJobDescriptionChange={vi.fn()}
         candidateName="Test"
         onBack={vi.fn()}
         onHistory={vi.fn()}

@@ -81,6 +81,7 @@ export function InterviewView(): React.JSX.Element {
   >('setup')
   const [debriefId, setDebriefId] = useState<string | null>(null)
   const [resumeText, setResumeText] = useState('')
+  const [jobDescription, setJobDescription] = useState('')
   const [candidateName, setCandidateName] = useState('')
 
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -179,6 +180,7 @@ export function InterviewView(): React.JSX.Element {
     try {
       const step = await window.api.interview.start({
         resumeText: text,
+        jobDescription: jobDescription.trim() || undefined,
         candidateName: candidateName.trim() || undefined,
         level: 'entry',
         requestId
@@ -253,6 +255,8 @@ export function InterviewView(): React.JSX.Element {
     return (
       <MoshiDemoView
         resumeText={resumeText}
+        jobDescription={jobDescription}
+        onJobDescriptionChange={setJobDescription}
         candidateName={candidateName}
         onBack={() => setStage('setup')}
         onHistory={() => setStage('history')}
@@ -288,8 +292,8 @@ export function InterviewView(): React.JSX.Element {
           <div>
             <h1 className="text-2xl font-bold text-ink">Mock interview</h1>
             <p className="text-sm text-muted">
-              Paste your resume. An adaptive interviewer builds a roadmap from it, then walks your
-              projects the way a real one would — and debriefs you at the end.
+              Paste your resume and optionally a target job description. The interviewer builds a
+              roadmap from your experience, then probes what matters for the role.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -364,6 +368,21 @@ export function InterviewView(): React.JSX.Element {
                 />
               </div>
             </div>
+            <label className="space-y-1 block">
+              <span className="text-sm font-semibold text-muted">
+                Target job description (optional)
+              </span>
+              <Textarea
+                aria-label="Job description"
+                rows={5}
+                maxLength={20_000}
+                value={jobDescription}
+                onChange={(e) => setJobDescription(e.target.value)}
+              />
+              <span className="text-xs text-faint">
+                Resume and bank ground candidate claims; job description steers role-specific questions.
+              </span>
+            </label>
             <label className="space-y-1 block">
               <span className="text-sm font-semibold text-muted">Your name (optional)</span>
               <Input
