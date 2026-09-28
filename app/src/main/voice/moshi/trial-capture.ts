@@ -111,12 +111,22 @@ export class TrialCapture {
 
   output(samples: Float32Array): void {
     if (this.finished) return
-    this.outputSamples += samples.length
     if (this.pendingGapMs !== null) {
       this.gapToAudioMs.push(Math.max(0, Math.round(this.now() - this.pendingGapMs)))
       this.pendingGapMs = null
       this.snapshot('active', null, null)
     }
+    this.recordOutput(samples)
+  }
+
+  scriptedOutput(samples: Float32Array): void {
+    if (this.finished) return
+    this.pendingGapMs = null
+    this.recordOutput(samples)
+  }
+
+  private recordOutput(samples: Float32Array): void {
+    this.outputSamples += samples.length
     this.writeAudio(this.outputStream, samples)
     this.snapshotIfDue()
   }

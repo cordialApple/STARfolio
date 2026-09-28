@@ -76,6 +76,29 @@ it('stores PCM only with separate media opt-in and leaves an incomplete manifest
   expect(readFileSync(join(directory, 'output.f32le')).readFloatLE(0)).toBe(0.75)
 })
 
+it('preserves scripted PCM without counting playback completion as audio onset', async () => {
+  let now = 0
+  const path = root()
+  const capture = new TrialCapture({
+    root: path,
+    sessionId: 'scripted-media',
+    trialId: 'scripted-trial',
+    recordMedia: true,
+    now: () => now
+  })
+  capture.gap()
+  now = 500
+  capture.scriptedOutput(new Float32Array([0.25, -0.5]))
+  now = 600
+  capture.output(new Float32Array([0.75]))
+  await capture.finish('Ended by user', true)
+  const directory = join(path, 'scripted-media')
+  const data = JSON.parse(readFileSync(join(directory, 'manifest.json'), 'utf8'))
+  expect(data).toMatchObject({ gapCount: 1, gapToAudioMs: [], outputSamples: 3 })
+  const media = readFileSync(join(directory, 'output.f32le'))
+  expect([media.readFloatLE(0), media.readFloatLE(4), media.readFloatLE(8)]).toEqual([0.25, -0.5, 0.75])
+})
+
 it('warns once when asynchronous media writing fails', async () => {
   const path = root()
   const warnings: string[] = []

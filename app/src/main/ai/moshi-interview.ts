@@ -24,6 +24,7 @@ import {
 } from './roadmap'
 import { CanonicalTranscript, type EntryInput, type TranscriptEntry } from './transcript'
 import { evaluatorInputFrom } from './roles/scorer-input'
+import { scriptedLine } from './roles/scripted-turns'
 import type { InterviewRuntime, StartInterviewInput } from './session'
 import { saveMoshiInterview } from '../db/repositories/moshi-interview'
 
@@ -94,6 +95,7 @@ type ActiveContext = {
   action: DirectedAction['intent']
   question: string
   phase: InterviewState['phase']
+  scripted?: boolean
 }
 type Batch = {
   transcript: CanonicalTranscript
@@ -161,6 +163,7 @@ export class MoshiInterview {
   private contextVersion = 0
   private pendingBatch: Omit<Batch, 'transcript' | 'overlap'> | null = null
   private consumed = new Map<number, Set<TranscriptEntry>>()
+  private scriptedRevisions = new Set<number>()
   private questionBoundaryMs = 0
   private batches: Batch[] = []
   private lastBatch: Batch | null = null
@@ -255,6 +258,35 @@ export class MoshiInterview {
     this.publish()
   }
 
+  recordScriptedTurn(revision: number, text: string): boolean {
+    const current = this.data.conditioning.at(-1)
+    if (
+      this.data.status !== 'active' ||
+      !current ||
+      current.revision !== revision ||
+      scriptedLine(current.action.intent.kind) !== text ||
+      this.scriptedRevisions.has(revision)
+    )
+      return false
+    const action = current.action.intent
+    const atMs = Math.max(this.questionBoundaryMs, ...this.transcript.all().map((entry) => entry.endMs)) + 1
+    this.transcript.append({ speaker: 'interviewer', text, startMs: atMs, endMs: atMs })
+    this.scriptedRevisions.add(revision)
+    this.contextVersion++
+    this.activeContext = {
+      action,
+      revision,
+      version: this.contextVersion,
+      phase: action.kind === 'ask_intro' ? 'intro' : action.kind === 'closing' ? 'closing' : 'done',
+      question: text,
+      scripted: true
+    }
+    if (action.kind === 'closing')
+      this.data.state = { ...this.data.state, phase: 'closing', closingAsked: true }
+    this.publish()
+    return true
+  }
+
   appendSegment(input: EntryInput): void {
     if (this.data.status !== 'active') throw new Error('This interview has ended')
     if (![input.startMs, input.endMs].every((value) => Number.isFinite(value) && value >= 0))
@@ -325,6 +357,7 @@ export class MoshiInterview {
   }
 
   private async resolveContext(batch: Batch): Promise<ActiveContext | null> {
+    if (batch.context?.scripted) return batch.context
     if (!batch.observed.length)
       return batch.inherited && 'resolvedContext' in batch.inherited
         ? (batch.inherited.resolvedContext ?? null)

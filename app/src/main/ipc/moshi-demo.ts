@@ -10,6 +10,8 @@ import { startMoshiInterview, compareMoshiSessionRigor } from '../ai/moshi-inter
 import { interviewRuntime } from '../ai/runtime'
 import { getPrefs } from '../settings/prefs'
 import { TrialCapture } from '../voice/moshi/trial-capture'
+import { scriptedLine } from '../ai/roles/scripted-turns'
+import { loadScriptedAudio } from '../voice/moshi/scripted-audio'
 
 type Brain = Awaited<ReturnType<typeof startMoshiInterview>>
 type Conditioning = Parameters<MoshiDemoSession['condition']>[0]
@@ -19,6 +21,8 @@ interface ActiveInterview {
   mouth?: MoshiDemoSession
   brain?: Brain
   conditioning?: Conditioning
+  scripted?: { revision: number; kind: 'ask_intro' | 'closing' | 'done'; text: string; samples: Float32Array; sent: boolean; completed: boolean }
+  ready?: boolean
   cancelled: boolean
   finishing?: Promise<void>
   mouthEnded?: boolean
@@ -159,6 +163,12 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
         if (current.cancelled || owner.isDestroyed())
           throw new Error('Interview ended before it became ready')
       }
+      const sendScript = (): void => {
+        const script = current.scripted
+        if (!current.ready || !script || script.sent || current.cancelled) return
+        script.sent = true
+        send({ type: 'scripted-turn', revision: script.revision, kind: script.kind, text: script.text, samples: script.samples })
+      }
       sessions.set(owner.id, current)
       owner.once('destroyed', stop)
       owner.once('render-process-gone', stop)
@@ -168,6 +178,8 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
         assertActive()
         if (!health.upstreamReady || health.busy)
           throw new Error('Moshi worker is not ready or is busy')
+        const scriptedAudio = health.mode === 'moshi' ? await loadScriptedAudio() : null
+        assertActive()
         if (health.mode === 'moshi') {
           try {
             current.capture = new TrialCapture({
@@ -223,7 +235,12 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
             onConditioning: (conditioning) => {
               if (current.cancelled) return
               current.conditioning = conditioning
+              const kind = conditioning.action.intent.kind
+              current.scripted = scriptedAudio && (kind === 'ask_intro' || kind === 'closing' || kind === 'done')
+                ? { revision: conditioning.revision, kind, text: scriptedLine(kind)!, samples: scriptedAudio[kind], sent: false, completed: false }
+                : undefined
               current.mouth?.condition(conditioning)
+              sendScript()
             },
             onUpdate: (snapshot) => {
               if (sessions.get(owner.id) === current) send({ type: 'interview', snapshot })
@@ -254,6 +271,7 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
             }
             if (current.cancelled && message.type !== 'segment') return
             if (message.type === 'segment') {
+              if (message.speaker === 'interviewer' && current.scripted) return
               const { type: _type, ...segment } = message
               brain.appendSegment(segment)
             } else if (message.type === 'gap') {
@@ -268,9 +286,14 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
             } else if (message.type === 'conditioning') {
               brain.recordConditioningDelivery(message.revision, message.status, message.reason)
             } else {
-              if (message.type === 'ready') record((capture) => capture.phase('ready'))
+              if (message.type === 'ready') {
+                current.ready = true
+                record((capture) => capture.phase('ready'))
+              }
+              if (message.type === 'audio' && current.scripted) return
               if (message.type === 'audio') record((capture) => capture.output(message.samples))
               send(message)
+              if (message.type === 'ready') sendScript()
             }
           },
           (durationMs) => record((capture) => capture.ping(durationMs))
@@ -289,6 +312,24 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
         await current.close('Interview startup failed')
         throw error
       }
+    }
+  )
+  handle(
+    ipcMain,
+    'moshiDemo:scriptedTurnDone',
+    z.object({ sessionId: z.string().min(1).max(64), revision: z.number().int().min(1).max(10_000) }),
+    (event, { sessionId, revision }) => {
+      const current = sessions.get(event.sender.id)
+      const script = current?.scripted
+      if (!current || current.id !== sessionId || !current.ready || !current.brain ||
+          !script || script.revision !== revision || !script.sent || script.completed || current.cancelled)
+        return false
+      const recorded = current.brain.recordScriptedTurn(revision, script.text)
+      if (recorded) {
+        script.completed = true
+        current.record((capture) => capture.scriptedOutput(script.samples))
+      }
+      return recorded
     }
   )
   const timingEvent = z

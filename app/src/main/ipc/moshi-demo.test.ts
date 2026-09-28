@@ -20,6 +20,7 @@ type BrainDouble = {
   snapshot: Mock
   finish: Mock
   recordConditioningDelivery: Mock
+  recordScriptedTurn: Mock
   ports: MoshiInterviewPorts
 }
 type CaptureDouble = {
@@ -28,6 +29,7 @@ type CaptureDouble = {
   gap: Mock
   input: Mock
   output: Mock
+  scriptedOutput: Mock
   ping: Mock
   timing: Mock
   finish: Mock
@@ -47,6 +49,11 @@ const fake = vi.hoisted(() => ({
     }> => ({ mode: 'fixture', upstreamReady: true, busy: false })
   ),
   runtime: vi.fn(() => ({})),
+  scriptedAudio: vi.fn(async () => ({
+    ask_intro: new Float32Array([0.1, 0.2]),
+    closing: new Float32Array([0.3, 0.4]),
+    done: new Float32Array([0.5, 0.6])
+  })),
   startBrain: vi.fn(),
   loadAudit: vi.fn(),
   compare: vi.fn(async () => ({ verdict: 'fixture-only', agreement: 1 })),
@@ -60,6 +67,7 @@ vi.mock('../voice/moshi/trial-capture', () => ({
     gap = vi.fn()
     input = vi.fn()
     output = vi.fn()
+    scriptedOutput = vi.fn()
     ping = vi.fn()
     timing = vi.fn()
     finish = vi.fn(async () => {})
@@ -70,6 +78,7 @@ vi.mock('../voice/moshi/trial-capture', () => ({
         gap: this.gap,
         input: this.input,
         output: this.output,
+        scriptedOutput: this.scriptedOutput,
         ping: this.ping,
         timing: this.timing,
         finish: this.finish
@@ -83,6 +92,7 @@ vi.mock('./shared', () => ({
 }))
 vi.mock('../store/experience-store', () => ({ getExperienceStore: () => ({ get: vi.fn() }) }))
 vi.mock('../ai/runtime', () => ({ interviewRuntime: fake.runtime }))
+vi.mock('../voice/moshi/scripted-audio', () => ({ loadScriptedAudio: fake.scriptedAudio }))
 vi.mock('../ai/moshi-interview', () => ({
   startMoshiInterview: fake.startBrain,
   compareMoshiSessionRigor: fake.compare
@@ -147,9 +157,11 @@ beforeEach(() => {
   fake.transportMode = 'fixture'
   fake.health.mockResolvedValue({ mode: 'fixture', upstreamReady: true, busy: false })
   fake.experimentalRemoteMoshiEnabled = true
+  fake.scriptedAudio.mockClear()
   fake.startBrain.mockImplementation(async (_input, _runtime, ports) => {
     const brain = {
       recordConditioningDelivery: vi.fn(),
+      recordScriptedTurn: vi.fn(() => true),
       id: 'persisted-id',
       appendSegment: vi.fn(),
       gap: vi.fn(async () => {}),
@@ -166,6 +178,59 @@ beforeEach(() => {
     ports.onConditioning(context)
     return brain
   })
+})
+
+it('suppresses model opening audio and records only acknowledged fixed speech', async () => {
+  fake.transportMode = 'moshi'
+  fake.health.mockResolvedValueOnce({ mode: 'moshi', upstreamReady: true, busy: false })
+  const h = harness()
+  await h.call('start')
+  fake.transports[0].emit({ type: 'ready', mode: 'moshi' })
+  expect(h.owner.send).toHaveBeenCalledWith(
+    'moshiDemo:event',
+    expect.objectContaining({
+      type: 'scripted-turn',
+      kind: 'ask_intro',
+      revision: 1,
+      text: 'Hello, thanks for joining me. Tell me about yourself.',
+      samples: new Float32Array([0.1, 0.2])
+    })
+  )
+  fake.transports[0].emit({ type: 'audio', samples: new Float32Array([0.1]) })
+  fake.transports[0].emit({
+    type: 'segment', speaker: 'interviewer', text: 'Generated opening', startMs: 0, endMs: 100, truncated: false
+  })
+  expect(fake.brains[0].appendSegment).not.toHaveBeenCalled()
+  expect(h.owner.send.mock.calls.map(([, event]) => event.type)).not.toContain('audio')
+  expect(fake.captures[0].output).not.toHaveBeenCalled()
+  expect(await h.call('scriptedTurnDone', { sessionId: 'other', revision: 1 })).toBe(false)
+  const otherOwner = Object.assign(new EventEmitter(), { id: 2, isDestroyed: () => false, send: vi.fn() })
+  expect(await h.call('scriptedTurnDone', { sessionId: 'first', revision: 1 }, otherOwner)).toBe(false)
+  expect(await h.call('scriptedTurnDone', { sessionId: 'first', revision: 1 })).toBe(true)
+  expect(fake.brains[0].recordScriptedTurn).toHaveBeenCalledWith(
+    1,
+    'Hello, thanks for joining me. Tell me about yourself.'
+  )
+  expect(fake.captures[0].scriptedOutput).toHaveBeenCalledWith(new Float32Array([0.1, 0.2]))
+  expect(await h.call('scriptedTurnDone', { sessionId: 'first', revision: 1 })).toBe(false)
+  fake.brains[0].ports.onConditioning({
+    ...context,
+    revision: 2,
+    action: { intent: { kind: 'probe', topicId: 'topic', dimension: 'ownership', reason: 'test' }, authority: 'steer' }
+  })
+  fake.transports[0].emit({ type: 'audio', samples: new Float32Array([0.2]) })
+  expect(h.owner.send.mock.calls.map(([, event]) => event.type)).toContain('audio')
+})
+
+it('stops before model startup when scripted audio cannot be prepared', async () => {
+  fake.transportMode = 'moshi'
+  fake.health.mockResolvedValueOnce({ mode: 'moshi', upstreamReady: true, busy: false })
+  fake.scriptedAudio.mockRejectedValueOnce(new Error('Scripted audio unavailable'))
+  fake.startBrain.mockClear()
+  await expect(harness().call('start')).rejects.toThrow('Scripted audio unavailable')
+  expect(fake.startBrain).not.toHaveBeenCalled()
+  expect(fake.transports).toHaveLength(0)
+  expect(fake.captures).toHaveLength(0)
 })
 
 it('links live session measurements to trial ID without recording media by default', async () => {
@@ -187,6 +252,11 @@ it('links live session measurements to trial ID without recording media by defau
   fake.transports[0].emit({ type: 'ready', mode: 'moshi' })
   expect(fake.captures[0].phase).toHaveBeenCalledWith('ready')
   fake.transports[0].emit({ type: 'gap', atMs: 100 })
+  fake.brains[0].ports.onConditioning({
+    ...context,
+    revision: 2,
+    action: { intent: { kind: 'probe', topicId: 'topic', dimension: 'ownership', reason: 'test' }, authority: 'steer' }
+  })
   fake.transports[0].emit({ type: 'audio', samples: new Float32Array([0.2]) })
   h.call('audio', { sessionId: 'first', samples: new Float32Array([0.3]) })
   expect(fake.captures[0].gap).toHaveBeenCalledOnce()
