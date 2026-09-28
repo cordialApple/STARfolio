@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 
-from interview_protocol import InterviewConditioning, validate_conditioning
+from interview_protocol import InterviewConditioning, reference_text, validate_conditioning
 
 
 def conditioning(revision=0, kind="ask_intro"):
@@ -16,6 +16,18 @@ def conditioning(revision=0, kind="ask_intro"):
 
 
 class ConditioningTests(unittest.IsolatedAsyncioTestCase):
+    async def test_speaking_prompt_probes_role_without_claiming_experience(self):
+        context = conditioning()
+        context["roadmap"]["topics"][0]["candidateEvidence"] = "built checkout services"
+        context["roadmap"]["topics"][0]["roleRequirements"] = [
+            "Kubernetes operations"
+        ]
+        prompt = reference_text(context)
+        self.assertIn("Kubernetes operations", prompt)
+        self.assertIn("candidateEvidence is a resume claim to verify", prompt)
+        self.assertIn("JD-derived requirements are not candidate evidence", prompt)
+        self.assertIn("ask how related work transfers", prompt)
+
     async def test_initial_context_is_applied_and_receipts_are_delivery_only(self):
         events, applied = [], []
 

@@ -65,6 +65,7 @@ export function registerSessions(ipcMain: IpcMain): void {
       .map((e) => ({ id: e.id, title: e.title, summary: e.snippet }))
   const interviewStartArg = z.object({
     resumeText: z.string().trim().min(1).max(200_000),
+    jobDescription: z.string().trim().max(20_000).optional(),
     candidateName: z.string().trim().max(200).optional(),
     level: z.enum(['entry', 'mid', 'senior']).optional(),
     requestId: nonEmpty.max(64).optional()

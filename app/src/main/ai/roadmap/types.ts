@@ -32,6 +32,8 @@ export interface Topic {
   id: string
   label: string
   value: number
+  candidateEvidence?: string
+  roleRequirements?: string[]
   coverage: Coverage
   unresolvedQuestions: string[]
   askedCount: number

@@ -11,6 +11,8 @@ export interface ScorableAnswer {
 export interface AnswerContext {
   topicId: string
   topicLabel: string
+  candidateEvidence?: string
+  roleRequirements?: string[]
   question: string
   level: ExperienceLevel
   turn: number

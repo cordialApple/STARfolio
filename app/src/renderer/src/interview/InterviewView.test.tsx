@@ -22,11 +22,21 @@ vi.mock('../voice/useStreamingVoice', () => ({
 
 let root: Root
 let container: HTMLDivElement
+const startInterview = vi.fn(async (_input: unknown) => ({
+  sessionId: 'session-1',
+  utterance: 'Tell me about yourself.',
+  action: { kind: 'ask_intro' },
+  phase: 'intro',
+  done: false,
+  report: null
+}))
 
 beforeEach(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('React', React)
+  Object.assign(HTMLElement.prototype, { scrollIntoView: vi.fn() })
   remoteMoshiEnabled.value = false
+  startInterview.mockClear()
   window.api = {
     prefs: {
       get: async () => ({
@@ -41,6 +51,9 @@ beforeEach(async () => {
     ai: {
       onToken: () => vi.fn(),
       onDone: () => vi.fn()
+    },
+    interview: {
+      start: startInterview
     }
   } as unknown as typeof window.api
   container = document.createElement('div')
@@ -50,6 +63,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root?.unmount())
   container.remove()
+  Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
   vi.unstubAllGlobals()
 })
 
@@ -73,4 +87,32 @@ it('shows the remote Moshi interview when the experiment is enabled', async () =
   remoteMoshiEnabled.value = true
   await renderInterview()
   expect(container.textContent).toContain('Native duplex (remote MoshiRAG)')
+})
+
+it('sends the target JD with resume for a text interview', async () => {
+  await renderInterview()
+  const jd = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Job description"]')
+  expect(jd).not.toBeNull()
+  await act(async () => {
+    const sample = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Try a sample')
+    )
+    sample!.click()
+  })
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+      jd,
+      'Own Kubernetes operations.'
+    )
+    jd!.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => {
+    const start = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Start interview'
+    )
+    start!.click()
+  })
+  expect(startInterview).toHaveBeenCalledWith(
+    expect.objectContaining({ jobDescription: 'Own Kubernetes operations.' })
+  )
 })

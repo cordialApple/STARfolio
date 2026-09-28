@@ -39,6 +39,7 @@ import {
 
 export interface StartInterviewInput {
   resumeText: string
+  jobDescription?: string
   experiences?: ArchitectExperience[]
   candidateName?: string
   level?: ExperienceLevel
@@ -144,7 +145,10 @@ function toConversationInput(
 ): ConversationInput {
   const input: ConversationInput = { action, candidateName }
   if (action.kind === 'probe' || action.kind === 'transition') {
-    input.topicLabel = topicById(state, action.topicId)?.label
+    const topic = topicById(state, action.topicId)
+    input.topicLabel = topic?.label
+    input.candidateEvidence = topic?.candidateEvidence
+    input.roleRequirements = topic?.roleRequirements
   }
   if (action.kind === 'transition' && action.callback) {
     input.callbackNote = callbackNote(state, action.topicId)
@@ -159,6 +163,8 @@ function evaluatorInputFor(session: StoredInterviewSession, answer: string): Eva
   return {
     topicId: action.topicId,
     topicLabel: topic?.label ?? action.topicId,
+    candidateEvidence: topic?.candidateEvidence,
+    roleRequirements: topic?.roleRequirements,
     question: session.lastUtterance,
     answer,
     level: session.state.candidate.level,
@@ -209,7 +215,11 @@ export async function startInterview(
   store: SessionStore = defaultStore
 ): Promise<InterviewStep> {
   const roadmap = await buildRoadmap(
-    { resumeText: input.resumeText, experiences: input.experiences },
+    {
+      resumeText: input.resumeText,
+      jobDescription: input.jobDescription,
+      experiences: input.experiences
+    },
     runtime.architect
   )
   const state = reduce(

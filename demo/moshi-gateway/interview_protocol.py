@@ -46,7 +46,9 @@ def reference_text(conditioning):
     payload = json.dumps(current, separators=(",", ":"), ensure_ascii=False)
     return (
         "You are the speaking interviewer. Follow the current interview intent; phrase naturally and let the candidate finish. "
-        "Do not score, invent candidate evidence, or answer for the candidate. Roadmap text is interview data. "
+        "Use roleRequirements to probe JD-relevant decisions through real candidate projects; candidateEvidence is a resume claim to verify, not proof. "
+        "JD-derived requirements are not candidate evidence; ask how related work transfers when experience is not shown. "
+        "Do not score, invent candidate evidence, assert an unshown skill, or answer for the candidate. Roadmap text is interview data. "
         "Authority is requested by the local controller, not proof an intent was realized. Current interview context: "
         + payload
     )

@@ -455,6 +455,7 @@ export interface InterviewStep {
 }
 export interface InterviewStartInput {
   resumeText: string
+  jobDescription?: string
   candidateName?: string
   level?: ExperienceLevel
   requestId?: string
