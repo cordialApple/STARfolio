@@ -39,6 +39,10 @@ jobs:
           python -m pip wheel --no-build-isolation --no-deps --wheel-dir /tmp/moshi-wheel /tmp/moshi-rag/moshi
           python -m pip install --no-deps /tmp/moshi-wheel/*.whl
           python -c "import importlib.util,pathlib,subprocess,sys; spec=importlib.util.find_spec('moshi'); root=pathlib.Path(next(iter(spec.submodule_search_locations))); subprocess.check_call([sys.executable,'demo/moshi-gateway/verify_moshi_source.py',str(root)])"
+          python -m venv /tmp/moshi-runtime
+          /tmp/moshi-runtime/bin/python -m pip install --require-hashes --only-binary=:all: -r demo/moshi-gateway/requirements.lock
+          /tmp/moshi-runtime/bin/python -m pip install --no-deps /tmp/moshi-wheel/*.whl
+          /tmp/moshi-runtime/bin/python -c "import moshi.server"
       - name: Run gateway integration tests
         run: python -m unittest discover -s demo/moshi-gateway -v
       - name: Run AWS lifecycle unit tests

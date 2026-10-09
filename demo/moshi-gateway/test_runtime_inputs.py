@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = ROOT / "demo" / "moshi-gateway" / "bootstrap.sh"
 RUN_WORKER = ROOT / "demo" / "moshi-gateway" / "run-worker.sh"
 BUILD_LOCK = ROOT / "demo" / "moshi-gateway" / "requirements-build.lock"
+RUNTIME_INPUT = ROOT / "demo" / "moshi-gateway" / "requirements-runtime.in"
+RUNTIME_LOCK = ROOT / "demo" / "moshi-gateway" / "requirements.lock"
 WORKFLOW = ROOT / ".github" / "workflows" / "aws-demo.yml"
 SOURCE_REVISION = "8c6dfc101b7871baa428424bcdc583b74fb561d9"
 MOSHIKA_REVISION = "7135a6e3c46abb66c2cd95cb04cbfcbe8376f83d"
@@ -106,6 +108,28 @@ class RuntimeInputTests(unittest.TestCase):
             build_lock,
             r"hatchling==\d+\.\d+\.\d+ \\\n(?:    --hash=sha256:[0-9a-f]{64} \\\n)+",
         )
+
+    def test_upstream_channel_dependency_is_hash_locked(self):
+        self.assertIn("websockets==15.0.1", RUNTIME_INPUT.read_text().splitlines())
+        self.assertRegex(
+            RUNTIME_LOCK.read_text(),
+            r"(?m)^websockets==15\.0\.1 \\\n(?:    --hash=sha256:[0-9a-f]{64}(?: \\\n|\n))+",
+        )
+
+    def test_ci_imports_upstream_server_in_locked_runtime(self):
+        workflow = WORKFLOW.read_text()
+        create = "python -m venv /tmp/moshi-runtime"
+        install = (
+            "/tmp/moshi-runtime/bin/python -m pip install --require-hashes "
+            "--only-binary=:all: -r demo/moshi-gateway/requirements.lock"
+        )
+        wheel = "/tmp/moshi-runtime/bin/python -m pip install --no-deps /tmp/moshi-wheel/*.whl"
+        smoke = '/tmp/moshi-runtime/bin/python -c "import moshi.server"'
+        for command in (create, install, wheel, smoke):
+            self.assertIn(command, workflow)
+        self.assertLess(workflow.index(create), workflow.index(install))
+        self.assertLess(workflow.index(install), workflow.index(wheel))
+        self.assertLess(workflow.index(wheel), workflow.index(smoke))
 
     def test_ci_validates_production_inputs_and_generated_infrastructure(self):
         workflow = WORKFLOW.read_text()
