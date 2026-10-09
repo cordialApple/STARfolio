@@ -21,6 +21,7 @@ STT_REVISION = "095e38f6242006a93c2541149b181988397f5c7c"
 ARC_REVISION = "c11e53d1016cc586262ee883755410e2ca47ba3c"
 TOKENIZER_REVISION = "0cb88a4f764b7a12671c53f0838cd831a0843b95"
 TOKENIZER_SMOKE = ROOT / "demo" / "moshi-gateway" / "tokenizer_smoke.py"
+STARTUP_SMOKE = ROOT / "demo" / "moshi-gateway" / "startup_smoke.py"
 
 
 def load_tokenizer_smoke():
@@ -116,6 +117,13 @@ class RuntimeInputTests(unittest.TestCase):
             r"(?m)^websockets==15\.0\.1 \\\n(?:    --hash=sha256:[0-9a-f]{64}(?: \\\n|\n))+",
         )
 
+    def test_upstream_http_client_dependency_is_hash_locked(self):
+        self.assertIn("httpx==0.28.1", RUNTIME_INPUT.read_text().splitlines())
+        self.assertRegex(
+            RUNTIME_LOCK.read_text(),
+            r"(?m)^httpx==0\.28\.1 \\\n(?:    --hash=sha256:[0-9a-f]{64}(?: \\\n|\n))+",
+        )
+
     def test_ci_imports_upstream_server_in_locked_runtime(self):
         workflow = WORKFLOW.read_text()
         create = "python -m venv /tmp/moshi-runtime"
@@ -130,6 +138,19 @@ class RuntimeInputTests(unittest.TestCase):
         self.assertLess(workflow.index(create), workflow.index(install))
         self.assertLess(workflow.index(install), workflow.index(wheel))
         self.assertLess(workflow.index(wheel), workflow.index(smoke))
+
+    def test_ci_applies_startup_bindings_without_model_load(self):
+        workflow = WORKFLOW.read_text()
+        self.assertTrue(STARTUP_SMOKE.is_file())
+        script = STARTUP_SMOKE.read_text()
+        command = "/tmp/moshi-runtime/bin/python demo/moshi-gateway/startup_smoke.py"
+        self.assertIn(command, workflow)
+        self.assertLess(
+            workflow.index('/tmp/moshi-runtime/bin/python -c "import moshi.server"'),
+            workflow.index(command),
+        )
+        self.assertNotIn("server.main()", script)
+        self.assertNotIn("server.load_models()", script)
 
     def test_ci_validates_production_inputs_and_generated_infrastructure(self):
         workflow = WORKFLOW.read_text()

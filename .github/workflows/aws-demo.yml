@@ -43,6 +43,7 @@ jobs:
           /tmp/moshi-runtime/bin/python -m pip install --require-hashes --only-binary=:all: -r demo/moshi-gateway/requirements.lock
           /tmp/moshi-runtime/bin/python -m pip install --no-deps /tmp/moshi-wheel/*.whl
           /tmp/moshi-runtime/bin/python -c "import moshi.server"
+          /tmp/moshi-runtime/bin/python demo/moshi-gateway/startup_smoke.py
       - name: Run gateway integration tests
         run: python -m unittest discover -s demo/moshi-gateway -v
       - name: Run AWS lifecycle unit tests
