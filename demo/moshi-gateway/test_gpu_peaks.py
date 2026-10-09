@@ -1,11 +1,14 @@
 import json
 import io
+import os
+import stat
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from contextlib import redirect_stderr
+from unittest.mock import patch
 
 from gpu_peaks import PeakTracker, process_start_ticks
 
@@ -58,6 +61,30 @@ class FakeCuda:
 
 
 class PeakTrackerTests(unittest.TestCase):
+    def test_default_event_directory_reads_runtime_ram_inbox(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"STARFOLIO_GPU_EVENT_DIR": directory}):
+                tracker = PeakTracker("interview", "trial-1", cuda=FakeCuda(False))
+            self.assertEqual(tracker.event_directory, Path(directory))
+
+    def test_published_event_is_group_readable_for_sampler(self):
+        chmod = os.chmod
+        modes = []
+
+        def capture_mode(path, mode):
+            modes.append((Path(path), mode))
+            chmod(path, mode)
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("gpu_peaks.os.chmod", side_effect=capture_mode):
+                with PeakTracker("interview", "trial-1", directory, cuda=FakeCuda(False), interval=60):
+                    pass
+            events = list(Path(directory).glob("*.json"))
+            self.assertTrue(events)
+            self.assertEqual({mode for path, mode in modes if path.suffix == ".tmp"}, {0o640})
+            if sys.platform.startswith("linux"):
+                self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o640 for path in events))
+
     def test_phase_and_total_peaks_survive_reset(self):
         with tempfile.TemporaryDirectory() as directory:
             cuda = FakeCuda()

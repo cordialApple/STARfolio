@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-EVENT_DIRECTORY = Path("/var/lib/starfolio-gpu/events")
+EVENT_DIRECTORY = Path("/run/starfolio-gpu/events")
 PHASES = frozenset(
     {"startup", "model_load", "warmup", "serving", "session_init", "session_active"}
 )
@@ -38,7 +38,7 @@ class PeakTracker:
         self,
         role,
         trial_id=None,
-        event_directory=EVENT_DIRECTORY,
+        event_directory=None,
         *,
         cuda=None,
         interval=1.0,
@@ -47,7 +47,11 @@ class PeakTracker:
             raise ValueError("Unknown GPU telemetry role")
         self.role = role
         self.trial_id = trial_id if trial_id is not None else os.environ.get("STARFOLIO_TRIAL_ID", "")
-        self.event_directory = Path(event_directory)
+        self.event_directory = Path(
+            event_directory
+            if event_directory is not None
+            else os.environ.get("STARFOLIO_GPU_EVENT_DIR", str(EVENT_DIRECTORY))
+        )
         if cuda is None:
             try:
                 import torch
@@ -148,6 +152,7 @@ class PeakTracker:
                     json.dump(event, handle, separators=(",", ":"), allow_nan=False)
                     handle.flush()
                     os.fsync(handle.fileno())
+                    os.chmod(temporary_path, 0o640)
                 except BaseException:
                     temporary_path.unlink(missing_ok=True)
                     raise

@@ -12,6 +12,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from gpu_peaks import EVENT_DIRECTORY, PHASES, STATUSES
+
 
 EVENT_NUMBERS = (
     "monotonic_ns",
@@ -35,7 +37,7 @@ EVENT_FIELDS = set(EVENT_NUMBERS) | {
     "oom",
 }
 ROLE_NAMES = {"interview", "conditioner"}
-EVENT_STATUSES = {"start", "sample", "phase_end", "failure", "exit"}
+EVENT_STATUSES = STATUSES
 SAMPLE_FIELDS = {
     "schema_version", "trial_id", "utc", "monotonic_ns", "actual_interval_ms",
     "gpu_uuid", "device_total_mib", "device_used_mib", "device_free_mib",
@@ -46,8 +48,8 @@ SEGMENT_FIELDS = {
     "schema_version", "trial_id", "segment_id", "created_utc", "samples",
     "events", "event_files",
 }
-UTC_PATTERN = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|\+00:00)"
-EVENT_FILE_PATTERN = r"[A-Za-z0-9_-]+\.json"
+UTC_PATTERN = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)"
+EVENT_FILE_PATTERN = r"peak-([1-9][0-9]{0,9})-[a-f0-9]{32}\.json"
 
 
 def utc_now():
@@ -65,7 +67,17 @@ def optional_int(value):
 
 
 def gpu_uuid_or_none(value):
-    return value if isinstance(value, str) and re.fullmatch(r"GPU-[A-Fa-f0-9-]+", value) else None
+    return value if isinstance(value, str) and re.fullmatch(r"GPU-[A-Fa-f0-9]{1,8}(?:-[A-Fa-f0-9]{1,12}){0,4}", value) else None
+
+
+def valid_utc(value):
+    if not isinstance(value, str) or not re.fullmatch(UTC_PATTERN, value):
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
 
 
 def nullable_nonnegative_int(value):
@@ -126,7 +138,7 @@ class GpuSampler:
         self.trial_id = trial_id
         self.destination_uri = destination_uri
         self.spool_dir = Path(spool_dir)
-        self.event_dir = Path(event_dir) if event_dir else self.spool_dir / "events"
+        self.event_dir = Path(event_dir) if event_dir else EVENT_DIRECTORY
         self.owner_dir = Path(owner_dir) if owner_dir else self.spool_dir / "owners"
         self.proc_root = Path(proc_root)
         self.command = command
@@ -166,33 +178,46 @@ class GpuSampler:
         for path in sorted(self.event_dir.glob("*.json")):
             if path.name in claimed:
                 continue
+            if not self.valid_event_filename(path.name):
+                continue
             try:
                 raw = json.loads(path.read_text())
             except (OSError, ValueError):
                 continue
             event = self.valid_event(raw)
-            if event is not None:
+            if event is not None and self.valid_event_filename(path.name, event):
                 events.append((path, event))
         return events
 
     def event_file_counts(self):
         counts = {"malformed": 0, "partial": 0}
         for path in self.event_dir.glob("*.json"):
+            if not self.valid_event_filename(path.name):
+                counts["malformed"] += 1
+                continue
             try:
                 raw = json.loads(path.read_text())
             except (OSError, ValueError):
                 counts["malformed"] += 1
                 continue
-            if self.valid_event(raw) is None:
+            event = self.valid_event(raw)
+            if event is None or not self.valid_event_filename(path.name, event):
                 counts["malformed"] += 1
         counts["partial"] = sum(1 for _ in self.event_dir.glob("*.tmp"))
         return counts
+
+    def valid_event_filename(self, name, event=None):
+        if not isinstance(name, str):
+            return False
+        match = re.fullmatch(EVENT_FILE_PATTERN, name)
+        return match is not None and (event is None or match.group(1) == str(event["pid"]))
 
     def valid_event(self, raw):
         if not isinstance(raw, dict) or set(raw) != EVENT_FIELDS:
             return None
         if (
-            raw["schema_version"] != 1
+            type(raw["schema_version"]) is not int
+            or raw["schema_version"] != 1
             or raw["event_type"] != "pytorch_peak"
             or raw["trial_id"] != self.trial_id
             or not isinstance(raw["role"], str)
@@ -202,14 +227,9 @@ class GpuSampler:
             or type(raw["oom"]) is not bool
         ):
             return None
-        if not isinstance(raw["phase"], str) or not re.fullmatch(
-            r"[a-z][a-z0-9_-]{0,39}", raw["phase"]
-        ):
+        if not isinstance(raw["phase"], str) or raw["phase"] not in PHASES:
             return None
-        if not isinstance(raw["timestamp_utc"], str) or not re.fullmatch(
-            UTC_PATTERN,
-            raw["timestamp_utc"],
-        ):
+        if not valid_utc(raw["timestamp_utc"]):
             return None
         for field in EVENT_NUMBERS:
             if not nullable_nonnegative_int(raw[field]):
@@ -235,7 +255,7 @@ class GpuSampler:
             return False
         if type(sample["schema_version"]) is not int or sample["schema_version"] != 1 or sample["trial_id"] != self.trial_id:
             return False
-        if not isinstance(sample["utc"], str) or not re.fullmatch(UTC_PATTERN, sample["utc"]):
+        if not valid_utc(sample["utc"]):
             return False
         if sample["gpu_uuid"] is not None and gpu_uuid_or_none(sample["gpu_uuid"]) != sample["gpu_uuid"]:
             return False
@@ -262,8 +282,7 @@ class GpuSampler:
             or not isinstance(body["segment_id"], str)
             or not re.fullmatch(r"[a-f0-9]{32}", body["segment_id"])
             or path.name != f'segment-{body["segment_id"]}.json'
-            or not isinstance(body["created_utc"], str)
-            or not re.fullmatch(UTC_PATTERN, body["created_utc"])
+            or not valid_utc(body["created_utc"])
             or not isinstance(body["samples"], list)
             or not isinstance(body["events"], list)
             or not isinstance(body["event_files"], list)
@@ -273,7 +292,7 @@ class GpuSampler:
         if not all(self.valid_sample(sample) for sample in body["samples"]):
             return False
         for name, event in zip(body["event_files"], body["events"]):
-            if not isinstance(name, str) or not re.fullmatch(EVENT_FILE_PATTERN, name) or self.valid_event(event) is None:
+            if self.valid_event(event) is None or not self.valid_event_filename(name, event):
                 return False
         return True
 
@@ -291,8 +310,7 @@ class GpuSampler:
             and receipt["sample_count"] == len(body["samples"])
             and type(receipt["event_count"]) is int
             and receipt["event_count"] == len(body["events"])
-            and isinstance(receipt["uploaded_utc"], str)
-            and re.fullmatch(UTC_PATTERN, receipt["uploaded_utc"]) is not None
+            and valid_utc(receipt["uploaded_utc"])
         )
 
     def role_for(self, pid, start_ticks, events):
@@ -395,6 +413,8 @@ class GpuSampler:
             "event_files": [path.name for path, _ in events],
             "event_file_counts": event_file_counts,
         }
+        if not self.valid_segment(path, body):
+            raise ValueError("Invalid GPU telemetry segment")
         content = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
         write_atomic(path, content)
         for _, event in events:
@@ -459,7 +479,7 @@ class GpuSampler:
             if event is None:
                 continue
             self.record_owner(event)
-            if re.fullmatch(EVENT_FILE_PATTERN, name):
+            if self.valid_event_filename(name, event):
                 (self.event_dir / name).unlink(missing_ok=True)
         segment.unlink(missing_ok=True)
 
@@ -519,7 +539,7 @@ def main():
         destination_uri=os.environ["STARFOLIO_TRIAL_GPU_URI"],
         spool_dir=args.spool_dir,
         event_dir=Path(
-            os.environ.get("STARFOLIO_GPU_EVENT_DIR", str(args.spool_dir / "events"))
+            os.environ.get("STARFOLIO_GPU_EVENT_DIR", str(EVENT_DIRECTORY))
         ),
     )
     sampler.run(stop_event)

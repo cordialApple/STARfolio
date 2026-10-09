@@ -24,7 +24,6 @@ BUNDLE_FILES = (
     "README.md",
     "bootstrap.sh",
     "cloudwatch-gpu.json",
-    "diagnostics.sh",
     "conditioner_worker.py",
     "gateway.py",
     "gpu_peaks.py",
@@ -105,7 +104,6 @@ def make_plan(config, now=None, trial_id=None):
         "deadline": timestamp(now + timedelta(hours=hours)),
         "lifetime_hours": hours,
         "trial_id": trial_id,
-        "diagnostics_s3_uri": f"s3://{bucket}/trials/{trial_id}/worker.log",
         "telemetry_s3_prefix": f"s3://{bucket}/trials/{trial_id}/gpu/",
     }
 
@@ -350,7 +348,6 @@ def make_bootstrap(config, plan):
                 "trap 'shutdown -h now' ERR",
                 f"export STARFOLIO_DEMO_DEADLINE={shlex.quote(plan['deadline'])}",
                 f"export STARFOLIO_TRIAL_ID={shlex.quote(plan['trial_id'])}",
-                f"export STARFOLIO_TRIAL_DIAGNOSTICS_URI={shlex.quote(plan['diagnostics_s3_uri'])}",
                 f"export STARFOLIO_TRIAL_GPU_URI={shlex.quote(plan['telemetry_s3_prefix'])}",
                 f"export STARFOLIO_DEMO_MAX_SECONDS={max_seconds}",
                 'systemd-run --unit=starfolio-instance-deadline --on-active="${STARFOLIO_DEMO_MAX_SECONDS}s" /sbin/shutdown -h now',
@@ -378,9 +375,6 @@ def make_worker_role(config, plan):
     bundle_arn = "arn:${AWS::Partition}:s3:::" + config["bundle_s3_uri"].removeprefix(
         "s3://"
     )
-    diagnostics_arn = "arn:${AWS::Partition}:s3:::" + plan[
-        "diagnostics_s3_uri"
-    ].removeprefix("s3://")
     telemetry_arn = "arn:${AWS::Partition}:s3:::" + plan[
         "telemetry_s3_prefix"
     ].removeprefix("s3://") + "*"
@@ -413,16 +407,6 @@ def make_worker_role(config, plan):
                             "Effect": "Allow",
                             "Action": "s3:GetObject",
                             "Resource": {"Fn::Sub": bundle_arn},
-                        }
-                    ],
-                ),
-                make_inline_policy(
-                    "WriteTrialDiagnostics",
-                    [
-                        {
-                            "Effect": "Allow",
-                            "Action": "s3:PutObject",
-                            "Resource": {"Fn::Sub": diagnostics_arn},
                         }
                     ],
                 ),

@@ -53,7 +53,7 @@ class GpuSamplerTests(unittest.TestCase):
             utc=lambda: "2026-09-27T00:00:00Z",
         )
 
-    def publish_peak(self, name="a.json"):
+    def publish_peak(self, name="peak-123-0123456789abcdef0123456789abcdef.json"):
         event = {
             "schema_version": 1,
             "event_type": "pytorch_peak",
@@ -63,7 +63,7 @@ class GpuSamplerTests(unittest.TestCase):
             "pid": 123,
             "process_start_ticks": 777,
             "role": "interview",
-            "phase": "active",
+            "phase": "session_active",
             "status": "sample",
             "allocated_bytes": 1,
             "reserved_bytes": 2,
@@ -134,14 +134,13 @@ class GpuSamplerTests(unittest.TestCase):
         self.assertEqual(self.sampler.flush(), None)
 
     def test_concurrent_event_ingested_after_atomic_publication(self):
-        _, event = self.publish_peak()
-        (self.sampler.event_dir / "a.json").unlink()
+        published, event = self.publish_peak()
+        published.unlink()
         partial = self.sampler.event_dir / "a.tmp"
         partial.write_text(json.dumps(event))
         checkpoint = self.sampler.flush()
         self.assertEqual(json.loads(checkpoint.read_text())["event_file_counts"], {"malformed": 0, "partial": 1})
         self.assertEqual(json.loads(checkpoint.read_text())["events"], [])
-        published = self.sampler.event_dir / "a.json"
         partial.replace(published)
         segment = self.sampler.flush()
         self.assertEqual(json.loads(segment.read_text())["events"], [event])
@@ -255,6 +254,46 @@ class GpuSamplerTests(unittest.TestCase):
         self.assertEqual(json.loads(segment.read_text())["events"], [])
         self.assertNotIn("private text", segment.read_text())
         self.assertTrue(event.exists())
+
+    def test_free_text_filename_never_enters_durable_segment(self):
+        event, _ = self.publish_peak("private-prompt.json")
+        segment = self.sampler.flush()
+        body = json.loads(segment.read_text())
+        self.assertEqual(body["events"], [])
+        self.assertEqual(body["event_files"], [])
+        self.assertEqual(body["event_file_counts"]["malformed"], 1)
+        self.assertNotIn("private-prompt", segment.read_text())
+        self.assertTrue(event.exists())
+
+    def test_filename_pid_must_match_event_pid(self):
+        event, _ = self.publish_peak("peak-456-0123456789abcdef0123456789abcdef.json")
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
+        self.assertTrue(event.exists())
+
+    def test_unlisted_phase_and_boolean_schema_version_never_enter_segment(self):
+        event, raw = self.publish_peak()
+        raw["phase"] = "private_prompt"
+        event.write_text(json.dumps(raw))
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
+        raw["phase"] = "session_active"
+        raw["schema_version"] = True
+        event.write_text(json.dumps(raw))
+        self.assertEqual(self.sampler.read_events(), [])
+
+    def test_invalid_internal_sample_fails_before_durable_write(self):
+        self.sampler.records.append({"private_prompt": "canary"})
+        with self.assertRaisesRegex(ValueError, "GPU telemetry segment"):
+            self.sampler.flush()
+        self.assertFalse(list(self.sampler.spool_dir.glob("segment-*.json")))
+
+    def test_malformed_timestamp_cannot_be_serialized(self):
+        event, raw = self.publish_peak()
+        raw["timestamp_utc"] = "2026-09-27T00:00:00." + "3" * 100 + "Z"
+        event.write_text(json.dumps(raw))
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
 
     def test_malformed_and_partial_peak_files_get_safe_checkpoint(self):
         (self.sampler.event_dir / "private.json").write_text('{"prompt":"private prompt"}')

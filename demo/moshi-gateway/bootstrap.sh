@@ -4,21 +4,9 @@ test "$(id -u)" = 0
 : "${STARFOLIO_DEMO_MAX_SECONDS:?AWS termination duration required}"
 : "${STARFOLIO_DEMO_DEADLINE:?AWS termination deadline required}"
 : "${STARFOLIO_TRIAL_ID:?Trial ID required}"
-: "${STARFOLIO_TRIAL_DIAGNOSTICS_URI:?Trial diagnostics URI required}"
 : "${STARFOLIO_TRIAL_GPU_URI:?Trial GPU URI required}"
 root=$(cd "$(dirname "$0")/../.." && pwd)
-cat > /etc/systemd/system/starfolio-diagnostics.service <<EOF
-[Unit]
-Description=STARfolio trial diagnostics
-[Service]
-Type=oneshot
-Environment=AWS_REGION=$AWS_REGION
-Environment=STARFOLIO_TRIAL_DIAGNOSTICS_URI=$STARFOLIO_TRIAL_DIAGNOSTICS_URI
-ExecStart=/bin/bash $root/demo/moshi-gateway/diagnostics.sh
-TimeoutStartSec=50
-EOF
-systemctl daemon-reload
-trap 'systemctl start starfolio-diagnostics.service || true; shutdown -h now' ERR
+trap 'shutdown -h now' ERR
 command -v nvidia-smi >/dev/null
 python3.12 -c 'import sys; assert sys.version_info[:2] == (3, 12)'
 gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
@@ -27,7 +15,23 @@ remaining=$(($(date -d "$STARFOLIO_DEMO_DEADLINE" +%s) - $(date +%s)))
 test "$remaining" -gt 300
 systemd-run --unit=starfolio-host-deadline --on-active="${remaining}s" /sbin/shutdown -h now
 id starfolio-demo >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin starfolio-demo
-install -d -o starfolio-demo -g starfolio-demo /opt/starfolio-runtime
+id starfolio-gpu >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin starfolio-gpu
+install -d -o root -g root /opt/starfolio-runtime
+swapoff -a
+test "$(wc -l < /proc/swaps)" -eq 1
+sysctl -w kernel.core_pattern=/dev/null
+sysctl -w fs.suid_dumpable=0
+test "$(cat /proc/sys/kernel/core_pattern)" = /dev/null
+test "$(cat /sys/kernel/kexec_crash_loaded)" = 0
+if systemctl list-unit-files --no-legend systemd-coredump.socket | grep -q '^systemd-coredump.socket'; then
+  systemctl mask --now systemd-coredump.socket
+fi
+if systemctl list-unit-files --no-legend apport.service | grep -q '^apport.service'; then
+  systemctl mask --now apport.service
+fi
+install -d -m 755 /etc/systemd/journald.conf.d
+printf '[Journal]\nStorage=volatile\n' > /etc/systemd/journald.conf.d/starfolio-volatile.conf
+systemctl restart systemd-journald.service
 apt-get update -qq
 apt-get install -y -qq curl git gnupg libportaudio2 python3.12-venv
 cloudwatch_dir=/opt/starfolio-runtime/cloudwatch
@@ -89,9 +93,18 @@ conditioner['tokenizer_name'] = '/opt/starfolio-runtime/models/llama-tokenizer'
 config_path.write_text(json.dumps(config))
 PY
 unset HF_TOKEN
-chown -R starfolio-demo:starfolio-demo /opt/starfolio-runtime
-install -d -m 700 -o starfolio-demo -g starfolio-demo /var/lib/starfolio-gpu
-install -d -m 700 -o starfolio-demo -g starfolio-demo /var/lib/starfolio-gpu/events
+chown -R root:root /opt/starfolio-runtime
+chmod -R a+rX,go-w /opt/starfolio-runtime
+install -d -m 700 /run/starfolio-private
+mount -t tmpfs -o size=8G,mode=0700,uid=$(id -u starfolio-demo),gid=$(id -g starfolio-demo),nodev,nosuid tmpfs /run/starfolio-private
+install -d -m 700 -o starfolio-demo -g starfolio-demo /run/starfolio-private/home /run/starfolio-private/hf /run/starfolio-private/cache /run/starfolio-private/tmp
+install -d -m 750 /run/starfolio-gpu
+mount -t tmpfs -o size=64M,mode=0750,uid=$(id -u starfolio-demo),gid=$(id -g starfolio-gpu),nodev,nosuid,noexec tmpfs /run/starfolio-gpu
+install -d -m 2770 -o starfolio-demo -g starfolio-gpu /run/starfolio-gpu/events
+mountpoint -q /run/starfolio-private
+mountpoint -q /run/starfolio-gpu
+install -d -m 700 -o starfolio-gpu -g starfolio-gpu /var/lib/starfolio-gpu
+chown -R starfolio-gpu:starfolio-gpu /var/lib/starfolio-gpu
 cat > /etc/systemd/system/starfolio-gpu-sampler.service <<EOF
 [Unit]
 Description=STARfolio independent GPU sampler
@@ -99,23 +112,27 @@ After=network-online.target
 Wants=network-online.target
 [Service]
 Type=simple
-User=starfolio-demo
-Group=starfolio-demo
+User=starfolio-gpu
+Group=starfolio-gpu
 WorkingDirectory=$root/demo/moshi-gateway
 Environment=AWS_REGION=$AWS_REGION
 Environment=STARFOLIO_TRIAL_ID=$STARFOLIO_TRIAL_ID
 Environment=STARFOLIO_TRIAL_GPU_URI=$STARFOLIO_TRIAL_GPU_URI
+Environment=STARFOLIO_GPU_EVENT_DIR=/run/starfolio-gpu/events
+ExecStartPre=/usr/bin/mountpoint -q /run/starfolio-gpu
 ExecStart=/usr/bin/python3.12 $root/demo/moshi-gateway/gpu_sampler.py
 TimeoutStopSec=20
 Restart=no
 NoNewPrivileges=true
-PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/starfolio-gpu
+ReadWritePaths=/var/lib/starfolio-gpu /run/starfolio-gpu/events
+TemporaryFileSystem=/tmp:rw,nodev,nosuid,size=256M
+TemporaryFileSystem=/var/tmp:rw,nodev,nosuid,size=256M
+LimitCORE=0
 UMask=0077
 StandardOutput=null
-StandardError=journal
+StandardError=null
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -133,14 +150,24 @@ WorkingDirectory=$root/demo/moshi-gateway
 Environment=STARFOLIO_DEMO_MAX_SECONDS=$STARFOLIO_DEMO_MAX_SECONDS
 Environment=STARFOLIO_DEMO_DEADLINE=$STARFOLIO_DEMO_DEADLINE
 Environment=STARFOLIO_TRIAL_ID=$STARFOLIO_TRIAL_ID
-Environment=STARFOLIO_GPU_EVENT_DIR=/var/lib/starfolio-gpu/events
-Environment=HF_HOME=/opt/starfolio-runtime/hf
-Environment=XDG_CACHE_HOME=/opt/starfolio-runtime/cache
-Environment=TRITON_CACHE_DIR=/opt/starfolio-runtime/cache/triton
+Environment=STARFOLIO_GPU_EVENT_DIR=/run/starfolio-gpu/events
+Environment=HOME=/run/starfolio-private/home
+Environment=HF_HOME=/run/starfolio-private/hf
+Environment=XDG_CACHE_HOME=/run/starfolio-private/cache
+Environment=TORCH_HOME=/run/starfolio-private/cache/torch
+Environment=TRITON_CACHE_DIR=/run/starfolio-private/cache/triton
+Environment=CUDA_CACHE_PATH=/run/starfolio-private/cache/nv
+Environment=TMPDIR=/run/starfolio-private/tmp
+Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=HF_HUB_DISABLE_TELEMETRY=1
 Environment=DO_NOT_TRACK=1
+ExecStartPre=/usr/bin/awk NR>1{exit(1)} /proc/swaps
+ExecStartPre=/usr/bin/grep -Fxq /dev/null /proc/sys/kernel/core_pattern
+ExecStartPre=/usr/bin/grep -Fxq 0 /sys/kernel/kexec_crash_loaded
+ExecStartPre=/usr/bin/mountpoint -q /run/starfolio-private
+ExecStartPre=/usr/bin/mountpoint -q /run/starfolio-gpu
 ExecStart=/bin/bash $root/demo/moshi-gateway/run-worker.sh
-ExecStopPost=-+/usr/bin/systemctl start starfolio-diagnostics.service
+ExecStopPost=-+/usr/bin/systemctl stop starfolio-gpu-sampler.service
 ExecStopPost=+/sbin/shutdown -h now
 RuntimeMaxSec=${remaining}s
 TimeoutStopSec=45
@@ -149,13 +176,16 @@ Restart=no
 NoNewPrivileges=true
 IPAddressAllow=localhost
 IPAddressDeny=any
-PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/opt/starfolio-runtime /var/lib/starfolio-gpu/events
-UMask=0077
+ReadWritePaths=/run/starfolio-private /run/starfolio-gpu/events
+InaccessiblePaths=/var/lib/starfolio-gpu
+TemporaryFileSystem=/tmp:rw,nodev,nosuid,size=4G
+TemporaryFileSystem=/var/tmp:rw,nodev,nosuid,size=1G
+LimitCORE=0
+UMask=0027
 StandardOutput=null
-StandardError=journal
+StandardError=null
 [Install]
 WantedBy=multi-user.target
 EOF

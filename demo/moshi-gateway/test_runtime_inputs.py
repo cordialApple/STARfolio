@@ -5,7 +5,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = ROOT / "demo" / "moshi-gateway" / "bootstrap.sh"
 RUN_WORKER = ROOT / "demo" / "moshi-gateway" / "run-worker.sh"
-DIAGNOSTICS = ROOT / "demo" / "moshi-gateway" / "diagnostics.sh"
 BUILD_LOCK = ROOT / "demo" / "moshi-gateway" / "requirements-build.lock"
 WORKFLOW = ROOT / ".github" / "workflows" / "aws-demo.yml"
 SOURCE_REVISION = "8c6dfc101b7871baa428424bcdc583b74fb561d9"
@@ -103,9 +102,8 @@ class RuntimeInputTests(unittest.TestCase):
         self.assertIn("IPAddressAllow=localhost", script)
         self.assertIn("IPAddressDeny=any", script)
 
-    def test_gpu_sampler_starts_before_model_service_and_stops_for_diagnostics(self):
+    def test_gpu_sampler_starts_before_model_service_and_flushes_on_exit(self):
         bootstrap = BOOTSTRAP.read_text()
-        diagnostics = DIAGNOSTICS.read_text()
         self.assertIn("STARFOLIO_TRIAL_GPU_URI", bootstrap)
         self.assertIn("gpu_sampler.py", bootstrap)
         self.assertIn("starfolio-gpu-sampler.service", bootstrap)
@@ -113,7 +111,8 @@ class RuntimeInputTests(unittest.TestCase):
             bootstrap.index("systemctl enable --now starfolio-gpu-sampler.service"),
             bootstrap.index("systemctl enable --now starfolio-demo.service"),
         )
-        self.assertIn("systemctl stop starfolio-gpu-sampler.service", diagnostics)
+        self.assertIn("ExecStopPost=-+/usr/bin/systemctl stop starfolio-gpu-sampler.service", bootstrap)
+        self.assertFalse((ROOT / "demo" / "moshi-gateway" / "diagnostics.sh").exists())
 
     def test_cloudwatch_agent_starts_before_model_service(self):
         bootstrap = BOOTSTRAP.read_text()

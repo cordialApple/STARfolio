@@ -23,7 +23,7 @@ Use `infra/aws-demo/demo.py` lifecycle commands. The bundle includes this direct
 
 All services bind loopback. SSM forwards local port 8765 to worker port 8765. Gateway rejects browser Origin headers. Only one session accepted; evidence stays in worker memory and clears on disconnect. App heartbeat loss closes session within 30 seconds; duration cannot exceed 30 minutes. End, disconnect, or process failure stops model processes and invokes host shutdown; the instance is configured to terminate on OS shutdown. Host timer and independent AWS deadline provide additional shutdown. Ending app session does **not** confirm EC2 termination: verify using lifecycle `status`; use `stop` if necessary, then `delete` to remove stack resources. Root disk configured for deletion at termination.
 
-Upstream INFO logs include transcript/reference content, so worker suppresses INFO and stdout; no raw audio recorded on the worker. A bounded bootstrap/service diagnostic tail is uploaded to the private trial S3 key before shutdown. Warnings and errors may still contain sensitive content; do not publish that object. EC2 disk, boot logs, and the existing artifact bucket remain subject to lifecycle cleanup.
+Upstream INFO logs can include transcript/reference content, so worker suppresses model stdout and stderr. It does not upload raw diagnostics. Model scratch and raw peak events sit on bounded RAM filesystems; a separate sampler user validates GPU measurements before durable checkpoints. The encrypted root disk remains until termination, and old trial diagnostics may remain in the existing artifact bucket. Live AMI canary inspection is still required before claiming no interview content persisted in cloud.
 
 ## Protocol
 
