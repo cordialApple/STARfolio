@@ -1,11 +1,15 @@
 import json
 import hashlib
+import subprocess
 import tempfile
 import threading
 import time
 import unittest
+import uuid
 from pathlib import Path
+from unittest import mock
 
+from gpu_peaks import publish_startup_status
 from gpu_sampler import GpuSampler
 
 
@@ -53,7 +57,7 @@ class GpuSamplerTests(unittest.TestCase):
             utc=lambda: "2026-09-27T00:00:00Z",
         )
 
-    def publish_peak(self, name="a.json"):
+    def publish_peak(self, name="peak-123-0123456789abcdef0123456789abcdef.json"):
         event = {
             "schema_version": 1,
             "event_type": "pytorch_peak",
@@ -63,7 +67,7 @@ class GpuSamplerTests(unittest.TestCase):
             "pid": 123,
             "process_start_ticks": 777,
             "role": "interview",
-            "phase": "active",
+            "phase": "session_active",
             "status": "sample",
             "allocated_bytes": 1,
             "reserved_bytes": 2,
@@ -134,14 +138,13 @@ class GpuSamplerTests(unittest.TestCase):
         self.assertEqual(self.sampler.flush(), None)
 
     def test_concurrent_event_ingested_after_atomic_publication(self):
-        _, event = self.publish_peak()
-        (self.sampler.event_dir / "a.json").unlink()
+        published, event = self.publish_peak()
+        published.unlink()
         partial = self.sampler.event_dir / "a.tmp"
         partial.write_text(json.dumps(event))
         checkpoint = self.sampler.flush()
         self.assertEqual(json.loads(checkpoint.read_text())["event_file_counts"], {"malformed": 0, "partial": 1})
         self.assertEqual(json.loads(checkpoint.read_text())["events"], [])
-        published = self.sampler.event_dir / "a.json"
         partial.replace(published)
         segment = self.sampler.flush()
         self.assertEqual(json.loads(segment.read_text())["events"], [event])
@@ -255,6 +258,162 @@ class GpuSamplerTests(unittest.TestCase):
         self.assertEqual(json.loads(segment.read_text())["events"], [])
         self.assertNotIn("private text", segment.read_text())
         self.assertTrue(event.exists())
+
+    def test_startup_status_survives_checkpoint_and_upload(self):
+        event = publish_startup_status(
+            "child_exit", "conditioner", 123, 137, "child_signal",
+            trial_id="trial-1", event_directory=self.sampler.event_dir,
+        )
+        segment = self.sampler.flush()
+        body = json.loads(segment.read_text())
+        self.assertEqual(body["events"][0]["event_type"], "startup_status")
+        self.assertEqual(body["events"][0]["exit_code"], 137)
+        self.sampler.upload_pending()
+        self.assertFalse(event.exists())
+        self.assertFalse(segment.exists())
+
+    def test_tokenizer_smoke_failure_reaches_validated_segment(self):
+        event = publish_startup_status(
+            "tokenizer_smoke_failed", trial_id="trial-1", event_directory=self.sampler.event_dir,
+        )
+        segment = self.sampler.flush()
+        body = json.loads(segment.read_text())
+        self.assertEqual(body["events"][0]["startup_stage"], 7)
+        self.assertNotIn("tokenizer_smoke_failed", segment.read_text())
+        self.sampler.upload_pending()
+        self.assertFalse(event.exists())
+        self.assertFalse(segment.exists())
+
+    def test_startup_publisher_does_not_claim_gpu_process(self):
+        event = publish_startup_status(
+            "child_exit", "conditioner", 123, 1, "child_nonzero",
+            trial_id="trial-1", event_directory=self.sampler.event_dir,
+        )
+        raw = json.loads(event.read_text())
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [raw])
+        self.assertFalse(list(self.sampler.owner_dir.glob("*.json")))
+
+    def test_shutdown_uploads_terminal_status_before_backlog(self):
+        self.sampler.sample_once()
+        with mock.patch("gpu_sampler.uuid.uuid4", return_value=uuid.UUID(int=0)):
+            backlog = self.sampler.flush()
+        publish_startup_status(
+            "child_exit", "conditioner", 123, 137, "child_signal",
+            trial_id="trial-1", event_directory=self.sampler.event_dir,
+        )
+
+        class Stopped:
+            def is_set(self):
+                return True
+
+        with mock.patch("gpu_sampler.uuid.uuid4", return_value=uuid.UUID(int=1)):
+            self.sampler.run(Stopped())
+        uploads = [call for call in self.commands.calls if call[:3] == ["aws", "s3", "cp"]]
+        self.assertGreaterEqual(len(uploads), 2)
+        self.assertNotEqual(uploads[0][3], str(backlog))
+
+    def test_shutdown_deadline_bounds_stuck_upload_and_backlog(self):
+        for _ in range(3):
+            self.sampler.sample_once()
+            self.sampler.flush()
+        self.sampler.shutdown_upload_budget = 0.15
+        original = self.commands
+        timeouts = []
+
+        def stuck_upload(args, **kwargs):
+            if args[:3] == ["aws", "s3", "cp"]:
+                timeouts.append(kwargs["timeout"])
+                time.sleep(0.2)
+                raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+            return original(args, **kwargs)
+
+        class Stopped:
+            def is_set(self):
+                return True
+
+        self.sampler.command = stuck_upload
+        self.sampler.run(Stopped())
+        self.assertEqual(len(timeouts), 1)
+        self.assertLessEqual(timeouts[0], 0.15)
+
+    def test_startup_status_private_field_never_uploads(self):
+        event = publish_startup_status(
+            "child_exit", "conditioner", 123, 1, "child_nonzero",
+            trial_id="trial-1", event_directory=self.sampler.event_dir,
+        )
+        raw = json.loads(event.read_text())
+        raw["traceback"] = "private prompt"
+        event.write_text(json.dumps(raw))
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
+        self.assertNotIn("private prompt", segment.read_text())
+        self.assertTrue(event.exists())
+
+    def test_malformed_startup_role_cannot_stop_sampling(self):
+        event = publish_startup_status(
+            "child_exit", "conditioner", 123, 1, "child_nonzero",
+            trial_id="trial-1", event_directory=self.sampler.event_dir,
+        )
+        raw = json.loads(event.read_text())
+        raw["child_role"] = ["private prompt"]
+        event.write_text(json.dumps(raw))
+        self.sampler.sample_once()
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
+        self.assertNotIn("private prompt", segment.read_text())
+
+    def test_startup_status_rejects_string_codes(self):
+        event = publish_startup_status(
+            "child_exit", "conditioner", 123, 1, "child_nonzero",
+            trial_id="trial-1", event_directory=self.sampler.event_dir,
+        )
+        raw = json.loads(event.read_text())
+        raw["startup_stage"] = "child_exit"
+        raw["failure_category"] = "child_nonzero"
+        event.write_text(json.dumps(raw))
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
+
+    def test_free_text_filename_never_enters_durable_segment(self):
+        event, _ = self.publish_peak("private-prompt.json")
+        segment = self.sampler.flush()
+        body = json.loads(segment.read_text())
+        self.assertEqual(body["events"], [])
+        self.assertEqual(body["event_files"], [])
+        self.assertEqual(body["event_file_counts"]["malformed"], 1)
+        self.assertNotIn("private-prompt", segment.read_text())
+        self.assertTrue(event.exists())
+
+    def test_filename_pid_must_match_event_pid(self):
+        event, _ = self.publish_peak("peak-456-0123456789abcdef0123456789abcdef.json")
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
+        self.assertTrue(event.exists())
+
+    def test_unlisted_phase_and_boolean_schema_version_never_enter_segment(self):
+        event, raw = self.publish_peak()
+        raw["phase"] = "private_prompt"
+        event.write_text(json.dumps(raw))
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
+        raw["phase"] = "session_active"
+        raw["schema_version"] = True
+        event.write_text(json.dumps(raw))
+        self.assertEqual(self.sampler.read_events(), [])
+
+    def test_invalid_internal_sample_fails_before_durable_write(self):
+        self.sampler.records.append({"private_prompt": "canary"})
+        with self.assertRaisesRegex(ValueError, "GPU telemetry segment"):
+            self.sampler.flush()
+        self.assertFalse(list(self.sampler.spool_dir.glob("segment-*.json")))
+
+    def test_malformed_timestamp_cannot_be_serialized(self):
+        event, raw = self.publish_peak()
+        raw["timestamp_utc"] = "2026-09-27T00:00:00." + "3" * 100 + "Z"
+        event.write_text(json.dumps(raw))
+        segment = self.sampler.flush()
+        self.assertEqual(json.loads(segment.read_text())["events"], [])
 
     def test_malformed_and_partial_peak_files_get_safe_checkpoint(self):
         (self.sampler.event_dir / "private.json").write_text('{"prompt":"private prompt"}')
