@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from gpu_peaks import EVENT_DIRECTORY, PHASES, STATUSES
+from gpu_peaks import CHILD_ROLES, EVENT_DIRECTORY, FAILURE_CATEGORIES, PHASES, SHUTDOWN_REASONS, STARTUP_STAGES, STATUSES
 
 
 EVENT_NUMBERS = (
@@ -36,6 +36,11 @@ EVENT_FIELDS = set(EVENT_NUMBERS) | {
     "status",
     "oom",
 }
+STARTUP_EVENT_FIELDS = {
+    "schema_version", "event_type", "trial_id", "timestamp_utc", "monotonic_ns",
+    "pid", "process_start_ticks", "role", "startup_stage", "child_role", "child_pid",
+    "exit_code", "failure_category", "shutdown_reason",
+}
 ROLE_NAMES = {"interview", "conditioner"}
 EVENT_STATUSES = STATUSES
 SAMPLE_FIELDS = {
@@ -49,7 +54,7 @@ SEGMENT_FIELDS = {
     "events", "event_files",
 }
 UTC_PATTERN = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)"
-EVENT_FILE_PATTERN = r"peak-([1-9][0-9]{0,9})-[a-f0-9]{32}\.json"
+EVENT_FILE_PATTERN = r"(peak|startup)-([1-9][0-9]{0,9})-[a-f0-9]{32}\.json"
 
 
 def utc_now():
@@ -130,6 +135,7 @@ class GpuSampler:
         utc=utc_now,
         sample_interval=0.25,
         upload_interval=5.0,
+        shutdown_upload_budget=35.0,
     ):
         if not re.fullmatch(r"[A-Za-z0-9_-]+", trial_id):
             raise ValueError("Invalid trial ID")
@@ -146,6 +152,9 @@ class GpuSampler:
         self.utc = utc
         self.sample_interval = sample_interval
         self.upload_interval = upload_interval
+        self.shutdown_upload_budget = shutdown_upload_budget
+        self.upload_lock = threading.Lock()
+        self.stopping = threading.Event()
         self.records = []
         self.last_sample_time = None
         self.last_event_file_counts = {"malformed": 0, "partial": 0}
@@ -210,9 +219,16 @@ class GpuSampler:
         if not isinstance(name, str):
             return False
         match = re.fullmatch(EVENT_FILE_PATTERN, name)
-        return match is not None and (event is None or match.group(1) == str(event["pid"]))
+        if match is None:
+            return False
+        if event is None:
+            return True
+        expected_prefix = "peak" if event["event_type"] == "pytorch_peak" else "startup"
+        return match.group(2) == str(event["pid"]) and match.group(1) == expected_prefix
 
     def valid_event(self, raw):
+        if isinstance(raw, dict) and raw.get("schema_version") == 2:
+            return self.valid_startup_event(raw)
         if not isinstance(raw, dict) or set(raw) != EVENT_FIELDS:
             return None
         if (
@@ -235,6 +251,57 @@ class GpuSampler:
             if not nullable_nonnegative_int(raw[field]):
                 return None
         if raw["pid"] is None or raw["pid"] == 0:
+            return None
+        return raw
+
+    def valid_startup_event(self, raw):
+        if not isinstance(raw, dict) or set(raw) != STARTUP_EVENT_FIELDS:
+            return None
+        if (
+            type(raw["schema_version"]) is not int
+            or raw["schema_version"] != 2
+            or raw["event_type"] != "startup_status"
+            or raw["trial_id"] != self.trial_id
+            or raw["role"] != "status_publisher"
+            or type(raw["startup_stage"]) is not int
+            or raw["startup_stage"] not in STARTUP_STAGES.values()
+            or type(raw["failure_category"]) is not int
+            or raw["failure_category"] not in (0, *FAILURE_CATEGORIES.values())
+            or not valid_utc(raw["timestamp_utc"])
+            or type(raw["pid"]) is not int
+            or raw["pid"] <= 0
+            or not nullable_nonnegative_int(raw["process_start_ticks"])
+            or type(raw["monotonic_ns"]) is not int
+            or raw["monotonic_ns"] < 0
+        ):
+            return None
+        if raw["startup_stage"] == STARTUP_STAGES["child_exit"]:
+            if (
+                not isinstance(raw["child_role"], str)
+                or raw["child_role"] not in CHILD_ROLES
+                or type(raw["child_pid"]) is not int
+                or raw["child_pid"] <= 0
+                or type(raw["exit_code"]) is not int
+                or not 0 <= raw["exit_code"] <= 255
+            ):
+                return None
+            if raw["exit_code"] == 0:
+                expected_category = 0
+            elif raw["exit_code"] >= 128:
+                expected_category = FAILURE_CATEGORIES["child_signal"]
+            else:
+                expected_category = FAILURE_CATEGORIES["child_nonzero"]
+            if raw["failure_category"] != expected_category:
+                return None
+        elif (
+            any(raw[field] is not None for field in ("child_role", "child_pid", "exit_code"))
+            or raw["failure_category"] != 0
+        ):
+            return None
+        if raw["startup_stage"] == STARTUP_STAGES["shutdown"]:
+            if type(raw["shutdown_reason"]) is not int or raw["shutdown_reason"] not in SHUTDOWN_REASONS.values():
+                return None
+        elif raw["shutdown_reason"] is not None:
             return None
         return raw
 
@@ -317,7 +384,7 @@ class GpuSampler:
         if start_ticks is None:
             return None
         for _, event in events:
-            if event["pid"] == pid and event["process_start_ticks"] == start_ticks:
+            if event["event_type"] == "pytorch_peak" and event["pid"] == pid and event["process_start_ticks"] == start_ticks:
                 return event["role"]
         try:
             owner = json.loads((self.owner_dir / f"{pid}.json").read_text())
@@ -423,8 +490,27 @@ class GpuSampler:
         self.last_event_file_counts = event_file_counts
         return path
 
-    def upload_pending(self):
-        for segment in sorted(self.spool_dir.glob("segment-*.json")):
+    def upload_pending(self, deadline=None, prioritize_terminal=False):
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            return
+        acquired = (
+            self.upload_lock.acquire(timeout=remaining)
+            if remaining is not None
+            else self.upload_lock.acquire()
+        )
+        if not acquired:
+            return
+        try:
+            self._upload_pending(deadline, prioritize_terminal)
+        finally:
+            self.upload_lock.release()
+
+    def _upload_pending(self, deadline, prioritize_terminal):
+        pending = []
+        for segment in self.spool_dir.glob("segment-*.json"):
+            if (deadline is not None and time.monotonic() >= deadline) or (deadline is None and self.stopping.is_set()):
+                return
             receipt = segment.with_suffix(".uploaded")
             try:
                 content = segment.read_bytes()
@@ -433,10 +519,31 @@ class GpuSampler:
                 continue
             if not self.valid_segment(segment, body):
                 continue
+            terminal_ns = -1
+            if prioritize_terminal:
+                terminal_ns = max(
+                    (
+                        event["monotonic_ns"] for event in body["events"]
+                        if event["event_type"] == "startup_status"
+                        and event["startup_stage"] in (STARTUP_STAGES["child_exit"], STARTUP_STAGES["shutdown"])
+                    ),
+                    default=-1,
+                )
+            pending.append((terminal_ns, segment, content, body, receipt))
+        if prioritize_terminal:
+            pending.sort(key=lambda item: (item[0] < 0, -item[0], item[1].name))
+        else:
+            pending.sort(key=lambda item: item[1].name)
+        for _, segment, content, body, receipt in pending:
+            if (deadline is not None and time.monotonic() >= deadline) or (deadline is None and self.stopping.is_set()):
+                return
             if self.valid_receipt(receipt, body, content):
                 self.acknowledge_segment(segment, body)
                 continue
             destination = self.destination_uri + segment.name
+            timeout = 20 if deadline is None else min(20, deadline - time.monotonic())
+            if timeout <= 0:
+                return
             try:
                 result = self.command(
                     [
@@ -451,7 +558,7 @@ class GpuSampler:
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=20,
+                    timeout=timeout,
                     check=False,
                 )
             except (OSError, subprocess.TimeoutExpired):
@@ -484,7 +591,7 @@ class GpuSampler:
         segment.unlink(missing_ok=True)
 
     def record_owner(self, event):
-        if event["process_start_ticks"] is None:
+        if event["event_type"] != "pytorch_peak" or event["process_start_ticks"] is None:
             return
         owner = {
             "pid": event["pid"],
@@ -520,11 +627,11 @@ class GpuSampler:
                 )
                 stop_event.wait(max(0, next_sample - self.monotonic()))
         finally:
-            if uploader is not None:
-                uploader.join()
+            self.stopping.set()
+            deadline = time.monotonic() + self.shutdown_upload_budget
             for _ in range(2):
                 self.flush()
-                self.upload_pending()
+                self.upload_pending(deadline=deadline, prioritize_terminal=True)
 
 
 def main():

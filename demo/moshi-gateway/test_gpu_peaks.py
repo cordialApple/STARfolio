@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from contextlib import redirect_stderr
 from unittest.mock import patch
 
-from gpu_peaks import PeakTracker, process_start_ticks
+from gpu_peaks import PeakTracker, process_start_ticks, publish_startup_status
 
 try:
     import aiohttp
@@ -61,6 +61,70 @@ class FakeCuda:
 
 
 class PeakTrackerTests(unittest.TestCase):
+    def test_startup_status_publishes_allowlisted_numeric_event(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = publish_startup_status(
+                "child_exit", "conditioner", 123, 137, "child_signal",
+                trial_id="trial-1", event_directory=directory,
+            )
+            second = publish_startup_status(
+                "child_exit", "conditioner", 123, 137, "child_signal",
+                trial_id="trial-1", event_directory=directory,
+            )
+            self.assertNotEqual(first, second)
+            event = json.loads(first.read_text())
+            self.assertEqual(event["schema_version"], 2)
+            self.assertEqual(event["event_type"], "startup_status")
+            self.assertEqual(event["role"], "status_publisher")
+            self.assertEqual(event["pid"], os.getpid())
+            self.assertEqual(event["startup_stage"], 5)
+            self.assertEqual(event["child_role"], "conditioner")
+            self.assertEqual(event["child_pid"], 123)
+            self.assertEqual(event["exit_code"], 137)
+            self.assertEqual(event["failure_category"], 2)
+            self.assertIs(type(event["startup_stage"]), int)
+            self.assertIs(type(event["failure_category"]), int)
+            self.assertNotIn("child_signal", first.read_text())
+            self.assertNotIn("error", event)
+            self.assertFalse(list(Path(directory).glob("*.tmp")))
+
+    def test_shutdown_reason_is_numeric_and_fixed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = publish_startup_status(
+                "shutdown", shutdown_reason="sigterm",
+                trial_id="trial-1", event_directory=directory,
+            )
+            event = json.loads(path.read_text())
+            self.assertEqual(event["shutdown_reason"], 1)
+            self.assertNotIn("sigterm", path.read_text())
+
+    def test_tokenizer_smoke_failure_has_fixed_numeric_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = publish_startup_status(
+                "tokenizer_smoke_failed", trial_id="trial-1", event_directory=directory,
+            )
+            event = json.loads(path.read_text())
+            self.assertEqual(event["startup_stage"], 7)
+            self.assertNotIn("tokenizer_smoke_failed", path.read_text())
+
+    def test_startup_status_rejects_unlisted_or_inconsistent_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cases = [
+                ("private prompt", None, None, None, None),
+                ("child_exit", "conditioner", 123, 1, "private failure"),
+                ("child_exit", "conditioner", 123, True, "child_nonzero"),
+                ("child_exit", "conditioner", 123, 0, "child_nonzero"),
+                ("gateway_spawned", "gateway", 123, 1, "child_nonzero"),
+            ]
+            for stage, role, pid, code, category in cases:
+                with self.subTest(stage=stage, category=category):
+                    with self.assertRaises(ValueError):
+                        publish_startup_status(
+                            stage, role, pid, code, category,
+                            trial_id="trial-1", event_directory=directory,
+                        )
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
     def test_default_event_directory_reads_runtime_ram_inbox(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(os.environ, {"STARFOLIO_GPU_EVENT_DIR": directory}):

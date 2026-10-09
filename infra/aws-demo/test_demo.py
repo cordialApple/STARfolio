@@ -27,6 +27,7 @@ REQUIRED_BUNDLE_FILES = (
     "requirements.lock",
     "requirements.txt",
     "run-worker.sh",
+    "tokenizer_smoke.py",
 )
 
 
@@ -180,6 +181,8 @@ class DemoTests(unittest.TestCase):
         self.assertIn("chmod -R a+rX,go-w /opt/starfolio-demo", bootstrap)
         self.assertIn("STARFOLIO_DEMO_DEADLINE=2026-09-10T12:40:00Z", bootstrap)
         self.assertIn("STARFOLIO_DEMO_MAX_SECONDS=2400", bootstrap)
+        self.assertIn('graceful_seconds=$((STARFOLIO_DEMO_MAX_SECONDS - 120))', bootstrap)
+        self.assertIn('starfolio-instance-deadline --on-active="${graceful_seconds}s"', bootstrap)
         self.assertLess(
             bootstrap.index("starfolio-instance-deadline"),
             bootstrap.index("nvidia-smi"),

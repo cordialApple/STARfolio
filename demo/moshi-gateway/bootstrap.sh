@@ -13,7 +13,8 @@ gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits |
 test "$gpu_memory" -ge 44000
 remaining=$(($(date -d "$STARFOLIO_DEMO_DEADLINE" +%s) - $(date +%s)))
 test "$remaining" -gt 300
-systemd-run --unit=starfolio-host-deadline --on-active="${remaining}s" /sbin/shutdown -h now
+graceful_remaining=$((remaining - 120))
+systemd-run --unit=starfolio-host-deadline --on-active="${graceful_remaining}s" /sbin/shutdown -h now
 id starfolio-demo >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin starfolio-demo
 id starfolio-gpu >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin starfolio-gpu
 install -d -o root -g root /opt/starfolio-runtime
@@ -121,7 +122,7 @@ Environment=STARFOLIO_TRIAL_GPU_URI=$STARFOLIO_TRIAL_GPU_URI
 Environment=STARFOLIO_GPU_EVENT_DIR=/run/starfolio-gpu/events
 ExecStartPre=/usr/bin/mountpoint -q /run/starfolio-gpu
 ExecStart=/usr/bin/python3.12 $root/demo/moshi-gateway/gpu_sampler.py
-TimeoutStopSec=20
+TimeoutStopSec=45
 Restart=no
 NoNewPrivileges=true
 ProtectHome=true
@@ -193,4 +194,20 @@ systemctl daemon-reload
 systemctl enable --now starfolio-gpu-sampler.service
 sleep 1
 systemctl is-active --quiet starfolio-gpu-sampler.service
+if runuser -u starfolio-demo -- env \
+  HOME=/run/starfolio-private/home HF_HOME=/run/starfolio-private/hf \
+  XDG_CACHE_HOME=/run/starfolio-private/cache TMPDIR=/run/starfolio-private/tmp \
+  HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 \
+  "$py" -I "$root/demo/moshi-gateway/tokenizer_smoke.py" \
+  /opt/starfolio-runtime/models/moshika-rag/config.json \
+  /opt/starfolio-runtime/models/llama-tokenizer >/dev/null 2>&1; then
+  printf 'TOKENIZER_SMOKE_OK\n'
+else
+  runuser -u starfolio-demo -- env \
+    STARFOLIO_TRIAL_ID="$STARFOLIO_TRIAL_ID" STARFOLIO_GPU_EVENT_DIR=/run/starfolio-gpu/events \
+    "$py" -I "$root/demo/moshi-gateway/gpu_peaks.py" startup --stage tokenizer_smoke_failed >/dev/null 2>&1 || true
+  systemctl stop starfolio-gpu-sampler.service || true
+  printf 'TOKENIZER_SMOKE_FAILED\n'
+  false
+fi
 systemctl enable --now starfolio-demo.service

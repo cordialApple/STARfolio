@@ -1,4 +1,10 @@
+import importlib.util
+import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,6 +18,35 @@ MOSHIKA_REVISION = "7135a6e3c46abb66c2cd95cb04cbfcbe8376f83d"
 STT_REVISION = "095e38f6242006a93c2541149b181988397f5c7c"
 ARC_REVISION = "c11e53d1016cc586262ee883755410e2ca47ba3c"
 TOKENIZER_REVISION = "0cb88a4f764b7a12671c53f0838cd831a0843b95"
+TOKENIZER_SMOKE = ROOT / "demo" / "moshi-gateway" / "tokenizer_smoke.py"
+
+
+def load_tokenizer_smoke():
+    if not TOKENIZER_SMOKE.is_file():
+        raise AssertionError("Tokenizer smoke helper missing")
+    spec = importlib.util.spec_from_file_location("tokenizer_smoke", TOKENIZER_SMOKE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_tokenizer_fixture(root):
+    model_dir = root / "llama-tokenizer"
+    (model_dir / "original").mkdir(parents=True)
+    for name in ("tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"):
+        (model_dir / name).write_text("{}")
+    (model_dir / "original" / "tokenizer.model").write_bytes(b"tokenizer fixture")
+    config_path = root / "config.json"
+    config_path.write_text(
+        json.dumps({
+            "conditioners": {
+                "reference_with_time": {
+                    "multi_arc_encoder": {"tokenizer_name": str(model_dir)}
+                }
+            }
+        })
+    )
+    return config_path, model_dir
 
 
 class RuntimeInputTests(unittest.TestCase):
@@ -107,6 +142,11 @@ class RuntimeInputTests(unittest.TestCase):
         self.assertIn("STARFOLIO_TRIAL_GPU_URI", bootstrap)
         self.assertIn("gpu_sampler.py", bootstrap)
         self.assertIn("starfolio-gpu-sampler.service", bootstrap)
+        sampler_unit = bootstrap.split("cat > /etc/systemd/system/starfolio-gpu-sampler.service", 1)[1]
+        sampler_unit = sampler_unit.split("cat > /etc/systemd/system/starfolio-demo.service", 1)[0]
+        self.assertIn("TimeoutStopSec=45", sampler_unit)
+        self.assertIn('graceful_remaining=$((remaining - 120))', bootstrap)
+        self.assertIn('starfolio-host-deadline --on-active="${graceful_remaining}s"', bootstrap)
         self.assertLess(
             bootstrap.index("systemctl enable --now starfolio-gpu-sampler.service"),
             bootstrap.index("systemctl enable --now starfolio-demo.service"),
@@ -123,6 +163,113 @@ class RuntimeInputTests(unittest.TestCase):
             bootstrap.index("amazon-cloudwatch-agent-ctl"),
             bootstrap.index("systemctl enable --now starfolio-demo.service"),
         )
+
+    def test_bootstrap_smokes_offline_tokenizer_before_model_service(self):
+        bootstrap = BOOTSTRAP.read_text()
+        self.assertIn("tokenizer_smoke.py", bootstrap)
+        self.assertIn("HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1", bootstrap)
+        self.assertIn("TOKENIZER_SMOKE_FAILED", bootstrap)
+        self.assertIn("TOKENIZER_SMOKE_OK", bootstrap)
+        self.assertIn("runuser -u starfolio-demo -- env", bootstrap)
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", bootstrap)
+        self.assertLess(
+            bootstrap.index("mountpoint -q /run/starfolio-private"),
+            bootstrap.index("tokenizer_smoke.py"),
+        )
+        self.assertLess(
+            bootstrap.index("systemctl enable --now starfolio-gpu-sampler.service"),
+            bootstrap.index("tokenizer_smoke.py"),
+        )
+        self.assertIn("gpu_peaks.py\" startup --stage tokenizer_smoke_failed", bootstrap)
+        self.assertLess(
+            bootstrap.index("tokenizer_smoke.py"),
+            bootstrap.index("systemctl enable --now starfolio-demo.service"),
+        )
+
+    def test_failed_tokenizer_smoke_emits_status_and_stops_sampler(self):
+        bash = shutil.which("bash")
+        if os.name == "nt":
+            bash = r"C:\Program Files\Git\bin\bash.exe"
+        if not bash or not Path(bash).exists():
+            self.skipTest("Bash unavailable")
+        bootstrap = BOOTSTRAP.read_text()
+        start = bootstrap.index("if runuser -u starfolio-demo -- env")
+        end = bootstrap.index("systemctl enable --now starfolio-demo.service", start)
+        block = bootstrap[start:end]
+        prefix = (
+            "set -euo pipefail\n"
+            "if command -v cygpath >/dev/null; then TEST_DIR=$(cygpath -u \"$TEST_DIR\"); fi\n"
+            "root=/fake\npy=/fake/python\nSTARFOLIO_TRIAL_ID=trial-1\n"
+            "runuser() {\n"
+            "  if [[ \"$*\" == *tokenizer_smoke.py* ]]; then\n"
+            "    printf 'PRIVATE_SAMPLE\\n' >&2\n"
+            "    return 1\n"
+            "  fi\n"
+            "  printf '%s\\n' \"$*\" > \"$TEST_DIR/status\"\n"
+            "}\n"
+            "systemctl() { printf '%s\\n' \"$*\" > \"$TEST_DIR/stop\"; }\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            environment = os.environ.copy()
+            environment["TEST_DIR"] = directory
+            result = subprocess.run(
+                [bash, "-c", prefix + block], env=environment,
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, "TOKENIZER_SMOKE_FAILED\n")
+            self.assertNotIn("PRIVATE_SAMPLE", result.stderr)
+            self.assertIn("--stage tokenizer_smoke_failed", (Path(directory) / "status").read_text())
+            self.assertEqual((Path(directory) / "stop").read_text().strip(), "stop starfolio-gpu-sampler.service")
+
+    def test_tokenizer_smoke_rejects_missing_asset_before_loading(self):
+        smoke = load_tokenizer_smoke()
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path, model_dir = write_tokenizer_fixture(Path(tmp))
+            (model_dir / "tokenizer.json").unlink()
+            with self.assertRaises(ValueError):
+                smoke.check_tokenizer(config_path, model_dir, lambda **kwargs: self.fail("Tokenizer loaded"))
+
+    def test_tokenizer_smoke_rejects_different_configured_path(self):
+        smoke = load_tokenizer_smoke()
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path, model_dir = write_tokenizer_fixture(Path(tmp))
+            other_dir = Path(tmp) / "other-tokenizer"
+            other_dir.mkdir()
+            with self.assertRaises(ValueError):
+                smoke.check_tokenizer(config_path, other_dir, lambda **kwargs: self.fail("Tokenizer loaded"))
+
+    def test_tokenizer_smoke_uses_local_slow_loader_and_round_trip(self):
+        smoke = load_tokenizer_smoke()
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path, model_dir = write_tokenizer_fixture(Path(tmp))
+            calls = []
+
+            class FixtureTokenizer:
+                vocab_size = 2
+                bos_token_id = 0
+                eos_token_id = 1
+
+                def encode(self, value, add_special_tokens):
+                    if add_special_tokens:
+                        raise AssertionError("Special tokens requested")
+                    return [len(value)]
+
+                def decode(self, values):
+                    return "fixture" if values else ""
+
+            def load_tokenizer(path, **options):
+                calls.append((path, options))
+                return FixtureTokenizer()
+
+            smoke.check_tokenizer(config_path, model_dir, load_tokenizer)
+            self.assertEqual(calls, [
+                (str(model_dir), {
+                    "use_fast": False,
+                    "local_files_only": True,
+                    "trust_remote_code": False,
+                })
+            ])
 
 
 if __name__ == "__main__":

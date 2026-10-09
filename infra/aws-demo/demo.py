@@ -35,6 +35,7 @@ BUNDLE_FILES = (
     "requirements.lock",
     "requirements.txt",
     "run-worker.sh",
+    "tokenizer_smoke.py",
 )
 
 
@@ -350,7 +351,8 @@ def make_bootstrap(config, plan):
                 f"export STARFOLIO_TRIAL_ID={shlex.quote(plan['trial_id'])}",
                 f"export STARFOLIO_TRIAL_GPU_URI={shlex.quote(plan['telemetry_s3_prefix'])}",
                 f"export STARFOLIO_DEMO_MAX_SECONDS={max_seconds}",
-                'systemd-run --unit=starfolio-instance-deadline --on-active="${STARFOLIO_DEMO_MAX_SECONDS}s" /sbin/shutdown -h now',
+                'graceful_seconds=$((STARFOLIO_DEMO_MAX_SECONDS - 120))',
+                'systemd-run --unit=starfolio-instance-deadline --on-active="${graceful_seconds}s" /sbin/shutdown -h now',
                 "command -v aws >/dev/null",
                 "command -v python3.12 >/dev/null",
                 "nvidia-smi >/dev/null",
