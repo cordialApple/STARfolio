@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from gpu_peaks import CHILD_ROLES, EVENT_DIRECTORY, FAILURE_CATEGORIES, PHASES, SHUTDOWN_REASONS, STARTUP_STAGES, STATUSES
+from gpu_peaks import CHILD_ROLES, DEPENDENCY_IDS, EVENT_DIRECTORY, FAILURE_CATEGORIES, PHASES, SHUTDOWN_REASONS, STARTUP_FAILURES, STARTUP_OPERATIONS, STARTUP_STAGES, STATUSES
 
 
 EVENT_NUMBERS = (
@@ -41,6 +41,11 @@ STARTUP_EVENT_FIELDS = {
     "pid", "process_start_ticks", "role", "startup_stage", "child_role", "child_pid",
     "exit_code", "failure_category", "shutdown_reason",
 }
+DIAGNOSTIC_EVENT_FIELDS = {
+    "schema_version", "event_type", "trial_id", "timestamp_utc", "monotonic_ns",
+    "pid", "process_start_ticks", "role", "operation_stage", "failure_category",
+    "dependency_id",
+}
 ROLE_NAMES = {"interview", "conditioner"}
 EVENT_STATUSES = STATUSES
 SAMPLE_FIELDS = {
@@ -54,7 +59,7 @@ SEGMENT_FIELDS = {
     "events", "event_files",
 }
 UTC_PATTERN = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)"
-EVENT_FILE_PATTERN = r"(peak|startup)-([1-9][0-9]{0,9})-[a-f0-9]{32}\.json"
+EVENT_FILE_PATTERN = r"(peak|startup|diagnostic)-([1-9][0-9]{0,9})-[a-f0-9]{32}\.json"
 
 
 def utc_now():
@@ -223,12 +228,18 @@ class GpuSampler:
             return False
         if event is None:
             return True
-        expected_prefix = "peak" if event["event_type"] == "pytorch_peak" else "startup"
+        expected_prefix = {
+            "pytorch_peak": "peak",
+            "startup_status": "startup",
+            "startup_diagnostic": "diagnostic",
+        }.get(event["event_type"])
         return match.group(2) == str(event["pid"]) and match.group(1) == expected_prefix
 
     def valid_event(self, raw):
         if isinstance(raw, dict) and raw.get("schema_version") == 2:
             return self.valid_startup_event(raw)
+        if isinstance(raw, dict) and raw.get("schema_version") == 3:
+            return self.valid_diagnostic_event(raw)
         if not isinstance(raw, dict) or set(raw) != EVENT_FIELDS:
             return None
         if (
@@ -251,6 +262,33 @@ class GpuSampler:
             if not nullable_nonnegative_int(raw[field]):
                 return None
         if raw["pid"] is None or raw["pid"] == 0:
+            return None
+        return raw
+
+    def valid_diagnostic_event(self, raw):
+        if not isinstance(raw, dict) or set(raw) != DIAGNOSTIC_EVENT_FIELDS:
+            return None
+        if (
+            type(raw["schema_version"]) is not int
+            or raw["schema_version"] != 3
+            or raw["event_type"] != "startup_diagnostic"
+            or raw["trial_id"] != self.trial_id
+            or raw["role"] != "interview"
+            or not valid_utc(raw["timestamp_utc"])
+            or type(raw["monotonic_ns"]) is not int
+            or raw["monotonic_ns"] < 0
+            or type(raw["pid"]) is not int
+            or raw["pid"] <= 0
+            or not nullable_nonnegative_int(raw["process_start_ticks"])
+            or type(raw["operation_stage"]) is not int
+            or raw["operation_stage"] not in STARTUP_OPERATIONS.values()
+            or type(raw["failure_category"]) is not int
+            or raw["failure_category"] not in STARTUP_FAILURES.values()
+            or type(raw["dependency_id"]) is not int
+            or raw["dependency_id"] not in (0, *DEPENDENCY_IDS.values())
+        ):
+            return None
+        if raw["failure_category"] != STARTUP_FAILURES["missing_dependency"] and raw["dependency_id"] != 0:
             return None
         return raw
 

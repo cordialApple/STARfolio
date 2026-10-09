@@ -36,6 +36,31 @@ STARTUP_STAGES = {
 CHILD_ROLES = frozenset({"gateway", "conditioner", "interview"})
 FAILURE_CATEGORIES = {"child_nonzero": 1, "child_signal": 2}
 SHUTDOWN_REASONS = {"normal": 0, "sigterm": 1, "sigint": 2}
+STARTUP_OPERATIONS = {
+    "moshi_import": 1,
+    "stt_binding": 2,
+    "server_binding": 3,
+    "server_main": 4,
+}
+STARTUP_FAILURES = {
+    "missing_dependency": 1,
+    "missing_file": 2,
+    "permission": 3,
+    "cuda_oom": 4,
+    "other": 5,
+    "system_exit": 6,
+}
+DEPENDENCY_IDS = {
+    "websockets": 1,
+    "moshi": 2,
+    "torch": 3,
+    "numpy": 4,
+    "aiohttp": 5,
+    "transformers": 6,
+    "sentencepiece": 7,
+    "safetensors": 8,
+    "huggingface_hub": 9,
+}
 
 
 def write_event(event, event_directory, prefix):
@@ -118,6 +143,54 @@ def publish_startup_status(
         },
         destination,
         "startup",
+    )
+
+
+def publish_startup_diagnostic(
+    operation, exception, *, trial_id=None, event_directory=None, cuda=None,
+):
+    if not isinstance(operation, str) or operation not in STARTUP_OPERATIONS:
+        raise ValueError("Unknown startup operation")
+    resolved_trial_id = trial_id if trial_id is not None else os.environ.get("STARFOLIO_TRIAL_ID", "")
+    if not isinstance(resolved_trial_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", resolved_trial_id):
+        raise ValueError("Invalid trial ID")
+    dependency_id = 0
+    if isinstance(exception, ModuleNotFoundError):
+        category = STARTUP_FAILURES["missing_dependency"]
+        module = getattr(exception, "name", None)
+        dependency_id = DEPENDENCY_IDS.get(module.split(".", 1)[0], 0) if isinstance(module, str) else 0
+    elif isinstance(exception, FileNotFoundError):
+        category = STARTUP_FAILURES["missing_file"]
+    elif isinstance(exception, PermissionError):
+        category = STARTUP_FAILURES["permission"]
+    elif isinstance(getattr(cuda, "OutOfMemoryError", None), type) and isinstance(
+        exception, cuda.OutOfMemoryError
+    ):
+        category = STARTUP_FAILURES["cuda_oom"]
+    elif isinstance(exception, SystemExit):
+        category = STARTUP_FAILURES["system_exit"]
+    else:
+        category = STARTUP_FAILURES["other"]
+    destination = Path(
+        event_directory if event_directory is not None
+        else os.environ.get("STARFOLIO_GPU_EVENT_DIR", str(EVENT_DIRECTORY))
+    )
+    return write_event(
+        {
+            "schema_version": 3,
+            "event_type": "startup_diagnostic",
+            "trial_id": resolved_trial_id,
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "monotonic_ns": time.monotonic_ns(),
+            "pid": os.getpid(),
+            "process_start_ticks": process_start_ticks(),
+            "role": "interview",
+            "operation_stage": STARTUP_OPERATIONS[operation],
+            "failure_category": category,
+            "dependency_id": dependency_id,
+        },
+        destination,
+        "diagnostic",
     )
 
 

@@ -22,7 +22,7 @@ try:
 except ImportError:
     sys.modules["numpy"] = SimpleNamespace(zeros=lambda size, dtype: [0] * size, float32=float)
 
-from interview_worker import create_channel, track_interview_lifecycle
+from interview_worker import create_channel, run_server_main, track_interview_lifecycle
 from conditioner_worker import track_conditioner_lifecycle
 
 
@@ -268,6 +268,31 @@ class PeakTrackerTests(unittest.TestCase):
             phases,
             ["model_load", "native_load", "warmup", "native_warmup", "serving"],
         )
+
+    def test_interview_server_runs_without_gradients(self):
+        state = {"gradients": True, "called": False}
+
+        class NoGrad:
+            def __enter__(self):
+                state["gradients"] = False
+
+            def __exit__(self, *_):
+                state["gradients"] = True
+
+        class Torch:
+            @staticmethod
+            def no_grad():
+                return NoGrad()
+
+        class Server:
+            @staticmethod
+            def main():
+                self.assertFalse(state["gradients"])
+                state["called"] = True
+
+        run_server_main(Server, Torch)
+        self.assertTrue(state["called"])
+        self.assertTrue(state["gradients"])
 
     def test_failed_warmup_stays_in_warmup_phase(self):
         phases = []
