@@ -52,6 +52,7 @@ export function openaiStructured(opts: OpenAiOptions): StructuredProvider {
         : { type: 'json_schema' as const, json_schema: { name: 'output', strict: false, schema: jsonSchema } }
       const res = await doFetch(url, {
         method: 'POST',
+        redirect: 'error',
         headers: buildOpenAiHeaders(key),
         body: JSON.stringify({
           model: req.model,
@@ -95,6 +96,7 @@ export function openaiTransport(opts: OpenAiOptions): AiTransport {
         const { url, key, doFetch } = resolveOpenAiConnection(opts)
         const res = await doFetch(url, {
           method: 'POST',
+          redirect: 'error',
           headers: buildOpenAiHeaders(key),
           signal,
           body: JSON.stringify({

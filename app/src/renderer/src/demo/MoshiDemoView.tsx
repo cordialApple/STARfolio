@@ -24,6 +24,7 @@ export function MoshiDemoView({
   const [endpoint, setEndpoint] = useState('ws://127.0.0.1:8765/session')
   const [consent, setConsent] = useState(false)
   const [recordTrialMedia, setRecordTrialMedia] = useState(false)
+  const [localProvidersOnly, setLocalProvidersOnly] = useState(true)
   const [duration, setDuration] = useState(1200)
   const {
     bank,
@@ -46,7 +47,8 @@ export function MoshiDemoView({
     durationSeconds: duration,
     jobDescription,
     consent,
-    recordTrialMedia
+    recordTrialMedia,
+    localProvidersOnly
   })
 
   return (
@@ -143,6 +145,21 @@ export function MoshiDemoView({
           <input
             type="checkbox"
             className="mt-1"
+            checked={localProvidersOnly}
+            disabled={active}
+            onChange={(event) => setLocalProvidersOnly(event.target.checked)}
+          />
+          <span>
+            Require loopback architect and evaluator endpoints. Interview start and later rigor
+            replay stop if either route is not a loopback OpenAI-compatible endpoint. STARfolio
+            cannot verify whether the local server forwards requests elsewhere. The remote Moshi
+            worker still receives live audio and selected evidence.
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
             checked={consent}
             disabled={active}
             onChange={(event) => setConsent(event.target.checked)}
@@ -151,7 +168,8 @@ export function MoshiDemoView({
             Send microphone audio, selected evidence, and derived roadmap / steering to the
             configured remote MoshiRAG worker. Current deployment runs in my AWS account. Send
             resume, job description, and transcript to my configured architect and evaluator
-            providers. Save transcript, scores, and report locally.
+            providers, which may be external unless local routing is selected. Save transcript,
+            scores, and report locally.
           </span>
         </label>
         <label className="flex items-start gap-3 text-sm">

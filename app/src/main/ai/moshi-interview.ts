@@ -50,6 +50,7 @@ export interface MoshiInterviewSnapshot {
   startedAtMs: number
   status: 'active' | 'finishing' | 'finished' | 'cancelled' | 'failed'
   mode: 'stub' | 'live' | 'mixed'
+  localProvidersOnly?: boolean
   models?: { architect: string; evaluator: string; summary: string; evaluatorUsageId?: string }
   state: InterviewState
   transcript: TranscriptEntry[]
@@ -188,6 +189,7 @@ export class MoshiInterview {
       startedAtMs: this.now(),
       status: 'active',
       mode: roleMode(runtime),
+      localProvidersOnly: input.localProvidersOnly === true,
       models: {
         architect: runtime.architect?.model ?? MODELS.architect,
         evaluator: runtime.evaluator?.model ?? MODELS.evaluator,

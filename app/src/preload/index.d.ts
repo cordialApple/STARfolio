@@ -716,6 +716,7 @@ export interface IpcApi {
       candidateName?: string
       consent: true
       recordTrialMedia?: boolean
+      localProvidersOnly?: boolean
     }) => Promise<'moshi' | 'fixture'>
     audio: (sessionId: string, samples: Float32Array) => void
     scriptedTurnDone: (sessionId: string, revision: number) => Promise<boolean>

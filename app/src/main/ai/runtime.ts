@@ -59,6 +59,25 @@ export function routingConfigFromPrefs(prefs: Prefs): RoutingConfig {
   return cfg
 }
 
+export function assertLocalMoshiProviders(prefs: Prefs = getPrefs()): void {
+  const cfg = routingConfigFromPrefs(prefs)
+  for (const role of ['architect', 'evaluator'] as const) {
+    const spec = resolveSpec(role, cfg)
+    if (spec.provider !== 'openai' || !(prefs[ROLE_PREF_KEYS[role].openaiModel] as string).trim())
+      throw new Error(`Use a complete local provider for ${role}`)
+    const url = new URL(spec.baseUrl ?? '')
+    if (
+      url.protocol !== 'http:' ||
+      !['127.0.0.1', '[::1]'].includes(url.hostname) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      throw new Error(`Use a local provider at a loopback HTTP address for ${role}`)
+  }
+}
+
 function resolveRoleSpec(role: RoutableRole, cfg: RoutingConfig): ModelSpec | undefined {
   const spec = resolveSpec(role, cfg)
   return spec.provider === 'anthropic' ? undefined : spec
