@@ -35,6 +35,7 @@ BUNDLE_FILES = (
     "requirements.lock",
     "requirements.txt",
     "run-worker.sh",
+    "stop-worker.sh",
     "tokenizer_smoke.py",
 )
 

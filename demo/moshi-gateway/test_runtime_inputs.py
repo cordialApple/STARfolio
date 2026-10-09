@@ -151,7 +151,10 @@ class RuntimeInputTests(unittest.TestCase):
             bootstrap.index("systemctl enable --now starfolio-gpu-sampler.service"),
             bootstrap.index("systemctl enable --now starfolio-demo.service"),
         )
-        self.assertIn("ExecStopPost=-+/usr/bin/systemctl stop starfolio-gpu-sampler.service", bootstrap)
+        self.assertIn("ExecStopPost=+/bin/bash", bootstrap)
+        self.assertIn("stop-worker.sh", bootstrap)
+        self.assertNotIn("ExecStopPost=-+/usr/bin/systemctl stop starfolio-gpu-sampler.service", bootstrap)
+        self.assertNotIn("ExecStopPost=+/sbin/shutdown -h now", bootstrap)
         self.assertFalse((ROOT / "demo" / "moshi-gateway" / "diagnostics.sh").exists())
 
     def test_cloudwatch_agent_starts_before_model_service(self):

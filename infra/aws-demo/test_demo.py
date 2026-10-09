@@ -27,6 +27,7 @@ REQUIRED_BUNDLE_FILES = (
     "requirements.lock",
     "requirements.txt",
     "run-worker.sh",
+    "stop-worker.sh",
     "tokenizer_smoke.py",
 )
 
@@ -387,11 +388,10 @@ class DemoTests(unittest.TestCase):
         ).read_text()
         self.assertNotIn("starfolio-diagnostics.service", worker_bootstrap)
         self.assertNotIn("diagnostics.sh", worker_bootstrap)
-        self.assertIn("ExecStopPost=-+/usr/bin/systemctl stop starfolio-gpu-sampler.service", worker_bootstrap)
-        self.assertLess(
-            worker_bootstrap.index("ExecStopPost=-+/usr/bin/systemctl stop starfolio-gpu-sampler.service"),
-            worker_bootstrap.index("ExecStopPost=+/sbin/shutdown -h now"),
-        )
+        self.assertIn("ExecStopPost=+/bin/bash", worker_bootstrap)
+        self.assertIn("stop-worker.sh", worker_bootstrap)
+        self.assertNotIn("ExecStopPost=-+/usr/bin/systemctl stop starfolio-gpu-sampler.service", worker_bootstrap)
+        self.assertNotIn("ExecStopPost=+/sbin/shutdown -h now", worker_bootstrap)
 
     def test_worker_sandbox_has_no_persistent_model_writes(self):
         script = (MODULE.parents[2] / "demo" / "moshi-gateway" / "bootstrap.sh").read_text()

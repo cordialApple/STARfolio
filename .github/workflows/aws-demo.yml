@@ -47,6 +47,7 @@ jobs:
         run: |
           bash -n demo/moshi-gateway/bootstrap.sh
           bash -n demo/moshi-gateway/run-worker.sh
+          bash -n demo/moshi-gateway/stop-worker.sh
       - name: Validate generated infrastructure
         run: |
           python -c "import json; digest='a'*64; json.dump({'name':'starfolio-demo','region':'us-east-2','ami':'ami-0123456789abcdef0','ami_owner':'123456789012','subnet':'subnet-0123456789abcdef0','vpc':'vpc-0123456789abcdef0','hours':0.6666666666666666,'bundle_s3_uri':f's3://demo-artifacts/moshi/{digest}.tar.gz','bundle_sha256':digest,'hf_token_secret_arn':'arn:aws:secretsmanager:us-east-2:123456789012:secret:starfolio/huggingface-test'},open('/tmp/starfolio-config.json','w'))"

@@ -14,14 +14,24 @@ export STARFOLIO_ARC_MODEL_PATH="$model_root/arc"
 unset MOSHI_RETRIEVAL_LLMS_JSON MOSHI_FEEDBACK_WEBHOOK_URL STT_URL STT_API_KEY
 pids=()
 shutdown_reason=normal
+cleanup_active=0
+completion_marker=/run/starfolio-private/worker-complete
+rm -f "$completion_marker"
 cleanup() {
+  cleanup_active=1
+  if [[ "$shutdown_reason" != normal ]]; then rm -f "$completion_marker"; fi
   "$py" gpu_peaks.py startup --stage shutdown --shutdown-reason "$shutdown_reason" || true
   for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
   wait || true
 }
+on_signal() {
+  shutdown_reason=$1
+  rm -f "$completion_marker"
+  if (( ! cleanup_active )); then exit 0; fi
+}
 trap cleanup EXIT
-trap 'shutdown_reason=sigterm; exit 0' TERM
-trap 'shutdown_reason=sigint; exit 0' INT
+trap 'on_signal sigterm' TERM
+trap 'on_signal sigint' INT
 "$py" gateway.py --exit-after-session &
 gateway_pid=$!
 pids+=("$gateway_pid")
@@ -75,5 +85,12 @@ if [[ -n "$child_role" ]]; then
   "$py" gpu_peaks.py startup --stage child_exit \
     --child-role "$child_role" --child-pid "$exited_pid" --exit-code "$exit_code" \
     "${category_args[@]}" || true
+  if [[ ${INVOCATION_ID:-} =~ ^[0-9a-f]{32}$ ]]; then
+    if marker_tmp=$(mktemp "${completion_marker}.XXXXXXXX"); then
+      if ! { printf '%s' "$INVOCATION_ID" > "$marker_tmp" && mv -f "$marker_tmp" "$completion_marker"; }; then
+        rm -f "$marker_tmp"
+      fi
+    fi
+  fi
 fi
 exit "$exit_code"
