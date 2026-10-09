@@ -22,6 +22,7 @@ ARC_REVISION = "c11e53d1016cc586262ee883755410e2ca47ba3c"
 TOKENIZER_REVISION = "0cb88a4f764b7a12671c53f0838cd831a0843b95"
 TOKENIZER_SMOKE = ROOT / "demo" / "moshi-gateway" / "tokenizer_smoke.py"
 STARTUP_SMOKE = ROOT / "demo" / "moshi-gateway" / "startup_smoke.py"
+INTERVIEW_WORKER = ROOT / "demo" / "moshi-gateway" / "interview_worker.py"
 
 
 def load_tokenizer_smoke():
@@ -143,6 +144,7 @@ class RuntimeInputTests(unittest.TestCase):
         workflow = WORKFLOW.read_text()
         self.assertTrue(STARTUP_SMOKE.is_file())
         script = STARTUP_SMOKE.read_text()
+        worker = INTERVIEW_WORKER.read_text()
         command = "/tmp/moshi-runtime/bin/python demo/moshi-gateway/startup_smoke.py"
         self.assertIn(command, workflow)
         self.assertLess(
@@ -151,6 +153,9 @@ class RuntimeInputTests(unittest.TestCase):
         )
         self.assertNotIn("server.main()", script)
         self.assertNotIn("server.load_models()", script)
+        self.assertIn("prepare_interview_server(tracker)", script)
+        self.assertIn("def prepare_interview_server(tracker):", worker)
+        self.assertIn("server, torch = prepare_interview_server(tracker)", worker)
 
     def test_ci_validates_production_inputs_and_generated_infrastructure(self):
         workflow = WORKFLOW.read_text()

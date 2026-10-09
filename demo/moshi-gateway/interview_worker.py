@@ -373,28 +373,33 @@ def diagnose_startup(operation, cuda=None):
         raise
 
 
+def prepare_interview_server(tracker):
+    with diagnose_startup("moshi_import", tracker.cuda):
+        from moshi import server
+        from moshi.inference_utils import channel as channel_module
+        from moshi.inference_utils.channel import Channel
+        from moshi.inference_utils.utils import get_conditioning_remote_async
+        from moshi.models import loaders
+        from moshi.stt import LocalSpeechToText, STTWordMessage
+        import torch
+
+    with diagnose_startup("stt_binding", tracker.cuda):
+        channel_module.LocalSpeechToText = create_local_stt_with_model(
+            LocalSpeechToText,
+            loaders,
+            Path(os.environ["STARFOLIO_STT_MODEL_PATH"]),
+        )
+    with diagnose_startup("server_binding", tracker.cuda):
+        track_interview_lifecycle(server, tracker)
+        server.Channel = create_channel(
+            Channel, STTWordMessage, get_conditioning_remote_async, tracker=tracker
+        )
+    return server, torch
+
+
 def main():
     with PeakTracker("interview") as tracker:
-        with diagnose_startup("moshi_import", tracker.cuda):
-            from moshi import server
-            from moshi.inference_utils import channel as channel_module
-            from moshi.inference_utils.channel import Channel
-            from moshi.inference_utils.utils import get_conditioning_remote_async
-            from moshi.models import loaders
-            from moshi.stt import LocalSpeechToText, STTWordMessage
-            import torch
-
-        with diagnose_startup("stt_binding", tracker.cuda):
-            channel_module.LocalSpeechToText = create_local_stt_with_model(
-                LocalSpeechToText,
-                loaders,
-                Path(os.environ["STARFOLIO_STT_MODEL_PATH"]),
-            )
-        with diagnose_startup("server_binding", tracker.cuda):
-            track_interview_lifecycle(server, tracker)
-            server.Channel = create_channel(
-                Channel, STTWordMessage, get_conditioning_remote_async, tracker=tracker
-            )
+        server, torch = prepare_interview_server(tracker)
         with diagnose_startup("server_main", tracker.cuda):
             run_server_main(server, torch)
 

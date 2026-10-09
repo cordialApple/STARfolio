@@ -1,69 +1,59 @@
+import contextlib
 import importlib.util
+import io
+import os
+import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 SMOKE = Path(__file__).with_name("startup_smoke.py")
 
 
 class StartupSmokeTests(unittest.TestCase):
-    def test_applies_bindings_without_loading_models(self):
+    def load_smoke(self):
         self.assertTrue(SMOKE.is_file())
         spec = importlib.util.spec_from_file_location("startup_smoke", SMOKE)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        return module
 
-        class ChannelBase:
-            pass
+    def test_smoke_calls_production_preparation_with_placeholder_path(self):
+        self.assertIn("prepare_interview_server(tracker)", SMOKE.read_text())
+        smoke = self.load_smoke()
+        observed = []
 
-        class SpeechBase:
-            pass
+        def prepare(tracker):
+            observed.append((os.environ["STARFOLIO_STT_MODEL_PATH"], tracker.cuda))
 
-        def fail_if_loaded(*args, **kwargs):
-            self.fail("Model loading or warmup was called")
+        worker = SimpleNamespace(prepare_interview_server=prepare)
+        output = io.StringIO()
+        with (
+            patch.dict(sys.modules, {"interview_worker": worker}),
+            patch.dict(os.environ, {"STARFOLIO_STT_MODEL_PATH": "real-model-path"}),
+            contextlib.redirect_stdout(output),
+        ):
+            smoke.main()
+        self.assertEqual(observed, [("/startup-smoke-no-model-load", None)])
+        self.assertEqual(output.getvalue(), "STARTUP_BINDINGS_OK\n")
 
-        server = SimpleNamespace(
-            Channel=ChannelBase,
-            load_models=fail_if_loaded,
-            ServerState=SimpleNamespace(warmup=fail_if_loaded),
-        )
-        channel_module = SimpleNamespace(Channel=ChannelBase)
-        stt = SimpleNamespace(LocalSpeechToText=SpeechBase, STTWordMessage=object)
-        loaders = object()
-        tracker = object()
-        model_root = Path("unused-model-root")
-        calls = []
+    def test_broken_production_preparation_fails_smoke(self):
+        self.assertIn("prepare_interview_server(tracker)", SMOKE.read_text())
+        smoke = self.load_smoke()
 
-        def create_stt(base, dependency, path):
-            calls.append(("stt", base, dependency, path))
-            return type("PinnedSpeech", (base,), {})
+        def prepare(tracker):
+            raise RuntimeError("binding broken")
 
-        def track_lifecycle(module, observer):
-            calls.append(("lifecycle", module, observer))
-
-        def create_channel(base, word_type, encode, tracker):
-            calls.append(("channel", base, word_type, encode, tracker))
-            return type("InterviewChannel", (base,), {})
-
-        def encode():
-            return None
-
-        worker = SimpleNamespace(
-            create_local_stt_with_model=create_stt,
-            track_interview_lifecycle=track_lifecycle,
-            create_channel=create_channel,
-        )
-        module.apply_bindings(
-            server, channel_module, stt, loaders, encode, model_root, tracker, worker
-        )
-        self.assertTrue(issubclass(channel_module.LocalSpeechToText, SpeechBase))
-        self.assertTrue(issubclass(server.Channel, ChannelBase))
-        self.assertEqual(calls, [
-            ("stt", SpeechBase, loaders, model_root),
-            ("lifecycle", server, tracker),
-            ("channel", ChannelBase, object, encode, tracker),
-        ])
-
+        worker = SimpleNamespace(prepare_interview_server=prepare)
+        output = io.StringIO()
+        with (
+            patch.dict(sys.modules, {"interview_worker": worker}),
+            contextlib.redirect_stdout(output),
+            self.assertRaisesRegex(RuntimeError, "binding broken"),
+        ):
+            smoke.main()
+        self.assertEqual(output.getvalue(), "")
 
 if __name__ == "__main__":
     unittest.main()
