@@ -1,3 +1,13 @@
 __pycache__/
 *.local.json
 *.tar.gz
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+deadline.zip
+main.tf.json
+.lifecycle.lock
+.apply-started

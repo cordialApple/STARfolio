@@ -90,7 +90,9 @@ class RuntimeInputTests(unittest.TestCase):
         self.assertIn("submodule_search_locations", workflow)
         self.assertIn("verify_moshi_source.py /tmp/moshi-rag/moshi/moshi", workflow)
         self.assertIn("bash -n /tmp/starfolio-user-data.sh", workflow)
-        self.assertIn("cfn-lint /tmp/starfolio-template.json", workflow)
+        self.assertIn("terraform -chdir=/tmp/starfolio-terraform validate", workflow)
+        self.assertIn("terraform -chdir=/tmp/starfolio-terraform test", workflow)
+        self.assertIn("-lockfile=readonly", workflow)
         self.assertIn("'hours':0.6666666666666666", workflow)
 
     def test_bootstrap_uses_secret_token_ephemerally(self):

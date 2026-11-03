@@ -74,7 +74,9 @@ def capture_snapshot(aws, config, trial_id, now=None):
         "accountId": None,
         "region": config["region"],
         "bundleSha256": config.get("bundle_sha256"),
-        "stackName": config["name"],
+        "stackName": None,
+        "deploymentName": config["name"],
+        "provisioner": "terraform",
         "stackStatus": None,
         "instance": None,
         "metrics": None,
@@ -86,18 +88,12 @@ def capture_snapshot(aws, config, trial_id, now=None):
     except (OSError, subprocess.CalledProcessError, KeyError) as error:
         errors["identity"] = str(error)
     try:
-        stack = aws("cloudformation", "describe-stacks", "--stack-name", config["name"])["Stacks"][0]
-        outputs = {item["OutputKey"]: item["OutputValue"] for item in stack.get("Outputs", [])}
-        if outputs.get("TrialId") != trial_id:
-            errors["stack"] = "Stack trial ID absent or different"
-        else:
-            result["stackStatus"] = stack.get("StackStatus")
-    except (OSError, subprocess.CalledProcessError, KeyError, IndexError) as error:
-        errors["stack"] = str(error)
-    try:
         reservations = aws(
             "ec2", "describe-instances", "--filters",
-            json.dumps([{"Name": "tag:StarfolioTrial", "Values": [trial_id]}]),
+            json.dumps([
+                {"Name": "tag:StarfolioTrial", "Values": [trial_id]},
+                {"Name": "tag:StarfolioDemo", "Values": [config["name"]]},
+            ]),
         ).get("Reservations", [])
         instances = [item for group in reservations for item in group.get("Instances", [])]
         if len(instances) > 1:

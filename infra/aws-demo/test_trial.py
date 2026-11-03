@@ -27,12 +27,6 @@ class TrialTests(unittest.TestCase):
         self.now = datetime(2026, 9, 24, 12, tzinfo=timezone.utc)
         self.responses = {
             ("sts", "get-caller-identity"): {"Account": "123456789012"},
-            ("cloudformation", "describe-stacks"): {
-                "Stacks": [{"StackStatus": "CREATE_COMPLETE", "Outputs": [
-                    {"OutputKey": "TrialId", "OutputValue": TRIAL_ID},
-                    {"OutputKey": "InstanceId", "OutputValue": "i-0123456789abcdef0"},
-                ]}]
-            },
             ("ec2", "describe-instances"): {"Reservations": [{"Instances": [{
                 "InstanceId": "i-0123456789abcdef0",
                 "InstanceType": "g6e.2xlarge",
@@ -53,6 +47,14 @@ class TrialTests(unittest.TestCase):
         calls = Mock(side_effect=self.aws)
         snapshot = self.trial.capture_snapshot(calls, self.config, TRIAL_ID, self.now)
         self.assertEqual(snapshot["schemaVersion"], 1)
+        self.assertEqual(snapshot["provisioner"], "terraform")
+        self.assertEqual(snapshot["deploymentName"], "starfolio-demo")
+        self.assertFalse(any(call.args[0] == "cloudformation" for call in calls.call_args_list))
+        instance_call = next(call for call in calls.call_args_list if call.args[:2] == ("ec2", "describe-instances"))
+        self.assertEqual(json.loads(instance_call.args[3]), [
+            {"Name": "tag:StarfolioTrial", "Values": [TRIAL_ID]},
+            {"Name": "tag:StarfolioDemo", "Values": ["starfolio-demo"]},
+        ])
         self.assertEqual(snapshot["trialId"], TRIAL_ID)
         self.assertEqual(snapshot["accountId"], "123456789012")
         self.assertEqual(snapshot["instance"]["id"], "i-0123456789abcdef0")
@@ -70,8 +72,6 @@ class TrialTests(unittest.TestCase):
         def unavailable(service, operation, *args):
             if service == "sts":
                 raise OSError("credentials unavailable")
-            if service == "cloudformation":
-                raise OSError("stack absent")
             return {"Reservations": []}
 
         snapshot = self.trial.capture_snapshot(unavailable, self.config, TRIAL_ID, self.now)
@@ -79,7 +79,7 @@ class TrialTests(unittest.TestCase):
         self.assertIsNone(snapshot["stackStatus"])
         self.assertIsNone(snapshot["instance"])
         self.assertIsNone(snapshot["metrics"])
-        self.assertEqual(set(snapshot["errors"]), {"identity", "stack"})
+        self.assertEqual(set(snapshot["errors"]), {"identity"})
 
     def test_gpu_snapshot_preserves_discovered_series_and_raw_datapoints(self):
         dimensions = [
