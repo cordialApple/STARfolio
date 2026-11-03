@@ -1,0 +1,35 @@
+name: PBT tooling checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  retention-tools:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install tooling without native lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Verify observation processing and retention
+        run: >-
+          npx --no-install vitest run tests/unit/pbt-workflow.test.ts
+          src/main/voice/pbt/observation-publication.test.ts
+          src/main/voice/pbt/retention-append.test.ts
+          src/main/voice/pbt/observation-schema.test.ts
+          src/main/voice/pbt/observation-store.test.ts

@@ -29,7 +29,7 @@ jobs:
 
       - name: Install trusted retention code
         working-directory: app
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Download main source cycle
         uses: actions/download-artifact@v4
@@ -88,7 +88,7 @@ jobs:
 
       - name: Install trusted retention code
         working-directory: app
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Download validated cycle
         uses: actions/download-artifact@v4
