@@ -1,14 +1,18 @@
 import argparse
 import base64
 import hashlib
+import io
 import json
 import math
+import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
+import zipfile
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -127,6 +131,22 @@ def aws_client(region):
         return json.loads(result.stdout) if result.stdout.strip() else {}
 
     return call
+
+
+def ensure_no_legacy_stack(aws, name):
+    try:
+        aws("cloudformation", "describe-stacks", "--stack-name", name)
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr or ""
+        if (
+            "ValidationError" in detail
+            and f"Stack with id {name} does not exist" in detail
+        ):
+            return
+        raise
+    raise ValueError(
+        "Legacy CloudFormation stack exists; delete it and wait for deletion before Terraform launch"
+    )
 
 
 def ensure_no_active_demo(aws):
@@ -331,13 +351,6 @@ def make_trust_policy(service):
     }
 
 
-def make_inline_policy(name, statements):
-    return {
-        "PolicyName": name,
-        "PolicyDocument": {"Version": "2012-10-17", "Statement": statements},
-    }
-
-
 def make_bootstrap(config, plan):
     bundle = config["bundle_s3_uri"]
     secret_region, _ = secret_region_and_account(config)
@@ -374,279 +387,348 @@ def make_bootstrap(config, plan):
     )
 
 
-def make_worker_role(config, plan):
-    bundle_arn = "arn:${AWS::Partition}:s3:::" + config["bundle_s3_uri"].removeprefix(
-        "s3://"
-    )
-    diagnostics_arn = "arn:${AWS::Partition}:s3:::" + plan[
-        "diagnostics_s3_uri"
-    ].removeprefix("s3://")
-    telemetry_arn = "arn:${AWS::Partition}:s3:::" + plan[
-        "telemetry_s3_prefix"
-    ].removeprefix("s3://") + "*"
+def make_worker_policy(config, plan):
     return {
-        "Type": "AWS::IAM::Role",
-        "Properties": {
-            "AssumeRolePolicyDocument": make_trust_policy("ec2.amazonaws.com"),
-            "Policies": [
-                make_inline_policy(
-                    "SessionManager",
-                    [
-                        {
-                            "Sid": "SessionManager",
-                            "Effect": "Allow",
-                            "Action": [
-                                "ssm:UpdateInstanceInformation",
-                                "ssmmessages:CreateControlChannel",
-                                "ssmmessages:CreateDataChannel",
-                                "ssmmessages:OpenControlChannel",
-                                "ssmmessages:OpenDataChannel",
-                            ],
-                            "Resource": "*",
-                        }
-                    ],
-                ),
-                make_inline_policy(
-                    "ReadDemoBundle",
-                    [
-                        {
-                            "Effect": "Allow",
-                            "Action": "s3:GetObject",
-                            "Resource": {"Fn::Sub": bundle_arn},
-                        }
-                    ],
-                ),
-                make_inline_policy(
-                    "WriteTrialDiagnostics",
-                    [
-                        {
-                            "Effect": "Allow",
-                            "Action": "s3:PutObject",
-                            "Resource": {"Fn::Sub": diagnostics_arn},
-                        }
-                    ],
-                ),
-                make_inline_policy(
-                    "WriteTrialGpuTelemetry",
-                    [
-                        {
-                            "Effect": "Allow",
-                            "Action": "s3:PutObject",
-                            "Resource": {"Fn::Sub": telemetry_arn},
-                        }
-                    ],
-                ),
-                make_inline_policy(
-                    "PublishGpuMetrics",
-                    [
-                        {
-                            "Effect": "Allow",
-                            "Action": "cloudwatch:PutMetricData",
-                            "Resource": "*",
-                            "Condition": {
-                                "StringEquals": {
-                                    "cloudwatch:namespace": "STARfolio/MoshiRAG"
-                                }
-                            },
-                        }
-                    ],
-                ),
-                make_inline_policy(
-                    "ReadHuggingFaceToken",
-                    [
-                        {
-                            "Effect": "Allow",
-                            "Action": "secretsmanager:GetSecretValue",
-                            "Resource": config["hf_token_secret_arn"],
-                        }
-                    ],
-                ),
-            ],
-        },
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "SessionManager",
+                "Effect": "Allow",
+                "Action": [
+                    "ssm:UpdateInstanceInformation",
+                    "ssmmessages:CreateControlChannel",
+                    "ssmmessages:CreateDataChannel",
+                    "ssmmessages:OpenControlChannel",
+                    "ssmmessages:OpenDataChannel",
+                ],
+                "Resource": "*",
+            },
+            {
+                "Effect": "Allow",
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::"
+                + config["bundle_s3_uri"].removeprefix("s3://"),
+            },
+            {
+                "Effect": "Allow",
+                "Action": "s3:PutObject",
+                "Resource": "arn:aws:s3:::"
+                + plan["diagnostics_s3_uri"].removeprefix("s3://"),
+            },
+            {
+                "Effect": "Allow",
+                "Action": "s3:PutObject",
+                "Resource": "arn:aws:s3:::"
+                + plan["telemetry_s3_prefix"].removeprefix("s3://")
+                + "*",
+            },
+            {
+                "Effect": "Allow",
+                "Action": "cloudwatch:PutMetricData",
+                "Resource": "*",
+                "Condition": {
+                    "StringEquals": {"cloudwatch:namespace": "STARfolio/MoshiRAG"}
+                },
+            },
+            {
+                "Effect": "Allow",
+                "Action": "secretsmanager:GetSecretValue",
+                "Resource": config["hf_token_secret_arn"],
+            },
+        ],
     }
 
 
-def make_template(config, plan, root_device):
+def deadline_archive():
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        entry = zipfile.ZipInfo("index.py", date_time=(2026, 1, 1, 0, 0, 0))
+        entry.external_attr = 0o644 << 16
+        archive.writestr(entry, Path(__file__).with_name("deadline.py").read_bytes())
+    return output.getvalue()
+
+
+def make_terraform(config, plan):
+    _, account = secret_region_and_account(config)
     name = config["name"]
-    bootstrap = make_bootstrap(config, plan)
-    network_properties = (
-        {"SecurityGroupIds": [{"Ref": "SecurityGroup"}]}
-        if config["subnet"] is None
-        else {
-            "NetworkInterfaces": [
-                {
-                    "AssociatePublicIpAddress": True,
-                    "DeviceIndex": "0",
-                    "SubnetId": config["subnet"],
-                    "GroupSet": [{"Ref": "SecurityGroup"}],
-                }
-            ]
-        }
-    )
-    lambda_code = """import boto3
-
-def handler(event, context):
-    ec2 = boto3.client('ec2')
-    result = ec2.describe_instances(Filters=[
-        {'Name': 'tag:StarfolioDemo', 'Values': [event['name']]},
-        {'Name': 'instance-state-name', 'Values': ['pending', 'running', 'stopping', 'stopped']},
-    ])
-    ids = [instance['InstanceId'] for reservation in result['Reservations'] for instance in reservation['Instances']]
-    if ids:
-        ec2.terminate_instances(InstanceIds=ids)
-    return {'terminated': len(ids)}
-"""
-    resources = {
-        "SecurityGroup": {
-            "Type": "AWS::EC2::SecurityGroup",
-            "Properties": {
-                "GroupDescription": "Starfolio demo outbound HTTPS only; inbound through SSM",
-                "VpcId": config["vpc"],
-                "SecurityGroupIngress": [],
-                "SecurityGroupEgress": [
-                    {
-                        "IpProtocol": "tcp",
-                        "FromPort": 443,
-                        "ToPort": 443,
-                        "CidrIp": "0.0.0.0/0",
-                    },
-                    {
-                        "IpProtocol": "tcp",
-                        "FromPort": 80,
-                        "ToPort": 80,
-                        "CidrIp": "0.0.0.0/0",
-                    },
-                ],
-            },
-        },
-        "WorkerRole": make_worker_role(config, plan),
-        "WorkerProfile": {
-            "Type": "AWS::IAM::InstanceProfile",
-            "Properties": {"Roles": [{"Ref": "WorkerRole"}]},
-        },
-        "DeadlineRole": {
-            "Type": "AWS::IAM::Role",
-            "Properties": {
-                "AssumeRolePolicyDocument": make_trust_policy("lambda.amazonaws.com"),
-                "Policies": [
-                    make_inline_policy(
-                        "TerminateDemo",
-                        [
-                            {
-                                "Effect": "Allow",
-                                "Action": "ec2:DescribeInstances",
-                                "Resource": "*",
-                            },
-                            {
-                                "Effect": "Allow",
-                                "Action": "ec2:TerminateInstances",
-                                "Resource": {
-                                    "Fn::Sub": "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
-                                },
-                                "Condition": {
-                                    "StringEquals": {
-                                        "ec2:ResourceTag/StarfolioDemo": name
-                                    }
-                                },
-                            },
-                        ],
-                    )
-                ],
-            },
-        },
-        "DeadlineFunction": {
-            "Type": "AWS::Lambda::Function",
-            "Properties": {
-                "Runtime": "python3.12",
-                "Handler": "index.handler",
-                "Timeout": 30,
-                "MemorySize": 128,
-                "Role": {"Fn::GetAtt": ["DeadlineRole", "Arn"]},
-                "Code": {"ZipFile": lambda_code},
-            },
-        },
-        "ScheduleRole": {
-            "Type": "AWS::IAM::Role",
-            "Properties": {
-                "AssumeRolePolicyDocument": make_trust_policy(
-                    "scheduler.amazonaws.com"
-                ),
-                "Policies": [
-                    make_inline_policy(
-                        "InvokeDeadline",
-                        [
-                            {
-                                "Effect": "Allow",
-                                "Action": "lambda:InvokeFunction",
-                                "Resource": {"Fn::GetAtt": ["DeadlineFunction", "Arn"]},
-                            }
-                        ],
-                    )
-                ],
-            },
-        },
-        "DeadlineSchedule": {
-            "Type": "AWS::Scheduler::Schedule",
-            "Properties": {
-                "ScheduleExpression": "at(" + plan["deadline"].removesuffix("Z") + ")",
-                "ScheduleExpressionTimezone": "UTC",
-                "FlexibleTimeWindow": {"Mode": "OFF"},
-                "State": "ENABLED",
-                "Target": {
-                    "Arn": {"Fn::GetAtt": ["DeadlineFunction", "Arn"]},
-                    "RoleArn": {"Fn::GetAtt": ["ScheduleRole", "Arn"]},
-                    "Input": json.dumps({"name": name}),
-                    "RetryPolicy": {
-                        "MaximumEventAgeInSeconds": 300,
-                        "MaximumRetryAttempts": 5,
-                    },
-                },
-            },
-        },
-        "Worker": {
-            "Type": "AWS::EC2::Instance",
-            "DependsOn": ["DeadlineSchedule"],
-            "Properties": {
-                "ImageId": config["ami"],
-                "InstanceType": plan["instance_type"],
-                "IamInstanceProfile": {"Ref": "WorkerProfile"},
-                "InstanceInitiatedShutdownBehavior": "terminate",
-                "MetadataOptions": {
-                    "HttpTokens": "required",
-                    "HttpEndpoint": "enabled",
-                    "HttpPutResponseHopLimit": 1,
-                },
-                **network_properties,
-                "BlockDeviceMappings": [
-                    {
-                        "DeviceName": root_device,
-                        "Ebs": {
-                            "VolumeSize": 150,
-                            "VolumeType": "gp3",
-                            "Encrypted": True,
-                            "DeleteOnTermination": True,
-                        },
+    trial_id = plan["trial_id"]
+    prefix = name[:16] + "-" + hashlib.sha256(name.encode()).hexdigest()[:8]
+    tags = {
+        "Name": name,
+        TAG_KEY: name,
+        "StarfolioTrial": trial_id,
+        "DemoDeadline": plan["deadline"],
+    }
+    termination_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {"Effect": "Allow", "Action": "ec2:DescribeInstances", "Resource": "*"},
+            {
+                "Effect": "Allow",
+                "Action": "ec2:TerminateInstances",
+                "Resource": f"arn:aws:ec2:{config['region']}:{account}:instance/*",
+                "Condition": {
+                    "StringEquals": {
+                        "ec2:ResourceTag/StarfolioDemo": name,
+                        "ec2:ResourceTag/StarfolioTrial": trial_id,
                     }
-                ],
-                "Tags": [
-                    {"Key": "Name", "Value": name},
-                    {"Key": TAG_KEY, "Value": name},
-                    {"Key": "StarfolioTrial", "Value": plan["trial_id"]},
-                    {"Key": "DemoDeadline", "Value": plan["deadline"]},
-                ],
-                "UserData": base64.b64encode(bootstrap.encode()).decode(),
+                },
             },
-        },
+        ],
+    }
+    invoke_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": "lambda:InvokeFunction",
+                "Resource": "${aws_lambda_function.deadline.arn}",
+            }
+        ],
     }
     return {
-        "AWSTemplateFormatVersion": "2010-09-09",
-        "Description": "One temporary MoshiRAG worker with independent deadline termination",
-        "Resources": resources,
-        "Outputs": {
-            "InstanceId": {"Value": {"Ref": "Worker"}},
-            "Deadline": {"Value": plan["deadline"]},
-            "TrialId": {"Value": plan["trial_id"]},
+        "terraform": {
+            "required_version": ">= 1.7.0, < 2.0.0",
+            "required_providers": {
+                "aws": {"source": "hashicorp/aws", "version": "= 6.21.0"}
+            },
         },
+        "locals": {"deadline": plan["deadline"]},
+        "provider": {
+            "aws": {
+                "region": config["region"],
+                "allowed_account_ids": [account],
+                "default_tags": {"tags": tags},
+            }
+        },
+        "resource": {
+            "aws_security_group": {
+                "worker": {
+                    "name_prefix": prefix + "-",
+                    "description": "Starfolio outbound HTTP/HTTPS; inbound through SSM",
+                    "vpc_id": config["vpc"],
+                    "ingress": [],
+                    "egress": [
+                        {
+                            "protocol": "tcp",
+                            "from_port": port,
+                            "to_port": port,
+                            "cidr_blocks": ["0.0.0.0/0"],
+                            "ipv6_cidr_blocks": [],
+                            "prefix_list_ids": [],
+                            "security_groups": [],
+                            "self": False,
+                            "description": "",
+                        }
+                        for port in (443, 80)
+                    ],
+                }
+            },
+            "aws_iam_role": {
+                label: {
+                    "name_prefix": prefix + "-" + label + "-",
+                    "assume_role_policy": json.dumps(make_trust_policy(service)),
+                }
+                for label, service in (
+                    ("worker", "ec2.amazonaws.com"),
+                    ("deadline", "lambda.amazonaws.com"),
+                    ("schedule", "scheduler.amazonaws.com"),
+                )
+            },
+            "aws_iam_role_policy": {
+                label: {
+                    "name": label,
+                    "role": "${aws_iam_role." + label + ".id}",
+                    "policy": json.dumps(policy),
+                }
+                for label, policy in (
+                    ("worker", make_worker_policy(config, plan)),
+                    ("deadline", termination_policy),
+                    ("schedule", invoke_policy),
+                )
+            },
+            "aws_iam_instance_profile": {
+                "worker": {
+                    "name_prefix": prefix + "-",
+                    "role": "${aws_iam_role.worker.name}",
+                }
+            },
+            "aws_lambda_function": {
+                "deadline": {
+                    "function_name": prefix + "-deadline",
+                    "runtime": "python3.12",
+                    "handler": "index.handler",
+                    "timeout": 30,
+                    "memory_size": 128,
+                    "role": "${aws_iam_role.deadline.arn}",
+                    "filename": "${path.module}/deadline.zip",
+                    "source_code_hash": base64.b64encode(
+                        hashlib.sha256(deadline_archive()).digest()
+                    ).decode(),
+                    "depends_on": ["aws_iam_role_policy.deadline"],
+                }
+            },
+            "aws_scheduler_schedule": {
+                "deadline": {
+                    "name_prefix": prefix + "-",
+                    "schedule_expression": "at("
+                    + plan["deadline"].removesuffix("Z")
+                    + ")",
+                    "schedule_expression_timezone": "UTC",
+                    "flexible_time_window": {"mode": "OFF"},
+                    "state": "ENABLED",
+                    "target": {
+                        "arn": "${aws_lambda_function.deadline.arn}",
+                        "role_arn": "${aws_iam_role.schedule.arn}",
+                        "input": json.dumps({"name": name, "trial_id": trial_id}),
+                        "retry_policy": {
+                            "maximum_event_age_in_seconds": 300,
+                            "maximum_retry_attempts": 5,
+                        },
+                    },
+                    "depends_on": ["aws_iam_role_policy.schedule"],
+                }
+            },
+            "aws_instance": {
+                "worker": {
+                    "ami": config["ami"],
+                    "instance_type": plan["instance_type"],
+                    "iam_instance_profile": "${aws_iam_instance_profile.worker.name}",
+                    "instance_initiated_shutdown_behavior": "terminate",
+                    "metadata_options": {
+                        "http_tokens": "required",
+                        "http_endpoint": "enabled",
+                        "http_put_response_hop_limit": 1,
+                    },
+                    "vpc_security_group_ids": ["${aws_security_group.worker.id}"],
+                    **({"subnet_id": config["subnet"]} if config["subnet"] else {}),
+                    "associate_public_ip_address": True,
+                    "root_block_device": {
+                        "volume_size": 150,
+                        "volume_type": "gp3",
+                        "encrypted": True,
+                        "delete_on_termination": True,
+                    },
+                    "user_data_base64": base64.b64encode(
+                        make_bootstrap(config, plan).encode()
+                    ).decode(),
+                    "tags": tags,
+                    "depends_on": [
+                        "aws_scheduler_schedule.deadline",
+                        "aws_iam_role_policy.worker",
+                    ],
+                    "lifecycle": {
+                        "precondition": [
+                            {
+                                "condition": '${timecmp(timeadd(timestamp(), "5m"), local.deadline) < 0}',
+                                "error_message": "Deadline too close or expired; delete deployment and launch again.",
+                            }
+                        ]
+                    },
+                }
+            },
+        },
+        "output": {
+            "instance_id": {"value": "${aws_instance.worker.id}"},
+            "deadline": {"value": plan["deadline"]},
+            "trial_id": {"value": trial_id},
+        },
+    }
+
+
+def deployment_directory(config):
+    _, account = secret_region_and_account(config)
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library/Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    return base / "STARfolio/terraform" / account / config["region"] / config["name"]
+
+
+@contextmanager
+def deployment_lock(directory):
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = directory / ".lifecycle.lock"
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError as error:
+        raise ValueError(
+            f"Deployment busy: {path}. If interrupted, verify no command runs before removing lock."
+        ) from error
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            output.write(str(os.getpid()))
+        yield
+    finally:
+        path.unlink()
+
+
+def prepare_deployment(directory, config, plan):
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = directory / "main.tf.json"
+    if path.exists():
+        raise ValueError("Deployment already exists; run delete before another launch")
+    state = directory / "terraform.tfstate"
+    if state.exists() and json.loads(state.read_text()).get("resources"):
+        raise ValueError(
+            "Existing Terraform state owns resources; restore configuration and delete first"
+        )
+    shutil.copyfile(
+        Path(__file__).with_name(".terraform.lock.hcl"),
+        directory / ".terraform.lock.hcl",
+    )
+    (directory / "deadline.zip").write_bytes(deadline_archive())
+    write_terraform_config(directory, config, plan)
+
+
+def write_terraform_config(directory, config, plan):
+    (directory / "main.tf.json").write_text(
+        json.dumps(make_terraform(config, plan), indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def terraform(directory, *args, capture=False):
+    result = subprocess.run(
+        ["terraform", "-chdir=" + str(directory), *args, "-no-color"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE if capture else sys.stderr,
+        env={**os.environ, "TF_WORKSPACE": "default"},
+    )
+    return json.loads(result.stdout) if capture else None
+
+
+def require_deployment(directory):
+    if (
+        not (directory / "main.tf.json").is_file()
+        or not (directory / "terraform.tfstate").is_file()
+    ):
+        raise ValueError(
+            f"Terraform configuration/state missing at {directory}; restore state before cleanup. Legacy CloudFormation stacks need separate cleanup."
+        )
+
+
+def delete_deployment(directory):
+    if not (directory / "main.tf.json").is_file():
+        raise ValueError(f"Deployment configuration missing at {directory}")
+    if (directory / ".apply-started").exists() or (
+        directory / "terraform.tfstate"
+    ).exists():
+        require_deployment(directory)
+        terraform(directory, "init", "-input=false", "-lockfile=readonly")
+        terraform(directory, "destroy", "-input=false", "-auto-approve")
+    (directory / "main.tf.json").unlink()
+    (directory / "deadline.zip").unlink(missing_ok=True)
+    (directory / ".apply-started").unlink(missing_ok=True)
+
+
+def deployment_outputs(directory):
+    require_deployment(directory)
+    return {
+        key: value["value"]
+        for key, value in terraform(directory, "output", "-json", capture=True).items()
     }
 
 
@@ -664,33 +746,6 @@ def tunnel_command(region, instance, port):
         "--parameters",
         json.dumps({"portNumber": ["8765"], "localPortNumber": [str(port)]}),
     ]
-
-
-def instance_from_outputs(stack):
-    return next(
-        (
-            entry["OutputValue"]
-            for entry in stack.get("Outputs", [])
-            if entry["OutputKey"] == "InstanceId"
-        ),
-        None,
-    )
-
-
-def stack_instance(aws, name):
-    stack = aws("cloudformation", "describe-stacks", "--stack-name", name)["Stacks"][0]
-    instance = instance_from_outputs(stack)
-    if instance:
-        return instance
-    result = aws(
-        "cloudformation",
-        "describe-stack-resource",
-        "--stack-name",
-        name,
-        "--logical-resource-id",
-        "Worker",
-    )
-    return result["StackResourceDetail"]["PhysicalResourceId"]
 
 
 def pack(source, destination):
@@ -725,6 +780,7 @@ def main(argv=None):
         sub.add_argument("--config", type=Path, required=True)
         if command == "plan":
             sub.add_argument("--output", type=Path)
+            sub.add_argument("--terraform-dir", type=Path)
         if command in ("plan", "launch"):
             sub.add_argument("--trial-id")
         if command == "upload":
@@ -755,17 +811,23 @@ def main(argv=None):
     ) or not re.fullmatch(r"us-(?:east-[12]|west-[12])", config.get("region", "")):
         raise ValueError("Invalid demo name or region")
     aws = aws_client(config["region"])
+    if args.command in ("status", "stop", "tunnel"):
+        _, account = secret_region_and_account(config)
+        if aws("sts", "get-caller-identity")["Account"] != account:
+            raise ValueError("Active AWS account differs from Terraform deployment account")
     if args.command in ("plan", "launch", "upload"):
         plan = make_plan(config, trial_id=getattr(args, "trial_id", None))
         if args.command == "plan":
             output = {
                 "plan": plan,
-                "template": make_template(config, plan, "/dev/sda1"),
+                "terraform": make_terraform(config, plan),
             }
             if args.output:
                 args.output.write_text(
                     json.dumps(output, indent=2) + "\n", encoding="utf-8"
                 )
+            if args.terraform_dir:
+                prepare_deployment(args.terraform_dir, config, plan)
             print(json.dumps(plan, indent=2))
         elif args.command == "upload":
             if (
@@ -792,58 +854,45 @@ def main(argv=None):
             )
             print("Bundle uploaded; lifecycle not launched.")
         else:
-            ensure_no_active_demo(aws)
-            root = preflight(aws, config)
-            plan = make_plan(config, trial_id=args.trial_id)
-            with tempfile.TemporaryDirectory(prefix="starfolio-demo-") as directory:
-                path = Path(directory) / "template.json"
-                path.write_text(
-                    json.dumps(make_template(config, plan, root)), encoding="utf-8"
-                )
-                result = aws(
-                    "cloudformation",
-                    "create-stack",
-                    "--stack-name",
-                    config["name"],
-                    "--template-body",
-                    "file://" + path.as_posix(),
-                    "--capabilities",
-                    "CAPABILITY_IAM",
-                    "--on-failure",
-                    "DELETE",
-                    "--timeout-in-minutes",
-                    "20",
-                    "--tags",
-                    f"Key={TAG_KEY},Value={config['name']}",
-                )
+            directory = deployment_directory(config)
+            with deployment_lock(directory):
+                if (directory / "main.tf.json").exists():
+                    raise ValueError(
+                        "Deployment already exists; run delete before another launch"
+                    )
+                ensure_no_legacy_stack(aws, config["name"])
+                ensure_no_active_demo(aws)
+                preflight(aws, config)
+                plan = make_plan(config, trial_id=args.trial_id)
+                prepare_deployment(directory, config, plan)
+                print(f"Terraform state: {directory}", file=sys.stderr)
+                terraform(directory, "init", "-input=false", "-lockfile=readonly")
+                plan = make_plan(config, trial_id=plan["trial_id"])
+                write_terraform_config(directory, config, plan)
+                (directory / ".apply-started").touch(exist_ok=False)
+                terraform(directory, "apply", "-input=false", "-auto-approve")
                 print(
                     json.dumps(
                         {
-                            "stack": result,
+                            "state_directory": str(directory),
                             "plan": plan,
-                            "next": "Run status until CREATE_COMPLETE; then tunnel and check http://127.0.0.1:8765/health.",
+                            "next": "Run status, then tunnel and check http://127.0.0.1:8765/health.",
                         },
                         indent=2,
                     )
                 )
     elif args.command == "delete":
+        directory = deployment_directory(config)
+        with deployment_lock(directory):
+            delete_deployment(directory)
         print(
-            json.dumps(
-                aws("cloudformation", "delete-stack", "--stack-name", config["name"])
-            )
-        )
-        print(
-            "Deletion requested. Run status until stack is absent; verify instance terminated and bundle deleted from S3."
+            "Terraform resources deleted. Existing S3 bundle and trial artifacts retained."
         )
     elif args.command == "status":
-        stack = aws(
-            "cloudformation", "describe-stacks", "--stack-name", config["name"]
-        )["Stacks"][0]
-        result = {
-            "stack_status": stack["StackStatus"],
-            "outputs": stack.get("Outputs", []),
-        }
-        instance = instance_from_outputs(stack)
+        directory = deployment_directory(config)
+        outputs = deployment_outputs(directory)
+        result = {"state_directory": str(directory), "outputs": outputs}
+        instance = outputs.get("instance_id")
         if instance:
             record = aws("ec2", "describe-instances", "--instance-ids", instance)[
                 "Reservations"
@@ -857,7 +906,9 @@ def main(argv=None):
             ).get("InstanceInformationList", [])
         print(json.dumps(result, indent=2))
     else:
-        instance = stack_instance(aws, config["name"])
+        instance = deployment_outputs(deployment_directory(config)).get("instance_id")
+        if not instance:
+            raise ValueError("Worker instance absent from Terraform outputs")
         if args.command == "stop":
             print(
                 json.dumps(

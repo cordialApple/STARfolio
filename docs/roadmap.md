@@ -81,7 +81,7 @@ then reconcile markdown-schema and refresh behavior.
 - Feature slices get intermittent end-to-end coverage during development.
 - Merge gates run lint, typecheck, unit and integration tests, production packaging, and packaged-app
   Electron smoke tests.
-- AWS worker changes also run source-contract, lifecycle, shell, and CloudFormation validation.
+- AWS worker changes also run source-contract, lifecycle, shell, Terraform validation, and mocked apply/destroy checks.
 - Live GPU tests stay explicit and evidence-producing. They never silently skip and report green.
 - Property tests use deterministic CI replay. Model-generated cases are authored offline and reviewed
   before they become merge gates.

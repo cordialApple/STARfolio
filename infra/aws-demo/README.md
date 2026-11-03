@@ -1,10 +1,10 @@
 # Temporary AWS MoshiRAG worker
 
-This runner creates one temporary GPU worker for MoshiRAG. STARfolio, its data, and its interview brain stay on the normal local machine. Tests and `plan` create nothing. `upload` writes the code bundle, and `launch` creates the worker stack. Desktop AWS authentication stays in the AWS CLI profile or SSO session. No AWS keys enter the app or worker bundle.
+Runner provisions one temporary GPU worker through native Terraform AWS resources. STARfolio, its data, and interview brain stay local. Tests and `plan` create no AWS resources. `upload` writes code bundle; `launch` provisions worker. Desktop AWS authentication stays in AWS profile or SSO session. No AWS keys enter app or worker bundle.
 
 ## Before launch
 
-- Python 3.10+ and AWS CLI v2 on the desktop. Install the AWS Session Manager plugin for `tunnel`.
+- Python 3.10+, Terraform 1.7+ (below 2.0), and AWS CLI v2 on desktop. CI uses Terraform 1.15.5; AWS provider 6.21.0 is pinned with signed package checksums. Install AWS Session Manager plugin for `tunnel`.
 - Existing S3 bucket in the chosen region, blocking public access. Bundle object uses SSE-S3; existing bucket is preserved on cleanup.
 - Hugging Face read token in Secrets Manager. Its full ARN may point to another supported US region in the same AWS account. The worker reads that secret from its home-region endpoint without creating a replica.
 - Existing VPC/public subnet with a direct internet gateway route, or a default VPC with safe default subnets for automatic placement. No NAT gateway, load balancer, or public inbound rule is created. Outbound HTTP/HTTPS allows package/model downloads. Local services bind loopback; SSM forwards port 8765.
@@ -24,11 +24,11 @@ Copy-Item infra/aws-demo/config.example.json infra/aws-demo/config.local.json
 
 Fill `config.local.json`: verified AMI/owner/subnet/VPC, worker lifetime, bucket URI, and SHA256 returned by `pack`. Use that SHA256 as the S3 object name.
 
-For an ordered capacity trial, keep the example's 40-minute `hours` value and set `instance_type` to `g6e.4xlarge`. If EC2 cannot allocate it, capture the failed trial and wait until its stack is fully deleted. Then use a fresh trial ID with `g6e.8xlarge`, followed by `g6e.16xlarge` only if needed. Never start the next size while a worker or stack remains. A regional offering is not proof of live capacity.
+For an ordered capacity trial, keep the example's 40-minute `hours` value and set `instance_type` to `g6e.4xlarge`. If EC2 cannot allocate it, capture the failed trial and wait until its Terraform deployment is fully deleted. Then use a fresh trial ID with `g6e.8xlarge`, followed by `g6e.16xlarge` only if needed. Never start the next size while a worker or deployment remains. A regional offering is not proof of live capacity.
 
 Set `"subnet": null` to let EC2 choose a default subnet and zone. This works only with an available default VPC. Preflight requires every default subnet to assign public IPs and have an active internet-gateway route, and at least one default zone must offer the GPU type. EC2 may still reject current capacity. Keep an explicit subnet ID for a pinned zone.
 
-When moving regions, change the worker region, AMI and owner, VPC, public subnet, and bundle bucket URI together. The worker's quota, stack, SSM session, and EC2 metrics follow the worker region. The Hugging Face secret ARN can remain in its original region; preflight checks that its account matches the active AWS identity, and only the secret read uses the ARN's region. No secret value enters local config or the bundle.
+When moving regions, change the worker region, AMI and owner, VPC, public subnet, and bundle bucket URI together. The worker's quota, Terraform resources, SSM session, and EC2 metrics follow the worker region. The Hugging Face secret ARN can remain in its original region; preflight checks that its account matches the active AWS identity, and only the secret read uses the ARN's region. No secret value enters local config or the bundle.
 
 ```powershell
 $trialId = [guid]::NewGuid().ToString()
@@ -39,27 +39,44 @@ python infra/aws-demo/demo.py status --config infra/aws-demo/config.local.json
 python infra/aws-demo/demo.py tunnel --config infra/aws-demo/config.local.json
 ```
 
-Review the generated plan/template before launch. Offline template previews use `/dev/sda1`; `launch` replaces this with the selected AMI's actual root device. It revalidates the worker deadline after AWS preflight. `CREATE_COMPLETE` means infrastructure exists; it does not mean models finished loading. Wait for SSM Online, start the tunnel, then check `http://127.0.0.1:8765/health` and Interview → Native duplex (remote MoshiRAG) → Test connection. Keep the tunnel command running during the demo.
+Review generated `terraform` configuration in plan JSON before launch. Python generates native `.tf.json` resources. Offline `plan` previews configuration; it does not run AWS-backed `terraform plan`. Terraform manages AMI root volume through `root_block_device`; preflight checks root size and layout. Launch refreshes deadline after preflight and provider initialization. Worker creation requires at least five minutes remaining. Successful apply means infrastructure exists; models may still be loading. Wait for SSM Online, start tunnel, then check `http://127.0.0.1:8765/health` and Interview → Native duplex (remote MoshiRAG) → Test connection. Keep tunnel running during demo.
 
-The launch command creates a new stack only. It never updates or replaces an existing GPU automatically. An existing tagged worker in the region blocks another launch. Use one region for this demo.
+Launch runs `terraform init -lockfile=readonly` then `terraform apply -auto-approve`. Treat `launch` as explicit approval for paid AWS resources. Existing local deployment, same-name legacy CloudFormation stack, or active tagged worker in region blocks launch. Stable per-demo Lambda name also makes concurrent same-name launches from separate checkouts conflict before GPU creation. No update, replacement, or deadline-extension command exists. Use one region for this demo.
+
+## State and recovery
+
+State lives outside checkout under `%LOCALAPPDATA%/STARfolio/terraform/<account>/<region>/<name>/` on Windows, `~/Library/Application Support/STARfolio/terraform/...` on macOS, or `${XDG_DATA_HOME:-~/.local/share}/STARfolio/terraform/...` on Linux. Keep directory private and backed up until cleanup completes. It contains generated configuration, Lambda archive, provider lock, state, and state backups. No Hugging Face token value enters these files. Provider restricts operations to configured secret account. Use same AWS profile for every command. Generated configuration and state are ignored by Git.
+
+Interrupted apply retains configuration and state for `delete`; Terraform does not automatically roll back. If `.lifecycle.lock` remains after interruption, confirm no lifecycle command or Terraform process is running before removing lock. Never delete state to unblock launch. If apply started but state is missing, restore state or reconcile/import resources before cleanup. Before apply starts, `delete` can discard interrupted local setup without AWS writes. Do not apply exported preview directories manually: CLI lifecycle ownership and interruption markers apply only to `launch`.
+
+## Existing CloudFormation deployments
+
+No automatic adoption or deletion. Capture needed trial evidence, then use original AWS account, region, and stack name:
+
+```powershell
+aws cloudformation delete-stack --region <region> --stack-name <name>
+aws cloudformation wait stack-delete-complete --region <region> --stack-name <name>
+```
+
+Verify old EC2 worker terminated before Terraform launch. Old schedules match demo name only; leaving them behind could terminate replacement worker. Existing S3 bucket and artifacts survive either cleanup path. New Terraform `delete` never deletes legacy stacks.
 
 ## Keep one trial's evidence
 
-`launch` prints the chosen trial ID. Keep that ID and run the observer after launch, after the interview, and again before deleting the stack:
+`launch` prints the chosen trial ID. Keep that ID and run the observer after launch, after the interview, and again before deleting deployment:
 
 ```powershell
 python infra/aws-demo/trial.py --trial-id <trial-id> capture --config infra/aws-demo/config.local.json --profile iamadmin-general
 ```
 
-The observer prints each AWS CLI command to stderr. It only reads AWS and appends local JSON under your user data directory (`%LOCALAPPDATA%/STARfolio/trials/<trial-id>/observations/` on Windows). Each observation has its own ID and UTC time. It records account, region, stack and instance state, AMI, launch time, EBS size, and raw CloudWatch CPU, network, status-check, and discovered GPU samples. Missing data stays `null` or carries an error; an empty metric series is not zero use. Basic EC2 monitoring gives CPU and network data at five-minute intervals, while status checks are available at one-minute intervals. The GPU agent emits 10-second memory-used, memory-free, memory-total, and utilization series under `STARfolio/MoshiRAG`; the observer keeps raw datapoints and exact dimensions. New series may not appear in `list-metrics` immediately, so capture again later if `gpuMetrics` is empty. [EC2 metric definitions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/viewing_metrics_with_cloudwatch.html), [GPU metric definitions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Agent-NVIDIA-GPU.html), [CloudWatch retrieval limits](https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html).
+The observer prints each AWS CLI command to stderr. It only reads AWS and appends local JSON under your user data directory (`%LOCALAPPDATA%/STARfolio/trials/<trial-id>/observations/` on Windows). Each observation has its own ID and UTC time. Worker discovery requires both demo and trial tags; no CloudFormation or local Terraform state read is needed. New observations set `provisioner` to `terraform` and `deploymentName` to demo name. Legacy `stackName` and `stackStatus` fields remain `null` for schema compatibility. It records account, region, deployment name and instance state, AMI, launch time, EBS size, and raw CloudWatch CPU, network, status-check, and discovered GPU samples. Missing data stays `null` or carries an error; an empty metric series is not zero use. Basic EC2 monitoring gives CPU and network data at five-minute intervals, while status checks are available at one-minute intervals. The GPU agent emits 10-second memory-used, memory-free, memory-total, and utilization series under `STARfolio/MoshiRAG`; the observer keeps raw datapoints and exact dimensions. New series may not appear in `list-metrics` immediately, so capture again later if `gpuMetrics` is empty. [EC2 metric definitions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/viewing_metrics_with_cloudwatch.html), [GPU metric definitions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Agent-NVIDIA-GPU.html), [CloudWatch retrieval limits](https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html).
 
 The worker records a second, faster view outside CloudWatch. An independent `nvidia-smi` sampler aims for 250 ms intervals and checkpoints short immutable segments about every five seconds to `s3://<bundle-bucket>/trials/<trial-id>/gpu/`. Segment timestamps show actual sampling gaps. Per-process PyTorch events record allocator peaks and OOM/failure states during model load and interview phases. Device memory from `nvidia-smi` includes other processes and non-PyTorch allocations; a PyTorch allocator peak is not total VRAM. The sampled maximum can miss a shorter true peak. Use all three views together when judging whether GPU memory blocked a trial. No MLflow service is needed for this single-worker measurement.
 
-Each successful checkpoint has a local upload receipt with its S3 URI and hash. The sampler validates segment shape before upload and keeps local data until the receipt matches its hash and counts. Malformed or partial local peak files produce numeric-only diagnostic counts, never their names or contents. Failed uploads stay in the private worker spool for retry while the instance lives; the spool has no byte cap, since dropping records would hide the failure. A host deadline or abrupt failure can still lose the last unsent interval, so an absent segment is missing evidence, not zero use. Read private segments with `aws s3 ls s3://<bundle-bucket>/trials/<trial-id>/gpu/ --recursive` and `aws s3 cp` to a private directory. They survive stack deletion in the existing bucket and need separate retention or cleanup. Segments hold GPU measurements and process metadata, not audio, transcripts, prompts, model tokens, or credentials. Do not publish raw diagnostics or interview media.
+Each successful checkpoint has a local upload receipt with its S3 URI and hash. The sampler validates segment shape before upload and keeps local data until the receipt matches its hash and counts. Malformed or partial local peak files produce numeric-only diagnostic counts, never their names or contents. Failed uploads stay in the private worker spool for retry while the instance lives; the spool has no byte cap, since dropping records would hide the failure. A host deadline or abrupt failure can still lose the last unsent interval, so an absent segment is missing evidence, not zero use. Read private segments with `aws s3 ls s3://<bundle-bucket>/trials/<trial-id>/gpu/ --recursive` and `aws s3 cp` to a private directory. They survive Terraform deletion in the existing bucket and need separate retention or cleanup. Segments hold GPU measurements and process metadata, not audio, transcripts, prompts, model tokens, or credentials. Do not publish raw diagnostics or interview media.
 
 The app writes a separate timing manifest under Electron `userData/moshi-trials/<session-id>/`. It links to the same trial ID from gateway health and records start-to-health, roadmap, ready, gap-to-next-audio, ping round trips, and input/output sample counts. Immutable `events/*.json` add candidate speech boundaries, audio receipt, and first scheduled voiced output, with sample offsets, renderer clock, playback queue delay, clock source, and explicit unknown uncertainty. Event writes run off the interview thread; session close waits for them. A failed write marks the manifest incomplete, and a partial `.tmp` remains for diagnosis. An interrupted segment stays interrupted; overlap stays ambiguous. These are observed timeline points, not a proven question-to-answer pairing or a measured speaker-to-ear latency. The old gap-to-next-audio field remains a transport proxy. Compare candidate speech end with first voiced output only after checking overlap and segment order. Audio output timing uses `AudioContext.getOutputTimestamp()` when initialized and a renderer-clock schedule estimate otherwise; each event states which. Device capture and speaker hardware delay remain unknown. The optional “Save raw interview audio” box is off by default. If selected, it writes separate 24 kHz mono `input.f32le` and `output.f32le` files there. The existing interview audit keeps the transcript. No interview media enters this repository, the AWS observer, or CI artifacts.
 
-The worker writes up to roughly 1 MiB of bootstrap and service diagnostics to the exact private S3 key in the launch plan, encrypted with SSE-S3. The bucket must block all public access. Fetch that object to a private local directory before deleting it; it may contain interview content or sensitive errors, so do not paste it into issues, PRs, or CI. A missing object means upload failed, not that the worker had no failure. The existing bucket and this object survive stack deletion and need separate cleanup. The app's local media and trial observations also survive the stack and live outside the checkout; back them up before clearing user data. Do not commit logs, media, or observations.
+The worker writes up to roughly 1 MiB of bootstrap and service diagnostics to the exact private S3 key in the launch plan, encrypted with SSE-S3. The bucket must block all public access. Fetch that object to a private local directory before deleting it; it may contain interview content or sensitive errors, so do not paste it into issues, PRs, or CI. A missing object means upload failed, not that the worker had no failure. The existing bucket and this object survive Terraform deletion and need separate cleanup. The app's local media and trial observations also survive deployment cleanup and live outside the checkout; back them up before clearing user data. Do not commit logs, media, or observations.
 
 No launch-time dollar figure is called an actual cost. Once AWS posts usage, append the billed amount with its source and scope:
 
@@ -75,18 +92,17 @@ An account-window amount remains unattributed unless that window truly isolates 
 python infra/aws-demo/demo.py stop --config infra/aws-demo/config.local.json
 python infra/aws-demo/demo.py status --config infra/aws-demo/config.local.json
 python infra/aws-demo/demo.py delete --config infra/aws-demo/config.local.json
-python infra/aws-demo/demo.py status --config infra/aws-demo/config.local.json
 ```
 
-`stop` requests EC2 stop; verify the reported state. The root disk remains until termination. `delete` requests CloudFormation deletion; the final status command should report that the stack does not exist. Independently verify EC2 terminated and delete the uploaded S3 object when finished. The CLI intentionally preserves your existing bucket.
+`stop` requests EC2 stop; verify reported state. Root disk remains billed until termination. `delete` runs `terraform destroy -auto-approve` and waits for completion; configuration remains on failure so cleanup can be retried. Successful deletion removes generated configuration and reports completion; later `status` reports missing deployment. Keep instance ID from earlier status and independently verify EC2 termination. Existing bucket, bundle, and trial artifacts remain for separate retention or deletion.
 
-The deadline schedule and narrowly scoped termination Lambda are created **before** the GPU. They terminate the tagged worker even if the desktop disconnects or the worker OS fails. Termination deletes the encrypted 150 GiB gp3 root disk. CloudFormation reverses that dependency on deletion, removing the worker before its deadline protection. A failed creation uses rollback/delete. No stack updates or deadline extension command are provided. [Scheduler CloudFormation contract](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-scheduler-schedule.html), [SSM port forwarding](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html).
+Deadline schedule, invocation policy, and termination Lambda exist **before** GPU creation. Lambda filters demo and trial tags; IAM enforces same tags. Deadline can terminate worker after desktop disconnection or OS failure. Termination deletes encrypted 150 GiB gp3 root disk. Terraform reverses dependencies on destroy, removing worker before deadline protection. Scheduled termination leaves IAM, Lambda, scheduler, and security group: always run `delete` afterward. [Terraform JSON syntax](https://developer.hashicorp.com/terraform/language/syntax/json), [Scheduler resource](https://registry.terraform.io/providers/hashicorp/aws/6.21.0/docs/resources/scheduler_schedule), [SSM port forwarding](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html).
 
 Cloud infrastructure logs do not intentionally receive raw audio or retrieved evidence. Worker and bootstrap diagnostics are private but may still contain sensitive content; review before sharing.
 
 ## IAM scope
 
-The operator needs EC2 describe/create/stop/terminate and security-group actions, CloudFormation stack actions, IAM role/profile creation and passing, Scheduler creation/deletion, Lambda creation/deletion, Service Quotas read, S3 bucket-location/object read/write, and SSM session actions. The stack-created worker role has only the Session Manager channel actions, exact bundle read, trial-scoped diagnostic and GPU checkpoint writes, GPU metric publishing to `STARfolio/MoshiRAG`, and exact Hugging Face secret read. Deadline role can terminate only instances carrying this stack's `StarfolioDemo` tag. No credential files are created.
+Operator needs EC2 describe/create/stop/terminate and security-group actions, CloudFormation DescribeStacks for legacy guard, IAM role/profile creation and passing, Scheduler and Lambda lifecycle actions, Service Quotas read, S3 bucket-location/object read/write, and SSM session actions. Terraform-created worker role has Session Manager channel actions, exact bundle read, trial-scoped diagnostics and GPU checkpoint writes, GPU metrics scoped to `STARfolio/MoshiRAG`, and exact Hugging Face secret read. Deadline role can terminate only instances carrying deployment's `StarfolioDemo` and `StarfolioTrial` tags. No credential files are created.
 
 ## Local verification
 
@@ -94,7 +110,19 @@ The operator needs EC2 describe/create/stop/terminate and security-group actions
 python -m unittest discover -s infra/aws-demo -v
 ```
 
-Tests cover worker lifetime, storage and deadline ordering, actual Lambda cleanup filtering, S3 bundle metadata, region networking/quota admission, packaging exclusions, and the SSM tunnel command. They do not establish live AWS permissions, model fit, throughput, or observed teardown.
+Tests cover worker lifetime, storage and deadline ordering, Lambda filtering/pagination, S3 bundle metadata, networking/quota admission, packaging exclusions, SSM tunnel, state ownership, and interrupted cleanup. CI also validates generated Terraform and runs mocked apply/destroy without AWS credentials. Checks do not establish live AWS permissions, model fit, throughput, or observed teardown.
+
+Standalone offline validation, using fresh temporary directory:
+
+```powershell
+python infra/aws-demo/demo.py plan --config infra/aws-demo/config.local.json --terraform-dir "$env:TEMP/starfolio-terraform-check"
+Copy-Item infra/aws-demo/tests "$env:TEMP/starfolio-terraform-check/tests" -Recurse
+terraform "-chdir=$env:TEMP/starfolio-terraform-check" init -backend=false -input=false -lockfile=readonly
+terraform "-chdir=$env:TEMP/starfolio-terraform-check" validate
+terraform "-chdir=$env:TEMP/starfolio-terraform-check" test
+```
+
+Initialization downloads provider packages; mocked tests make no AWS calls. Generate fresh preview before tests so deadline remains valid.
 
 ## Interview validation
 

@@ -112,19 +112,14 @@ class DemoTests(unittest.TestCase):
                         {**self.config, "instance_type": instance_type}, self.now
                     )
 
-    def test_template_uses_selected_gpu_size(self):
-        for instance_type in (
-            "g6e.4xlarge",
-            "g6e.8xlarge",
-            "g6e.16xlarge",
-        ):
-            with self.subTest(instance_type=instance_type):
-                config = {**self.config, "instance_type": instance_type}
-                plan = self.demo.make_plan(config, self.now)
-                worker = self.demo.make_template(config, plan, "/dev/sda1")[
-                    "Resources"
-                ]["Worker"]["Properties"]
-                self.assertEqual(worker["InstanceType"], instance_type)
+    def test_terraform_uses_selected_gpu_size(self):
+        for instance_type in ("g6e.4xlarge", "g6e.8xlarge", "g6e.16xlarge"):
+            config = {**self.config, "instance_type": instance_type}
+            plan = self.demo.make_plan(config, self.now)
+            worker = self.demo.make_terraform(config, plan)["resource"]["aws_instance"][
+                "worker"
+            ]
+            self.assertEqual(worker["instance_type"], instance_type)
 
     def test_plan_links_worker_and_diagnostics_with_unique_trial_id(self):
         trial_id = "19ab818e-2f38-4e71-9b51-84698a30f10d"
@@ -134,10 +129,10 @@ class DemoTests(unittest.TestCase):
             plan["diagnostics_s3_uri"],
             f"s3://demo-artifacts/trials/{trial_id}/worker.log",
         )
-        template = self.demo.make_template(self.config, plan, "/dev/sda1")
-        worker = template["Resources"]["Worker"]["Properties"]
-        self.assertIn({"Key": "StarfolioTrial", "Value": trial_id}, worker["Tags"])
-        self.assertEqual(template["Outputs"]["TrialId"]["Value"], trial_id)
+        template = self.demo.make_terraform(self.config, plan)
+        worker = template["resource"]["aws_instance"]["worker"]
+        self.assertEqual(worker["tags"]["StarfolioTrial"], trial_id)
+        self.assertEqual(template["output"]["trial_id"]["value"], trial_id)
 
     def test_plan_scopes_gpu_telemetry_to_trial(self):
         trial_id = "19ab818e-2f38-4e71-9b51-84698a30f10d"
@@ -169,24 +164,29 @@ class DemoTests(unittest.TestCase):
                 ])
             self.assertEqual(json.loads(output.read_text())["plan"]["trial_id"], trial_id)
 
-    def test_template_installs_deadline_before_gpu_and_protects_storage(self):
+    def test_terraform_installs_deadline_before_gpu_and_protects_storage(self):
         plan = self.demo.make_plan(self.config, self.now)
-        template = self.demo.make_template(self.config, plan, "/dev/sda1")
-        resources = template["Resources"]
-        worker = resources["Worker"]
-        self.assertIn("DeadlineSchedule", worker["DependsOn"])
-        self.assertEqual(worker["Properties"]["InstanceType"], "g6e.2xlarge")
+        resources = self.demo.make_terraform(self.config, plan)["resource"]
+        worker = resources["aws_instance"]["worker"]
+        self.assertIn("aws_scheduler_schedule.deadline", worker["depends_on"])
+        self.assertEqual(worker["instance_type"], "g6e.2xlarge")
         self.assertEqual(
-            worker["Properties"]["BlockDeviceMappings"][0]["DeviceName"], "/dev/sda1"
+            worker["root_block_device"],
+            {
+                "volume_size": 150,
+                "volume_type": "gp3",
+                "encrypted": True,
+                "delete_on_termination": True,
+            },
         )
-        disk = worker["Properties"]["BlockDeviceMappings"][0]["Ebs"]
-        self.assertTrue(disk["Encrypted"])
-        self.assertTrue(disk["DeleteOnTermination"])
-        bootstrap = base64.b64decode(worker["Properties"]["UserData"]).decode()
-        self.assertIn("install -d -m 755 /opt/starfolio-demo", bootstrap)
-        self.assertIn("chmod -R a+rX,go-w /opt/starfolio-demo", bootstrap)
-        self.assertIn("STARFOLIO_DEMO_DEADLINE=2026-09-10T12:40:00Z", bootstrap)
-        self.assertIn("STARFOLIO_DEMO_MAX_SECONDS=2400", bootstrap)
+        bootstrap = base64.b64decode(worker["user_data_base64"]).decode()
+        for expected in (
+            "install -d -m 755 /opt/starfolio-demo",
+            "chmod -R a+rX,go-w /opt/starfolio-demo",
+            "STARFOLIO_DEMO_DEADLINE=2026-09-10T12:40:00Z",
+            "STARFOLIO_DEMO_MAX_SECONDS=2400",
+        ):
+            self.assertIn(expected, bootstrap)
         self.assertLess(
             bootstrap.index("starfolio-instance-deadline"),
             bootstrap.index("nvidia-smi"),
@@ -194,28 +194,34 @@ class DemoTests(unittest.TestCase):
         self.assertLess(
             bootstrap.index("starfolio-instance-deadline"), bootstrap.index("aws s3 cp")
         )
+        self.assertEqual(resources["aws_security_group"]["worker"]["ingress"], [])
+        schedule = resources["aws_scheduler_schedule"]["deadline"]
+        self.assertEqual(schedule["schedule_expression"], "at(2026-09-10T12:40:00)")
+        self.assertEqual(schedule["flexible_time_window"], {"mode": "OFF"})
+        self.assertNotIn("action_after_completion", schedule)
         self.assertEqual(
-            resources["SecurityGroup"]["Properties"]["SecurityGroupIngress"], []
+            json.loads(schedule["target"]["input"]),
+            {"name": self.config["name"], "trial_id": plan["trial_id"]},
         )
-        schedule = resources["DeadlineSchedule"]["Properties"]
-        self.assertEqual(schedule["ScheduleExpression"], "at(2026-09-10T12:40:00)")
-        self.assertEqual(schedule["FlexibleTimeWindow"], {"Mode": "OFF"})
-        self.assertNotIn("ActionAfterCompletion", schedule)
-        self.assertIn(
-            "terminate_instances",
-            resources["DeadlineFunction"]["Properties"]["Code"]["ZipFile"],
+        termination = json.loads(
+            resources["aws_iam_role_policy"]["deadline"]["policy"]
+        )["Statement"][1]
+        self.assertEqual(
+            termination["Condition"]["StringEquals"],
+            {
+                "ec2:ResourceTag/StarfolioDemo": self.config["name"],
+                "ec2:ResourceTag/StarfolioTrial": plan["trial_id"],
+            },
         )
 
     def test_worker_uses_minimal_inline_session_manager_permissions(self):
         plan = self.demo.make_plan(self.config, self.now)
-        template = self.demo.make_template(self.config, plan, "/dev/sda1")
-        role = template["Resources"]["WorkerRole"]["Properties"]
-        self.assertNotIn("ManagedPolicyArns", role)
-        statements = [
-            statement
-            for policy in role["Policies"]
-            for statement in policy["PolicyDocument"]["Statement"]
-        ]
+        template = self.demo.make_terraform(self.config, plan)
+        role = template["resource"]["aws_iam_role"]["worker"]
+        self.assertNotIn("managed_policy_arns", role)
+        statements = json.loads(
+            template["resource"]["aws_iam_role_policy"]["worker"]["policy"]
+        )["Statement"]
         session = next(
             statement
             for statement in statements
@@ -246,13 +252,10 @@ class DemoTests(unittest.TestCase):
 
     def test_worker_can_read_only_configured_hugging_face_secret(self):
         plan = self.demo.make_plan(self.config, self.now)
-        template = self.demo.make_template(self.config, plan, "/dev/sda1")
-        policies = template["Resources"]["WorkerRole"]["Properties"]["Policies"]
-        statements = [
-            statement
-            for policy in policies
-            for statement in policy["PolicyDocument"]["Statement"]
-        ]
+        template = self.demo.make_terraform(self.config, plan)
+        statements = json.loads(
+            template["resource"]["aws_iam_role_policy"]["worker"]["policy"]
+        )["Statement"]
         secret_reads = [
             statement
             for statement in statements
@@ -269,7 +272,7 @@ class DemoTests(unittest.TestCase):
             ],
         )
         bootstrap = base64.b64decode(
-            template["Resources"]["Worker"]["Properties"]["UserData"]
+            template["resource"]["aws_instance"]["worker"]["user_data_base64"]
         ).decode()
         self.assertIn(self.config["hf_token_secret_arn"], bootstrap)
         self.assertIn("export AWS_REGION=us-east-2", bootstrap)
@@ -281,30 +284,24 @@ class DemoTests(unittest.TestCase):
             self.now,
             trial_id="19ab818e-2f38-4e71-9b51-84698a30f10d",
         )
-        role = self.demo.make_worker_role(self.config, plan)
-        statements = [
+        statements = self.demo.make_worker_policy(self.config, plan)["Statement"]
+        writes = [
             statement
-            for policy in role["Properties"]["Policies"]
-            for statement in policy["PolicyDocument"]["Statement"]
+            for statement in statements
+            if statement["Action"] == "s3:PutObject"
         ]
-        writes = [statement for statement in statements if statement["Action"] == "s3:PutObject"]
         self.assertEqual(
-            {statement["Resource"]["Fn::Sub"] for statement in writes},
+            {statement["Resource"] for statement in writes},
             {
-                "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/worker.log",
-                "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/gpu/*",
+                "arn:aws:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/worker.log",
+                "arn:aws:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/gpu/*",
             },
         )
         self.assertTrue(all(statement["Effect"] == "Allow" for statement in writes))
 
     def test_worker_publishes_metrics_only_in_moshirag_namespace(self):
         plan = self.demo.make_plan(self.config, self.now)
-        role = self.demo.make_worker_role(self.config, plan)
-        statements = [
-            statement
-            for policy in role["Properties"]["Policies"]
-            for statement in policy["PolicyDocument"]["Statement"]
-        ]
+        statements = self.demo.make_worker_policy(self.config, plan)["Statement"]
         metrics = [
             statement
             for statement in statements
@@ -312,14 +309,16 @@ class DemoTests(unittest.TestCase):
         ]
         self.assertEqual(
             metrics,
-            [{
-                "Effect": "Allow",
-                "Action": "cloudwatch:PutMetricData",
-                "Resource": "*",
-                "Condition": {
-                    "StringEquals": {"cloudwatch:namespace": "STARfolio/MoshiRAG"}
-                },
-            }],
+            [
+                {
+                    "Effect": "Allow",
+                    "Action": "cloudwatch:PutMetricData",
+                    "Resource": "*",
+                    "Condition": {
+                        "StringEquals": {"cloudwatch:namespace": "STARfolio/MoshiRAG"}
+                    },
+                }
+            ],
         )
 
     def test_cloudwatch_gpu_config_contains_only_device_metrics(self):
@@ -341,9 +340,9 @@ class DemoTests(unittest.TestCase):
     def test_cross_region_worker_uses_secret_home_region(self):
         config = {**self.config, "region": "us-east-1"}
         plan = self.demo.make_plan(config, self.now)
-        template = self.demo.make_template(config, plan, "/dev/sda1")
+        template = self.demo.make_terraform(config, plan)
         bootstrap = base64.b64decode(
-            template["Resources"]["Worker"]["Properties"]["UserData"]
+            template["resource"]["aws_instance"]["worker"]["user_data_base64"]
         ).decode()
         self.assertIn("export AWS_REGION=us-east-1", bootstrap)
         self.assertIn("export STARFOLIO_HF_TOKEN_SECRET_REGION=us-east-2", bootstrap)
@@ -351,15 +350,16 @@ class DemoTests(unittest.TestCase):
 
     def test_default_vpc_placement_omits_pinned_subnet(self):
         config = {**self.config, "subnet": None}
-        plan = self.demo.make_plan(config, self.now)
-        worker = self.demo.make_template(config, plan, "/dev/sda1")["Resources"]["Worker"]
-        properties = worker["Properties"]
-        self.assertEqual(properties["SecurityGroupIds"], [{"Ref": "SecurityGroup"}])
-        self.assertNotIn("NetworkInterfaces", properties)
-        self.assertNotIn("SubnetId", properties)
-        self.assertNotIn("AvailabilityZone", properties)
-        self.assertEqual(worker["DependsOn"], ["DeadlineSchedule"])
-        self.assertTrue(properties["BlockDeviceMappings"][0]["Ebs"]["Encrypted"])
+        worker = self.demo.make_terraform(
+            config, self.demo.make_plan(config, self.now)
+        )["resource"]["aws_instance"]["worker"]
+        self.assertEqual(
+            worker["vpc_security_group_ids"], ["${aws_security_group.worker.id}"]
+        )
+        self.assertNotIn("subnet_id", worker)
+        self.assertNotIn("availability_zone", worker)
+        self.assertTrue(worker["associate_public_ip_address"])
+        self.assertIn("aws_scheduler_schedule.deadline", worker["depends_on"])
 
     def test_bootstrap_fetches_secret_from_home_region(self):
         script = (
@@ -374,18 +374,15 @@ class DemoTests(unittest.TestCase):
             self.now,
             trial_id="19ab818e-2f38-4e71-9b51-84698a30f10d",
         )
-        template = self.demo.make_template(self.config, plan, "/dev/sda1")
-        policies = template["Resources"]["WorkerRole"]["Properties"]["Policies"]
-        statements = [
-            statement
-            for policy in policies
-            for statement in policy["PolicyDocument"]["Statement"]
-        ]
+        template = self.demo.make_terraform(self.config, plan)
+        statements = json.loads(
+            template["resource"]["aws_iam_role_policy"]["worker"]["policy"]
+        )["Statement"]
         writes = [
             statement
             for statement in statements
             if statement["Action"] == "s3:PutObject"
-            and statement["Resource"]["Fn::Sub"].endswith("/worker.log")
+            and statement["Resource"].endswith("/worker.log")
         ]
         self.assertEqual(
             writes,
@@ -393,14 +390,12 @@ class DemoTests(unittest.TestCase):
                 {
                     "Effect": "Allow",
                     "Action": "s3:PutObject",
-                    "Resource": {
-                        "Fn::Sub": "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/worker.log"
-                    },
+                    "Resource": "arn:aws:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/worker.log",
                 }
             ],
         )
         bootstrap = base64.b64decode(
-            template["Resources"]["Worker"]["Properties"]["UserData"]
+            template["resource"]["aws_instance"]["worker"]["user_data_base64"]
         ).decode()
         self.assertIn("STARFOLIO_TRIAL_DIAGNOSTICS_URI", bootstrap)
         worker_bootstrap = (
@@ -416,7 +411,9 @@ class DemoTests(unittest.TestCase):
             worker_bootstrap.index("apt-get update"),
         )
         self.assertLess(
-            worker_bootstrap.index("trap 'systemctl start starfolio-diagnostics.service"),
+            worker_bootstrap.index(
+                "trap 'systemctl start starfolio-diagnostics.service"
+            ),
             worker_bootstrap.index("nvidia-smi"),
         )
 
@@ -454,26 +451,30 @@ class DemoTests(unittest.TestCase):
             self.assertLess(len(data), 1_100_000)
 
     def test_cleanup_lambda_only_terminates_matching_instances(self):
-        plan = self.demo.make_plan(self.config, self.now)
-        template = self.demo.make_template(self.config, plan, "/dev/sda1")
-        source = template["Resources"]["DeadlineFunction"]["Properties"]["Code"][
-            "ZipFile"
-        ]
+        source = MODULE.with_name("deadline.py").read_text()
         ec2 = Mock()
-        ec2.describe_instances.return_value = {
-            "Reservations": [{"Instances": [{"InstanceId": "i-owned"}]}]
-        }
+        ec2.get_paginator.return_value.paginate.return_value = [
+            {"Reservations": [{"Instances": [{"InstanceId": "i-owned"}]}]},
+            {"Reservations": [{"Instances": [{"InstanceId": "i-owned-next-page"}]}]},
+        ]
         boto = Mock()
         boto.client.return_value = ec2
         with patch.dict(sys.modules, {"boto3": boto}):
             scope = {}
             exec(source, scope)
-            scope["handler"]({"name": "starfolio-demo"}, None)
-        filters = ec2.describe_instances.call_args.kwargs["Filters"]
+            self.assertEqual(
+                scope["handler"](
+                    {"name": "starfolio-demo", "trial_id": "trial-123"}, None
+                ),
+                {"terminated": 2},
+            )
+        filters = ec2.get_paginator.return_value.paginate.call_args.kwargs["Filters"]
         self.assertIn(
             {"Name": "tag:StarfolioDemo", "Values": ["starfolio-demo"]}, filters
         )
-        ec2.terminate_instances.assert_called_once_with(InstanceIds=["i-owned"])
+        self.assertIn({"Name": "tag:StarfolioTrial", "Values": ["trial-123"]}, filters)
+        self.assertEqual(ec2.terminate_instances.call_count, 2)
+        ec2.terminate_instances.assert_any_call(InstanceIds=["i-owned"])
 
     def test_pack_excludes_credentials_and_python_cache(self):
         with tempfile.TemporaryDirectory() as directory:
