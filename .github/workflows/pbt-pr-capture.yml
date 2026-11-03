@@ -65,7 +65,7 @@ jobs:
       - name: Install trusted capture code
         if: always()
         working-directory: trusted/app
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Encrypt PBT observations
         if: always()
@@ -110,7 +110,7 @@ jobs:
 
       - name: Install trusted validation code
         working-directory: app
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Download encrypted cycle
         uses: actions/download-artifact@v4
@@ -167,7 +167,7 @@ jobs:
 
       - name: Install trusted retention code
         working-directory: app
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Download validated cycle
         uses: actions/download-artifact@v4
