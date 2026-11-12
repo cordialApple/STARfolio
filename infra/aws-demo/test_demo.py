@@ -3,8 +3,6 @@ import contextlib
 import importlib.util
 import io
 import json
-import os
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -18,7 +16,6 @@ REQUIRED_BUNDLE_FILES = (
     "README.md",
     "bootstrap.sh",
     "cloudwatch-gpu.json",
-    "diagnostics.sh",
     "conditioner_worker.py",
     "gateway.py",
     "gpu_peaks.py",
@@ -30,6 +27,8 @@ REQUIRED_BUNDLE_FILES = (
     "requirements.lock",
     "requirements.txt",
     "run-worker.sh",
+    "stop-worker.sh",
+    "tokenizer_smoke.py",
 )
 
 
@@ -77,7 +76,6 @@ class DemoTests(unittest.TestCase):
                 "deadline",
                 "lifetime_hours",
                 "trial_id",
-                "diagnostics_s3_uri",
                 "telemetry_s3_prefix",
             },
         )
@@ -126,14 +124,11 @@ class DemoTests(unittest.TestCase):
                 ]["Worker"]["Properties"]
                 self.assertEqual(worker["InstanceType"], instance_type)
 
-    def test_plan_links_worker_and_diagnostics_with_unique_trial_id(self):
+    def test_plan_links_worker_with_unique_trial_id(self):
         trial_id = "19ab818e-2f38-4e71-9b51-84698a30f10d"
         plan = self.demo.make_plan(self.config, self.now, trial_id=trial_id)
         self.assertEqual(plan["trial_id"], trial_id)
-        self.assertEqual(
-            plan["diagnostics_s3_uri"],
-            f"s3://demo-artifacts/trials/{trial_id}/worker.log",
-        )
+        self.assertNotIn("diagnostics_s3_uri", plan)
         template = self.demo.make_template(self.config, plan, "/dev/sda1")
         worker = template["Resources"]["Worker"]["Properties"]
         self.assertIn({"Key": "StarfolioTrial", "Value": trial_id}, worker["Tags"])
@@ -187,6 +182,8 @@ class DemoTests(unittest.TestCase):
         self.assertIn("chmod -R a+rX,go-w /opt/starfolio-demo", bootstrap)
         self.assertIn("STARFOLIO_DEMO_DEADLINE=2026-09-10T12:40:00Z", bootstrap)
         self.assertIn("STARFOLIO_DEMO_MAX_SECONDS=2400", bootstrap)
+        self.assertIn('graceful_seconds=$((STARFOLIO_DEMO_MAX_SECONDS - 120))', bootstrap)
+        self.assertIn('starfolio-instance-deadline --on-active="${graceful_seconds}s"', bootstrap)
         self.assertLess(
             bootstrap.index("starfolio-instance-deadline"),
             bootstrap.index("nvidia-smi"),
@@ -291,7 +288,6 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(
             {statement["Resource"]["Fn::Sub"] for statement in writes},
             {
-                "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/worker.log",
                 "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/gpu/*",
             },
         )
@@ -368,7 +364,7 @@ class DemoTests(unittest.TestCase):
         self.assertIn('get-secret-value --secret-id "$STARFOLIO_HF_TOKEN_SECRET_ARN"', script)
         self.assertIn('--region "$STARFOLIO_HF_TOKEN_SECRET_REGION"', script)
 
-    def test_diagnostics_write_is_scoped_and_precedes_shutdown(self):
+    def test_worker_has_no_raw_diagnostics_export(self):
         plan = self.demo.make_plan(
             self.config,
             self.now,
@@ -381,77 +377,51 @@ class DemoTests(unittest.TestCase):
             for policy in policies
             for statement in policy["PolicyDocument"]["Statement"]
         ]
-        writes = [
-            statement
-            for statement in statements
-            if statement["Action"] == "s3:PutObject"
-            and statement["Resource"]["Fn::Sub"].endswith("/worker.log")
-        ]
-        self.assertEqual(
-            writes,
-            [
-                {
-                    "Effect": "Allow",
-                    "Action": "s3:PutObject",
-                    "Resource": {
-                        "Fn::Sub": "arn:${AWS::Partition}:s3:::demo-artifacts/trials/19ab818e-2f38-4e71-9b51-84698a30f10d/worker.log"
-                    },
-                }
-            ],
-        )
+        self.assertFalse(any(policy["PolicyName"] == "WriteTrialDiagnostics" for policy in policies))
+        self.assertFalse(any("worker.log" in json.dumps(statement) for statement in statements))
         bootstrap = base64.b64decode(
             template["Resources"]["Worker"]["Properties"]["UserData"]
         ).decode()
-        self.assertIn("STARFOLIO_TRIAL_DIAGNOSTICS_URI", bootstrap)
+        self.assertNotIn("STARFOLIO_TRIAL_DIAGNOSTICS_URI", bootstrap)
         worker_bootstrap = (
             MODULE.parents[2] / "demo" / "moshi-gateway" / "bootstrap.sh"
         ).read_text()
-        self.assertIn("starfolio-diagnostics.service", worker_bootstrap)
-        self.assertLess(
-            worker_bootstrap.index("systemctl start starfolio-diagnostics.service"),
-            worker_bootstrap.index("ExecStopPost=+/sbin/shutdown -h now"),
-        )
-        self.assertLess(
-            worker_bootstrap.index("systemctl daemon-reload"),
-            worker_bootstrap.index("apt-get update"),
-        )
-        self.assertLess(
-            worker_bootstrap.index("trap 'systemctl start starfolio-diagnostics.service"),
-            worker_bootstrap.index("nvidia-smi"),
-        )
+        self.assertNotIn("starfolio-diagnostics.service", worker_bootstrap)
+        self.assertNotIn("diagnostics.sh", worker_bootstrap)
+        self.assertIn("ExecStopPost=+/bin/bash", worker_bootstrap)
+        self.assertIn("stop-worker.sh", worker_bootstrap)
+        self.assertNotIn("ExecStopPost=-+/usr/bin/systemctl stop starfolio-gpu-sampler.service", worker_bootstrap)
+        self.assertNotIn("ExecStopPost=+/sbin/shutdown -h now", worker_bootstrap)
 
-    @unittest.skipUnless(sys.platform.startswith("linux"), "Worker shell test runs on Linux CI")
-    def test_diagnostics_uploads_bounded_bootstrap_and_worker_logs(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            commands = root / "commands"
-            commands.mkdir()
-            scripts = {
-                "systemctl": "#!/bin/sh\nprintf 'Result=exit-code\\n'\n",
-                "journalctl": "#!/bin/sh\nprintf 'worker failure\\n'\n",
-                "aws": "#!/bin/sh\ncp \"$3\" \"$TRIAL_CAPTURED\"\n",
-            }
-            for name, source in scripts.items():
-                path = commands / name
-                path.write_text(source)
-                path.chmod(0o700)
-            cloud_init = root / "cloud-init.log"
-            cloud_init.write_bytes(b"x" * 1_000_000 + b"bootstrap failure\n")
-            captured = root / "captured.log"
-            environment = {
-                **os.environ,
-                "PATH": str(commands) + os.pathsep + os.environ["PATH"],
-                "AWS_REGION": "us-east-2",
-                "STARFOLIO_TRIAL_DIAGNOSTICS_URI": "s3://private/trials/test/worker.log",
-                "STARFOLIO_CLOUD_INIT_LOG": str(cloud_init),
-                "TRIAL_CAPTURED": str(captured),
-            }
-            script = MODULE.parents[2] / "demo" / "moshi-gateway" / "diagnostics.sh"
-            subprocess.run(["bash", str(script)], env=environment, check=True)
-            data = captured.read_bytes()
-            self.assertIn(b"worker failure", data)
-            self.assertIn(b"bootstrap failure", data)
-            self.assertLess(len(data), 1_100_000)
+    def test_worker_sandbox_has_no_persistent_model_writes(self):
+        script = (MODULE.parents[2] / "demo" / "moshi-gateway" / "bootstrap.sh").read_text()
+        self.assertIn("User=starfolio-demo", script)
+        self.assertIn("User=starfolio-gpu", script)
+        self.assertIn("STARFOLIO_GPU_EVENT_DIR=/run/starfolio-gpu/events", script)
+        self.assertIn("install -d -m 2770 -o starfolio-demo -g starfolio-gpu /run/starfolio-gpu/events", script)
+        self.assertIn("ReadWritePaths=/run/starfolio-private /run/starfolio-gpu/events", script)
+        self.assertNotIn("ReadWritePaths=/opt/starfolio-runtime", script)
+        self.assertIn("StandardError=null", script)
+        self.assertIn("LimitCORE=0", script)
+        self.assertIn("TemporaryFileSystem=/tmp:", script)
+        self.assertIn("TemporaryFileSystem=/var/tmp:", script)
+        self.assertIn("mountpoint -q /run/starfolio-private", script)
+        self.assertIn("mountpoint -q /run/starfolio-gpu", script)
+
+    def test_worker_disables_swap_crash_capture_and_disk_journals(self):
+        script = (MODULE.parents[2] / "demo" / "moshi-gateway" / "bootstrap.sh").read_text()
+        self.assertIn("swapoff -a", script)
+        self.assertIn("/proc/swaps", script)
+        self.assertIn("kernel.core_pattern=/dev/null", script)
+        self.assertIn("/sys/kernel/kexec_crash_loaded", script)
+        self.assertIn("Storage=volatile", script)
+        self.assertIn("systemctl mask --now systemd-coredump.socket", script)
+
+    def test_worker_rechecks_swap_and_core_pattern_on_service_start(self):
+        script = (MODULE.parents[2] / "demo" / "moshi-gateway" / "bootstrap.sh").read_text()
+        self.assertIn("ExecStartPre=/usr/bin/awk NR>1{exit(1)} /proc/swaps", script)
+        self.assertIn("ExecStartPre=/usr/bin/grep -Fxq /dev/null /proc/sys/kernel/core_pattern", script)
+        self.assertIn("ExecStartPre=/usr/bin/grep -Fxq 0 /sys/kernel/kexec_crash_loaded", script)
 
     def test_cleanup_lambda_only_terminates_matching_instances(self):
         plan = self.demo.make_plan(self.config, self.now)

@@ -49,6 +49,7 @@ const fake = vi.hoisted(() => ({
     }> => ({ mode: 'fixture', upstreamReady: true, busy: false })
   ),
   runtime: vi.fn(() => ({})),
+  localProviders: vi.fn(),
   scriptedAudio: vi.fn(async () => ({
     ask_intro: new Float32Array([0.1, 0.2]),
     closing: new Float32Array([0.3, 0.4]),
@@ -91,7 +92,7 @@ vi.mock('./shared', () => ({
     ipc.handle(channel, (event, input) => fn(event, schema.parse(input)))
 }))
 vi.mock('../store/experience-store', () => ({ getExperienceStore: () => ({ get: vi.fn() }) }))
-vi.mock('../ai/runtime', () => ({ interviewRuntime: fake.runtime }))
+vi.mock('../ai/runtime', () => ({ interviewRuntime: fake.runtime, assertLocalMoshiProviders: fake.localProviders }))
 vi.mock('../voice/moshi/scripted-audio', () => ({ loadScriptedAudio: fake.scriptedAudio }))
 vi.mock('../ai/moshi-interview', () => ({
   startMoshiInterview: fake.startBrain,
@@ -157,6 +158,7 @@ beforeEach(() => {
   fake.transportMode = 'fixture'
   fake.health.mockResolvedValue({ mode: 'fixture', upstreamReady: true, busy: false })
   fake.experimentalRemoteMoshiEnabled = true
+  fake.localProviders.mockReset()
   fake.scriptedAudio.mockClear()
   fake.startBrain.mockImplementation(async (_input, _runtime, ports) => {
     const brain = {
@@ -178,6 +180,22 @@ beforeEach(() => {
     ports.onConditioning(context)
     return brain
   })
+})
+
+it('checks local provider routing before sending interview context', async () => {
+  fake.transportMode = 'moshi'
+  fake.health.mockResolvedValueOnce({ mode: 'moshi', upstreamReady: true, busy: false })
+  fake.localProviders.mockImplementationOnce(() => { throw new Error('Use a local provider') })
+  await expect(harness().call('start', { ...request, localProvidersOnly: true })).rejects.toThrow('local provider')
+  expect(fake.startBrain).not.toHaveBeenCalled()
+  expect(fake.transports).toHaveLength(0)
+})
+
+it('guards rigor replay for interviews started with local providers only', async () => {
+  fake.loadAudit.mockReturnValue({ id: 'stored', status: 'finished', mode: 'live', localProvidersOnly: true })
+  fake.localProviders.mockImplementationOnce(() => { throw new Error('Use a local provider') })
+  await expect(harness().call('rigor', { sessionId: 'stored' })).rejects.toThrow('local provider')
+  expect(fake.compare).not.toHaveBeenCalled()
 })
 
 it('suppresses model opening audio and records only acknowledged fixed speech', async () => {

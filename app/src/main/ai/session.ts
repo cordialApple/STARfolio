@@ -39,6 +39,7 @@ import {
 
 export interface StartInterviewInput {
   resumeText: string
+  localProvidersOnly?: boolean
   jobDescription?: string
   experiences?: ArchitectExperience[]
   candidateName?: string

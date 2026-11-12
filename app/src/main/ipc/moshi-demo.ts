@@ -7,7 +7,7 @@ import { handle } from './shared'
 import { getExperienceStore } from '../store/experience-store'
 import { MoshiDemoSession, selectDemoEvidence, checkDemoHealth } from '../voice/moshi/demo'
 import { startMoshiInterview, compareMoshiSessionRigor } from '../ai/moshi-interview'
-import { interviewRuntime } from '../ai/runtime'
+import { assertLocalMoshiProviders, interviewRuntime } from '../ai/runtime'
 import { getPrefs } from '../settings/prefs'
 import { TrialCapture } from '../voice/moshi/trial-capture'
 import { scriptedLine } from '../ai/roles/scripted-turns'
@@ -59,6 +59,7 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
     const snapshot = loadMoshiInterview(sessionId)
     if (!snapshot || snapshot.status !== 'finished')
       throw new Error('A finished native interview is required')
+    if (snapshot.localProvidersOnly && snapshot.mode !== 'stub') assertLocalMoshiProviders()
     const options =
       snapshot.mode === 'stub'
         ? { stub: true }
@@ -82,6 +83,7 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
       jobDescription: z.string().trim().max(20_000).optional(),
       candidateName: z.string().trim().max(200).optional(),
       recordTrialMedia: z.boolean().optional(),
+      localProvidersOnly: z.boolean().optional(),
       consent: z.literal(true)
     }),
     async (event, request) => {
@@ -211,6 +213,7 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
         const evidence = selectDemoEvidence(request.experienceIds, (id) =>
           getExperienceStore().get(id)
         )
+        if (request.localProvidersOnly && health.mode !== 'fixture') assertLocalMoshiProviders()
         const runtime =
           health.mode === 'fixture'
             ? { architect: { stub: true }, evaluator: { stub: true } }
@@ -227,7 +230,8 @@ export function registerMoshiDemo(ipcMain: IpcMain): void {
             })),
             level: 'entry',
             budgetMs: request.durationSeconds * 1000,
-            closingReserveMs: Math.min(60_000, request.durationSeconds * 100)
+            closingReserveMs: Math.min(60_000, request.durationSeconds * 100),
+            localProvidersOnly: request.localProvidersOnly === true
           },
           runtime,
           {

@@ -99,9 +99,11 @@ beforeEach(async () => {
       />
     )
   })
-  for (const checkbox of [
-    ...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
-  ].slice(0, 2)) {
+  const evidence = container.querySelector<HTMLInputElement>('fieldset input[type="checkbox"]')!
+  const consent = [...container.querySelectorAll('label')].find((label) =>
+    label.textContent?.includes('Send microphone audio')
+  )!.querySelector('input')!
+  for (const checkbox of [evidence, consent]) {
     await act(async () => {
       checkbox.click()
     })
@@ -251,6 +253,15 @@ it('keeps raw interview media off unless separately selected', async () => {
   await act(async () => checkbox.click())
   await click('Start native interview')
   expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ recordTrialMedia: true }))
+})
+
+it('selects local provider routing by default and sends that choice', async () => {
+  const privacy = [...container.querySelectorAll('label')].find((label) =>
+    label.textContent?.includes('Require loopback architect and evaluator endpoints')
+  )
+  expect(privacy?.querySelector('input')?.checked).toBe(true)
+  await click('Start native interview')
+  expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ localProvidersOnly: true }))
 })
 
 function findButton(label: string): HTMLButtonElement | undefined {

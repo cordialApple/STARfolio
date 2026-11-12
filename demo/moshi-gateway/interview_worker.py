@@ -6,7 +6,7 @@ from pathlib import Path
 
 import aiohttp
 import numpy as np
-from gpu_peaks import PeakTracker
+from gpu_peaks import PeakTracker, publish_startup_diagnostic
 from interview_protocol import (
     CONTROL_PREFIX,
     InterviewConditioning,
@@ -356,25 +356,52 @@ def track_interview_lifecycle(server, tracker):
     server.ServerState.warmup = warmup
 
 
-def main():
-    with PeakTracker("interview") as tracker:
+def run_server_main(server, torch):
+    with torch.no_grad():
+        server.main()
+
+
+@contextlib.contextmanager
+def diagnose_startup(operation, cuda=None):
+    try:
+        yield
+    except BaseException as exception:
+        try:
+            publish_startup_diagnostic(operation, exception, cuda=cuda)
+        except BaseException:
+            pass
+        raise
+
+
+def prepare_interview_server(tracker):
+    with diagnose_startup("moshi_import", tracker.cuda):
         from moshi import server
         from moshi.inference_utils import channel as channel_module
         from moshi.inference_utils.channel import Channel
         from moshi.inference_utils.utils import get_conditioning_remote_async
         from moshi.models import loaders
         from moshi.stt import LocalSpeechToText, STTWordMessage
+        import torch
 
+    with diagnose_startup("stt_binding", tracker.cuda):
         channel_module.LocalSpeechToText = create_local_stt_with_model(
             LocalSpeechToText,
             loaders,
             Path(os.environ["STARFOLIO_STT_MODEL_PATH"]),
         )
+    with diagnose_startup("server_binding", tracker.cuda):
         track_interview_lifecycle(server, tracker)
         server.Channel = create_channel(
             Channel, STTWordMessage, get_conditioning_remote_async, tracker=tracker
         )
-        server.main()
+    return server, torch
+
+
+def main():
+    with PeakTracker("interview") as tracker:
+        server, torch = prepare_interview_server(tracker)
+        with diagnose_startup("server_main", tracker.cuda):
+            run_server_main(server, torch)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from gpu_peaks import CHILD_ROLES, DEPENDENCY_IDS, EVENT_DIRECTORY, FAILURE_CATEGORIES, PHASES, SHUTDOWN_REASONS, STARTUP_FAILURES, STARTUP_OPERATIONS, STARTUP_STAGES, STATUSES
+
 
 EVENT_NUMBERS = (
     "monotonic_ns",
@@ -34,8 +36,18 @@ EVENT_FIELDS = set(EVENT_NUMBERS) | {
     "status",
     "oom",
 }
+STARTUP_EVENT_FIELDS = {
+    "schema_version", "event_type", "trial_id", "timestamp_utc", "monotonic_ns",
+    "pid", "process_start_ticks", "role", "startup_stage", "child_role", "child_pid",
+    "exit_code", "failure_category", "shutdown_reason",
+}
+DIAGNOSTIC_EVENT_FIELDS = {
+    "schema_version", "event_type", "trial_id", "timestamp_utc", "monotonic_ns",
+    "pid", "process_start_ticks", "role", "operation_stage", "failure_category",
+    "dependency_id",
+}
 ROLE_NAMES = {"interview", "conditioner"}
-EVENT_STATUSES = {"start", "sample", "phase_end", "failure", "exit"}
+EVENT_STATUSES = STATUSES
 SAMPLE_FIELDS = {
     "schema_version", "trial_id", "utc", "monotonic_ns", "actual_interval_ms",
     "gpu_uuid", "device_total_mib", "device_used_mib", "device_free_mib",
@@ -46,8 +58,8 @@ SEGMENT_FIELDS = {
     "schema_version", "trial_id", "segment_id", "created_utc", "samples",
     "events", "event_files",
 }
-UTC_PATTERN = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|\+00:00)"
-EVENT_FILE_PATTERN = r"[A-Za-z0-9_-]+\.json"
+UTC_PATTERN = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)"
+EVENT_FILE_PATTERN = r"(peak|startup|diagnostic)-([1-9][0-9]{0,9})-[a-f0-9]{32}\.json"
 
 
 def utc_now():
@@ -65,7 +77,17 @@ def optional_int(value):
 
 
 def gpu_uuid_or_none(value):
-    return value if isinstance(value, str) and re.fullmatch(r"GPU-[A-Fa-f0-9-]+", value) else None
+    return value if isinstance(value, str) and re.fullmatch(r"GPU-[A-Fa-f0-9]{1,8}(?:-[A-Fa-f0-9]{1,12}){0,4}", value) else None
+
+
+def valid_utc(value):
+    if not isinstance(value, str) or not re.fullmatch(UTC_PATTERN, value):
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
 
 
 def nullable_nonnegative_int(value):
@@ -118,6 +140,7 @@ class GpuSampler:
         utc=utc_now,
         sample_interval=0.25,
         upload_interval=5.0,
+        shutdown_upload_budget=35.0,
     ):
         if not re.fullmatch(r"[A-Za-z0-9_-]+", trial_id):
             raise ValueError("Invalid trial ID")
@@ -126,7 +149,7 @@ class GpuSampler:
         self.trial_id = trial_id
         self.destination_uri = destination_uri
         self.spool_dir = Path(spool_dir)
-        self.event_dir = Path(event_dir) if event_dir else self.spool_dir / "events"
+        self.event_dir = Path(event_dir) if event_dir else EVENT_DIRECTORY
         self.owner_dir = Path(owner_dir) if owner_dir else self.spool_dir / "owners"
         self.proc_root = Path(proc_root)
         self.command = command
@@ -134,6 +157,9 @@ class GpuSampler:
         self.utc = utc
         self.sample_interval = sample_interval
         self.upload_interval = upload_interval
+        self.shutdown_upload_budget = shutdown_upload_budget
+        self.upload_lock = threading.Lock()
+        self.stopping = threading.Event()
         self.records = []
         self.last_sample_time = None
         self.last_event_file_counts = {"malformed": 0, "partial": 0}
@@ -166,33 +192,59 @@ class GpuSampler:
         for path in sorted(self.event_dir.glob("*.json")):
             if path.name in claimed:
                 continue
+            if not self.valid_event_filename(path.name):
+                continue
             try:
                 raw = json.loads(path.read_text())
             except (OSError, ValueError):
                 continue
             event = self.valid_event(raw)
-            if event is not None:
+            if event is not None and self.valid_event_filename(path.name, event):
                 events.append((path, event))
         return events
 
     def event_file_counts(self):
         counts = {"malformed": 0, "partial": 0}
         for path in self.event_dir.glob("*.json"):
+            if not self.valid_event_filename(path.name):
+                counts["malformed"] += 1
+                continue
             try:
                 raw = json.loads(path.read_text())
             except (OSError, ValueError):
                 counts["malformed"] += 1
                 continue
-            if self.valid_event(raw) is None:
+            event = self.valid_event(raw)
+            if event is None or not self.valid_event_filename(path.name, event):
                 counts["malformed"] += 1
         counts["partial"] = sum(1 for _ in self.event_dir.glob("*.tmp"))
         return counts
 
+    def valid_event_filename(self, name, event=None):
+        if not isinstance(name, str):
+            return False
+        match = re.fullmatch(EVENT_FILE_PATTERN, name)
+        if match is None:
+            return False
+        if event is None:
+            return True
+        expected_prefix = {
+            "pytorch_peak": "peak",
+            "startup_status": "startup",
+            "startup_diagnostic": "diagnostic",
+        }.get(event["event_type"])
+        return match.group(2) == str(event["pid"]) and match.group(1) == expected_prefix
+
     def valid_event(self, raw):
+        if isinstance(raw, dict) and raw.get("schema_version") == 2:
+            return self.valid_startup_event(raw)
+        if isinstance(raw, dict) and raw.get("schema_version") == 3:
+            return self.valid_diagnostic_event(raw)
         if not isinstance(raw, dict) or set(raw) != EVENT_FIELDS:
             return None
         if (
-            raw["schema_version"] != 1
+            type(raw["schema_version"]) is not int
+            or raw["schema_version"] != 1
             or raw["event_type"] != "pytorch_peak"
             or raw["trial_id"] != self.trial_id
             or not isinstance(raw["role"], str)
@@ -202,19 +254,92 @@ class GpuSampler:
             or type(raw["oom"]) is not bool
         ):
             return None
-        if not isinstance(raw["phase"], str) or not re.fullmatch(
-            r"[a-z][a-z0-9_-]{0,39}", raw["phase"]
-        ):
+        if not isinstance(raw["phase"], str) or raw["phase"] not in PHASES:
             return None
-        if not isinstance(raw["timestamp_utc"], str) or not re.fullmatch(
-            UTC_PATTERN,
-            raw["timestamp_utc"],
-        ):
+        if not valid_utc(raw["timestamp_utc"]):
             return None
         for field in EVENT_NUMBERS:
             if not nullable_nonnegative_int(raw[field]):
                 return None
         if raw["pid"] is None or raw["pid"] == 0:
+            return None
+        return raw
+
+    def valid_diagnostic_event(self, raw):
+        if not isinstance(raw, dict) or set(raw) != DIAGNOSTIC_EVENT_FIELDS:
+            return None
+        if (
+            type(raw["schema_version"]) is not int
+            or raw["schema_version"] != 3
+            or raw["event_type"] != "startup_diagnostic"
+            or raw["trial_id"] != self.trial_id
+            or raw["role"] != "interview"
+            or not valid_utc(raw["timestamp_utc"])
+            or type(raw["monotonic_ns"]) is not int
+            or raw["monotonic_ns"] < 0
+            or type(raw["pid"]) is not int
+            or raw["pid"] <= 0
+            or not nullable_nonnegative_int(raw["process_start_ticks"])
+            or type(raw["operation_stage"]) is not int
+            or raw["operation_stage"] not in STARTUP_OPERATIONS.values()
+            or type(raw["failure_category"]) is not int
+            or raw["failure_category"] not in STARTUP_FAILURES.values()
+            or type(raw["dependency_id"]) is not int
+            or raw["dependency_id"] not in (0, *DEPENDENCY_IDS.values())
+        ):
+            return None
+        if raw["failure_category"] != STARTUP_FAILURES["missing_dependency"] and raw["dependency_id"] != 0:
+            return None
+        return raw
+
+    def valid_startup_event(self, raw):
+        if not isinstance(raw, dict) or set(raw) != STARTUP_EVENT_FIELDS:
+            return None
+        if (
+            type(raw["schema_version"]) is not int
+            or raw["schema_version"] != 2
+            or raw["event_type"] != "startup_status"
+            or raw["trial_id"] != self.trial_id
+            or raw["role"] != "status_publisher"
+            or type(raw["startup_stage"]) is not int
+            or raw["startup_stage"] not in STARTUP_STAGES.values()
+            or type(raw["failure_category"]) is not int
+            or raw["failure_category"] not in (0, *FAILURE_CATEGORIES.values())
+            or not valid_utc(raw["timestamp_utc"])
+            or type(raw["pid"]) is not int
+            or raw["pid"] <= 0
+            or not nullable_nonnegative_int(raw["process_start_ticks"])
+            or type(raw["monotonic_ns"]) is not int
+            or raw["monotonic_ns"] < 0
+        ):
+            return None
+        if raw["startup_stage"] == STARTUP_STAGES["child_exit"]:
+            if (
+                not isinstance(raw["child_role"], str)
+                or raw["child_role"] not in CHILD_ROLES
+                or type(raw["child_pid"]) is not int
+                or raw["child_pid"] <= 0
+                or type(raw["exit_code"]) is not int
+                or not 0 <= raw["exit_code"] <= 255
+            ):
+                return None
+            if raw["exit_code"] == 0:
+                expected_category = 0
+            elif raw["exit_code"] >= 128:
+                expected_category = FAILURE_CATEGORIES["child_signal"]
+            else:
+                expected_category = FAILURE_CATEGORIES["child_nonzero"]
+            if raw["failure_category"] != expected_category:
+                return None
+        elif (
+            any(raw[field] is not None for field in ("child_role", "child_pid", "exit_code"))
+            or raw["failure_category"] != 0
+        ):
+            return None
+        if raw["startup_stage"] == STARTUP_STAGES["shutdown"]:
+            if type(raw["shutdown_reason"]) is not int or raw["shutdown_reason"] not in SHUTDOWN_REASONS.values():
+                return None
+        elif raw["shutdown_reason"] is not None:
             return None
         return raw
 
@@ -235,7 +360,7 @@ class GpuSampler:
             return False
         if type(sample["schema_version"]) is not int or sample["schema_version"] != 1 or sample["trial_id"] != self.trial_id:
             return False
-        if not isinstance(sample["utc"], str) or not re.fullmatch(UTC_PATTERN, sample["utc"]):
+        if not valid_utc(sample["utc"]):
             return False
         if sample["gpu_uuid"] is not None and gpu_uuid_or_none(sample["gpu_uuid"]) != sample["gpu_uuid"]:
             return False
@@ -262,8 +387,7 @@ class GpuSampler:
             or not isinstance(body["segment_id"], str)
             or not re.fullmatch(r"[a-f0-9]{32}", body["segment_id"])
             or path.name != f'segment-{body["segment_id"]}.json'
-            or not isinstance(body["created_utc"], str)
-            or not re.fullmatch(UTC_PATTERN, body["created_utc"])
+            or not valid_utc(body["created_utc"])
             or not isinstance(body["samples"], list)
             or not isinstance(body["events"], list)
             or not isinstance(body["event_files"], list)
@@ -273,7 +397,7 @@ class GpuSampler:
         if not all(self.valid_sample(sample) for sample in body["samples"]):
             return False
         for name, event in zip(body["event_files"], body["events"]):
-            if not isinstance(name, str) or not re.fullmatch(EVENT_FILE_PATTERN, name) or self.valid_event(event) is None:
+            if self.valid_event(event) is None or not self.valid_event_filename(name, event):
                 return False
         return True
 
@@ -291,15 +415,14 @@ class GpuSampler:
             and receipt["sample_count"] == len(body["samples"])
             and type(receipt["event_count"]) is int
             and receipt["event_count"] == len(body["events"])
-            and isinstance(receipt["uploaded_utc"], str)
-            and re.fullmatch(UTC_PATTERN, receipt["uploaded_utc"]) is not None
+            and valid_utc(receipt["uploaded_utc"])
         )
 
     def role_for(self, pid, start_ticks, events):
         if start_ticks is None:
             return None
         for _, event in events:
-            if event["pid"] == pid and event["process_start_ticks"] == start_ticks:
+            if event["event_type"] == "pytorch_peak" and event["pid"] == pid and event["process_start_ticks"] == start_ticks:
                 return event["role"]
         try:
             owner = json.loads((self.owner_dir / f"{pid}.json").read_text())
@@ -395,6 +518,8 @@ class GpuSampler:
             "event_files": [path.name for path, _ in events],
             "event_file_counts": event_file_counts,
         }
+        if not self.valid_segment(path, body):
+            raise ValueError("Invalid GPU telemetry segment")
         content = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
         write_atomic(path, content)
         for _, event in events:
@@ -403,8 +528,27 @@ class GpuSampler:
         self.last_event_file_counts = event_file_counts
         return path
 
-    def upload_pending(self):
-        for segment in sorted(self.spool_dir.glob("segment-*.json")):
+    def upload_pending(self, deadline=None, prioritize_terminal=False):
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            return
+        acquired = (
+            self.upload_lock.acquire(timeout=remaining)
+            if remaining is not None
+            else self.upload_lock.acquire()
+        )
+        if not acquired:
+            return
+        try:
+            self._upload_pending(deadline, prioritize_terminal)
+        finally:
+            self.upload_lock.release()
+
+    def _upload_pending(self, deadline, prioritize_terminal):
+        pending = []
+        for segment in self.spool_dir.glob("segment-*.json"):
+            if (deadline is not None and time.monotonic() >= deadline) or (deadline is None and self.stopping.is_set()):
+                return
             receipt = segment.with_suffix(".uploaded")
             try:
                 content = segment.read_bytes()
@@ -413,10 +557,31 @@ class GpuSampler:
                 continue
             if not self.valid_segment(segment, body):
                 continue
+            terminal_ns = -1
+            if prioritize_terminal:
+                terminal_ns = max(
+                    (
+                        event["monotonic_ns"] for event in body["events"]
+                        if event["event_type"] == "startup_status"
+                        and event["startup_stage"] in (STARTUP_STAGES["child_exit"], STARTUP_STAGES["shutdown"])
+                    ),
+                    default=-1,
+                )
+            pending.append((terminal_ns, segment, content, body, receipt))
+        if prioritize_terminal:
+            pending.sort(key=lambda item: (item[0] < 0, -item[0], item[1].name))
+        else:
+            pending.sort(key=lambda item: item[1].name)
+        for _, segment, content, body, receipt in pending:
+            if (deadline is not None and time.monotonic() >= deadline) or (deadline is None and self.stopping.is_set()):
+                return
             if self.valid_receipt(receipt, body, content):
                 self.acknowledge_segment(segment, body)
                 continue
             destination = self.destination_uri + segment.name
+            timeout = 20 if deadline is None else min(20, deadline - time.monotonic())
+            if timeout <= 0:
+                return
             try:
                 result = self.command(
                     [
@@ -431,7 +596,7 @@ class GpuSampler:
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=20,
+                    timeout=timeout,
                     check=False,
                 )
             except (OSError, subprocess.TimeoutExpired):
@@ -459,12 +624,12 @@ class GpuSampler:
             if event is None:
                 continue
             self.record_owner(event)
-            if re.fullmatch(EVENT_FILE_PATTERN, name):
+            if self.valid_event_filename(name, event):
                 (self.event_dir / name).unlink(missing_ok=True)
         segment.unlink(missing_ok=True)
 
     def record_owner(self, event):
-        if event["process_start_ticks"] is None:
+        if event["event_type"] != "pytorch_peak" or event["process_start_ticks"] is None:
             return
         owner = {
             "pid": event["pid"],
@@ -500,11 +665,11 @@ class GpuSampler:
                 )
                 stop_event.wait(max(0, next_sample - self.monotonic()))
         finally:
-            if uploader is not None:
-                uploader.join()
+            self.stopping.set()
+            deadline = time.monotonic() + self.shutdown_upload_budget
             for _ in range(2):
                 self.flush()
-                self.upload_pending()
+                self.upload_pending(deadline=deadline, prioritize_terminal=True)
 
 
 def main():
@@ -519,7 +684,7 @@ def main():
         destination_uri=os.environ["STARFOLIO_TRIAL_GPU_URI"],
         spool_dir=args.spool_dir,
         event_dir=Path(
-            os.environ.get("STARFOLIO_GPU_EVENT_DIR", str(args.spool_dir / "events"))
+            os.environ.get("STARFOLIO_GPU_EVENT_DIR", str(EVENT_DIRECTORY))
         ),
     )
     sampler.run(stop_event)

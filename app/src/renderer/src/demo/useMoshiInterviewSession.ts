@@ -18,6 +18,7 @@ interface MoshiInterviewSessionOptions {
   jobDescription: string
   consent: boolean
   recordTrialMedia: boolean
+  localProvidersOnly: boolean
 }
 
 function captureDrainFailureMessage(failure: unknown): string {
@@ -75,7 +76,8 @@ export function useMoshiInterviewSession({
   durationSeconds,
   jobDescription,
   consent,
-  recordTrialMedia
+  recordTrialMedia,
+  localProvidersOnly
 }: MoshiInterviewSessionOptions): MoshiInterviewSession {
   const [bank, setBank] = useState<ExperienceSummary[]>([])
   const [status, setStatus] = useState('Ready to connect')
@@ -351,7 +353,8 @@ export function useMoshiInterviewSession({
         jobDescription: jobDescription.trim() || undefined,
         candidateName: candidateName.trim() || undefined,
         consent: true,
-        recordTrialMedia
+        recordTrialMedia,
+        localProvidersOnly
       })
       if (!isCurrentAttempt()) return
       if (!shouldCaptureDemoAudio(connectedMode, consent)) {
@@ -413,6 +416,7 @@ export function useMoshiInterviewSession({
     jobDescription,
     playScript,
     recordTrialMedia,
+    localProvidersOnly,
     requestEnd,
     resumeText
   ])
